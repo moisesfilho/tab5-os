@@ -1,6 +1,7 @@
 #include "imu_reader.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "nvs.h"
 #include "bsp/esp-bsp.h"
 #include "iot_sensor_hub.h"
 #include "sensor_type.h"
@@ -9,9 +10,13 @@
 
 static const char *TAG = "tab5_imu";
 
+#define NVS_NAMESPACE "tab5"
+#define NVS_KEY_ROT_ENABLED "rot_enabled"
+
 static sensor_handle_t s_imu = NULL;
 static lv_display_t *s_disp = NULL;
 static volatile lv_disp_rotation_t s_target_rot = LV_DISPLAY_ROTATION_0;
+static volatile bool s_rotation_enabled = true;
 static uint32_t s_log_div = 0;
 
 static void imu_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data)
@@ -39,6 +44,10 @@ static void imu_event_handler(void *arg, esp_event_base_t base, int32_t event_id
 /* Roda dentro da task LVGL (lv_timer_handler): chamadas LVGL seguras, sem lock */
 static void rotation_timer_cb(lv_timer_t *timer)
 {
+    if (!s_rotation_enabled) {
+        return;
+    }
+
     lv_display_t *disp = (lv_display_t *)lv_timer_get_user_data(timer);
     lv_disp_rotation_t target = s_target_rot;
     if (target != lv_display_get_rotation(disp)) {
@@ -65,6 +74,37 @@ esp_err_t imu_reader_start(lv_display_t *disp)
 
     lv_timer_create(rotation_timer_cb, 150, disp);
 
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs) == ESP_OK) {
+        uint8_t enabled = 1;
+        if (nvs_get_u8(nvs, NVS_KEY_ROT_ENABLED, &enabled) == ESP_OK) {
+            s_rotation_enabled = (enabled != 0);
+        }
+        nvs_close(nvs);
+    }
+    ESP_LOGI(TAG, "rotacao via IMU %s", s_rotation_enabled ? "habilitada" : "desabilitada");
+
     ESP_LOGI(TAG, "IMU iniciado (10 Hz)");
     return ESP_OK;
+}
+
+void imu_reader_set_rotation_enabled(bool enabled)
+{
+    if (s_rotation_enabled == enabled) {
+        return;
+    }
+    s_rotation_enabled = enabled;
+
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_u8(nvs, NVS_KEY_ROT_ENABLED, enabled ? 1 : 0);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+    }
+    ESP_LOGI(TAG, "rotacao via IMU %s", enabled ? "habilitada" : "desabilitada");
+}
+
+bool imu_reader_is_rotation_enabled(void)
+{
+    return s_rotation_enabled;
 }
