@@ -8,33 +8,33 @@
   <img src="https://img.shields.io/badge/LVGL-9-blue" alt="LVGL">
 </p>
 
-**Languages:** [English](README.md) | [Português](README.pt-BR.md)
+**Idiomas:** [Português](README.md) | [English](README.en.md)
 
-Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual keyboard, IMU-based auto-rotation, OS-style top bar with RTC clock and light/dark theme.
+Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): teclado virtual, rotação automática por IMU, barra superior estilo SO com relógio RTC e tema claro/escuro.
 
-## Features
+## Funcionalidades
 
-- **Virtual keyboard** — LVGL native keyboard + textarea, works in portrait and landscape
-- **Auto-rotation by IMU** — BMI270 gravity vector drives `lv_display_set_rotation` (0/90/180/270) with debounce
-- **OS-style top bar** — gear button, orientation badge and live clock
-- **Settings menu** — Configuração → Tema (light/dark) with active item highlight
-- **RTC clock** — RX8130CE seeds the system clock at boot (`settimeofday`)
-- **Latin-1 font** — custom Montserrat 14px with the full Latin-1 supplement, so accented characters render correctly
+- **Teclado virtual** — teclado nativo LVGL + textarea, funciona em retrato e paisagem
+- **Rotação automática por IMU** — o vetor de gravidade do BMI270 aciona `lv_display_set_rotation` (0/90/180/270) com debounce
+- **Barra superior estilo SO** — botão de engrenagem, badge de orientação e relógio ao vivo
+- **Menu de configurações** — Configuração → Tema (claro/escuro) com destaque do item ativo
+- **Relógio RTC** — RX8130CE semeia o relógio do sistema no boot (`settimeofday`)
+- **Fonte Latin-1** — Montserrat 14px custom com o suplemento Latin-1 completo, para caracteres acentuados renderizarem corretamente
 
 ## Hardware
 
 - M5Stack Tab5 (SKU K145)
 - ESP32-P4 (RISC-V dual 360 MHz) + ESP32-C6
-- 5" IPS TFT MIPI-DSI, 720×1280
+- TFT IPS 5" MIPI-DSI, 720×1280
 - Touch: GT911 / ST7123
 - IMU: BMI270 · RTC: RX8130CE
-- 16 MB flash · 32 MB PSRAM
+- Flash 16 MB · PSRAM 32 MB
 
-## Prerequisites
+## Pré-requisitos
 
-- ESP-IDF **v5.5.5** (older versions fail to build with `espressif/usb`)
+- ESP-IDF **v5.5.5** (versões anteriores não compilam com `espressif/usb`)
 - Python 3.12
-- Linux host (tested on Ubuntu)
+- Host Linux (testado no Ubuntu)
 
 ## Build & Flash
 
@@ -45,16 +45,16 @@ idf.py -p /dev/ttyACM0 flash
 idf.py -p /dev/ttyACM0 monitor --no-reset
 ```
 
-> **Cold boot required**: unplug and replug the USB cable after flashing — a warm reset leaves the DSI display without image.
+> **Cold boot obrigatório**: desplugue e replugue o cabo USB após o flash — um reset quente deixa o display DSI sem imagem.
 
-## Usage
+## Uso
 
-- **Type** on the virtual keyboard (touch)
-- **Tilt** the device to rotate the UI (portrait/landscape)
-- **Gear** (top-left) opens the settings menu: Configuração → Tema → Claro/Escuro
-- The **clock** shows the real time read from the RTC
+- **Digite** no teclado virtual (touch)
+- **Incline** o aparelho para girar a interface (retrato/paisagem)
+- A **engrenagem** (canto superior esquerdo) abre o menu de configurações: Configuração → Tema → Claro/Escuro
+- O **relógio** mostra a hora real lida do RTC
 
-## Project Structure
+## Estrutura do Projeto
 
 ```
 tab5-os/
@@ -62,24 +62,24 @@ tab5-os/
 │   └── app_main.cpp          # Boot: display, RTC, IMU, UI
 ├── components/
 │   ├── app/                  # UI + IMU
-│   │   ├── ui_bar.cpp        # Top bar, settings menu, clock
-│   │   ├── ui_keyboard.cpp   # Virtual keyboard + textarea
-│   │   ├── ui_status.cpp     # Orientation badge
-│   │   ├── ui_theme.cpp      # Light/dark palettes
-│   │   ├── imu_reader.cpp    # BMI270 events → rotation target
-│   │   ├── orientation.cpp   # Gravity vector → rotation mapping
-│   │   └── fonts/            # Custom Latin-1 font
-│   ├── m5stack_tab5/         # Local BSP (override of the official one)
-│   └── rtc_rx8130/           # RX8130CE RTC driver
+│   │   ├── ui_bar.cpp        # Barra superior, menu de configurações, relógio
+│   │   ├── ui_keyboard.cpp   # Teclado virtual + textarea
+│   │   ├── ui_status.cpp     # Badge de orientação
+│   │   ├── ui_theme.cpp      # Paletas claro/escuro
+│   │   ├── imu_reader.cpp    # Eventos do BMI270 → alvo de rotação
+│   │   ├── orientation.cpp   # Vetor de gravidade → mapeamento de rotação
+│   │   └── fonts/            # Fonte Latin-1 custom
+│   ├── m5stack_tab5/         # BSP local (override do oficial)
+│   └── rtc_rx8130/           # Driver do RTC RX8130CE
 └── sdkconfig.defaults
 ```
 
-## Notes
+## Notas
 
-- Rotation uses a ~27° tilt threshold (0.45 G plane magnitude) to avoid oscillation; decisive tilts always rotate.
-- `sw_rotate=true` is required (LVGL 9 + DSI).
-- The custom font is generated from the same `Montserrat-Medium.ttf` used by the LVGL built-ins, adding the Latin-1 supplement range (`0xA0–0xFF`).
+- A rotação usa um limiar de inclinação de ~27° (magnitude do plano de 0.45 G) para evitar oscilação; inclinações decididas sempre giram.
+- `sw_rotate=true` é obrigatório (LVGL 9 + DSI).
+- A fonte custom é gerada do mesmo `Montserrat-Medium.ttf` usado pelos fonts built-in do LVGL, adicionando o suplemento Latin-1 (`0xA0–0xFF`).
 
-## License
+## Licença
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+Este projeto é licenciado sob a **Licença MIT** — veja o arquivo [LICENSE](LICENSE).
