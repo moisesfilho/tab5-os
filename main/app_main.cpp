@@ -6,8 +6,7 @@
 #include "nvs_flash.h"
 #include "lvgl.h"
 #include "bsp/esp-bsp.h"
-#include "ui_keyboard.h"
-#include "ui_bar.h"
+#include "ui_shell.h"
 #include "imu_reader.h"
 #include "rtc_rx8130.h"
 
@@ -15,7 +14,7 @@ static const char *TAG = "tab5_poc";
 
 extern "C" void app_main(void)
 {
-    ESP_LOGI(TAG, "Tab5 PoC - Fase 4 (rotacao)");
+    ESP_LOGI(TAG, "Tab5 PoC - Fase 6 (shell)");
 
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -34,10 +33,7 @@ extern "C" void app_main(void)
 
     bsp_display_lock(0);
 
-    lv_obj_t *scr = lv_disp_get_scr_act(NULL);
-
-    ui_keyboard_create(scr);
-    ui_bar_init(scr);
+    ui_shell_init();
 
     bsp_display_unlock();
 

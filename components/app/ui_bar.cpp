@@ -2,6 +2,7 @@
 #include "ui_theme.h"
 #include "ui_status.h"
 #include "ui_font.h"
+#include "ui_shell.h"
 #include "imu_reader.h"
 #include <time.h>
 
@@ -329,15 +330,14 @@ void ui_bar_refresh_theme(void)
     }
 
     apply_menu_theme();
+
+    /* O tema tambem alcanca as telas do shell (desktop e apps). */
+    ui_shell_refresh_theme();
 }
 
 void ui_bar_init(lv_obj_t *parent)
 {
-    const ui_palette_t *pal = ui_theme_get();
-
-    /* O fundo da tela e de responsabilidade da barra/tema. */
-    lv_obj_set_style_bg_color(parent, lv_color_hex(pal->background), 0);
-
+    /* A barra vive no layer top; o fundo da tela e do shell/tema. */
     bar = lv_obj_create(parent);
     lv_obj_set_size(bar, lv_pct(100), UI_BAR_HEIGHT);
     lv_obj_set_align(bar, LV_ALIGN_TOP_MID);
@@ -365,6 +365,8 @@ void ui_bar_init(lv_obj_t *parent)
     lv_obj_set_style_pad_right(gear, 12, 0);
     lv_obj_set_style_pad_top(gear, 6, 0);
     lv_obj_set_style_pad_bottom(gear, 6, 0);
+    /* Sem scroll: remove os scrollbars e o arraste da engrenagem. */
+    lv_obj_clear_flag(gear, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(gear, gear_click_cb, LV_EVENT_CLICKED, nullptr);
 
     gear_label = lv_label_create(gear);

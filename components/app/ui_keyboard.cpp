@@ -1,13 +1,12 @@
 #include "ui_keyboard.h"
 #include "ui_theme.h"
-#include "ui_bar.h"
 #include "ui_font.h"
 #include <string.h>
 
 namespace {
 
-lv_obj_t *kb_textarea = nullptr;
 lv_obj_t *keyboard = nullptr;
+lv_obj_t *kb_target = nullptr;
 
 bool is_action_key(const char *text)
 {
@@ -44,28 +43,11 @@ void accent_action_keys(lv_obj_t *kb)
     }
 }
 
-/* Reaplica todos os estilos a partir da paleta ativa do tema. */
+/* Reaplica os estilos a partir da paleta ativa do tema. */
 void apply_keyboard_theme(void)
 {
     const ui_palette_t *pal = ui_theme_get();
 
-    /* Area de digitacao */
-    lv_obj_set_style_bg_color(kb_textarea, lv_color_hex(pal->surface), 0);
-    lv_obj_set_style_text_color(kb_textarea, lv_color_hex(pal->text), 0);
-    lv_obj_set_style_border_width(kb_textarea, 1, 0);
-    lv_obj_set_style_border_color(kb_textarea, lv_color_hex(pal->border), 0);
-    lv_obj_set_style_border_color(kb_textarea, lv_color_hex(pal->accent), LV_STATE_FOCUSED);
-    lv_obj_set_style_border_width(kb_textarea, 2, LV_STATE_FOCUSED);
-    lv_obj_set_style_radius(kb_textarea, 10, 0);
-    lv_obj_set_style_pad_left(kb_textarea, 18, 0);
-    lv_obj_set_style_pad_right(kb_textarea, 18, 0);
-    lv_obj_set_style_pad_top(kb_textarea, 12, 0);
-    lv_obj_set_style_pad_bottom(kb_textarea, 12, 0);
-    lv_obj_set_style_text_color(kb_textarea, lv_color_hex(pal->text_muted), LV_PART_TEXTAREA_PLACEHOLDER);
-    lv_obj_set_style_bg_color(kb_textarea, lv_color_hex(pal->accent), LV_PART_CURSOR);
-    lv_obj_set_style_width(kb_textarea, 2, LV_PART_CURSOR);
-
-    /* Teclado virtual */
     lv_obj_set_style_bg_color(keyboard, lv_color_hex(pal->background), 0);
     lv_obj_set_style_pad_all(keyboard, 8, 0);
     lv_obj_set_style_pad_row(keyboard, 7, 0);
@@ -88,23 +70,18 @@ void apply_keyboard_theme(void)
     lv_obj_set_style_shadow_width(keyboard, 0, LV_PART_ITEMS);
 }
 
-/* Ajusta a altura do teclado e do textarea conforme a orientacao:
- * no retrato as teclas ficam mais compactas (2/3 da altura). Os getters
- * do LVGL 9 ja devolvem as dimensoes logicas trocadas na rotacao, entao
- * comparar vertical x horizontal identifica o retrato de forma segura. */
+/* Ajusta a altura do teclado conforme a orientacao: no retrato as teclas
+ * ficam mais compactas. Os getters do LVGL 9 ja devolvem as dimensoes
+ * logicas trocadas na rotacao, entao comparar h x w identifica o retrato. */
 void apply_keyboard_layout(void)
 {
     int32_t h = lv_display_get_vertical_resolution(NULL);
     int32_t w = lv_display_get_horizontal_resolution(NULL);
 
     if (h > w) {
-        /* Retrato (tela logica 720x1280) */
         lv_obj_set_height(keyboard, h * 35 / 100);
-        lv_obj_set_height(kb_textarea, h * 10 / 100);
     } else {
-        /* Paisagem (tela logica 1280x720) */
         lv_obj_set_height(keyboard, h * 52 / 100);
-        lv_obj_set_height(kb_textarea, h * 22 / 100);
     }
 }
 
@@ -115,36 +92,59 @@ void keyboard_resolution_cb(lv_event_t *event)
     apply_keyboard_layout();
 }
 
+/* OK e fechar escondem o teclado (comportamento de SO). */
+void keyboard_ready_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_keyboard_hide();
+}
+
+void keyboard_cancel_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_keyboard_hide();
+}
+
 } // namespace
 
 void ui_keyboard_create(lv_obj_t *parent)
 {
-    /* Area de digitacao */
-    kb_textarea = lv_textarea_create(parent);
-    lv_obj_set_width(kb_textarea, lv_pct(90));
-    lv_obj_set_height(kb_textarea, lv_pct(22));
-    /* Abaixo da barra superior (altura + respiro de 14px). */
-    lv_obj_align(kb_textarea, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT + 14);
-    lv_textarea_set_placeholder_text(kb_textarea, "Toque para digitar...");
-    lv_textarea_set_one_line(kb_textarea, true);
-    lv_textarea_set_cursor_click_pos(kb_textarea, true);
-    lv_obj_set_style_text_font(kb_textarea, &lv_font_montserrat_14_latin1, LV_PART_MAIN);
-
-    /* Teclado virtual */
     keyboard = lv_keyboard_create(parent);
-    lv_obj_set_size(keyboard, lv_pct(100), lv_pct(58));
+    lv_obj_set_size(keyboard, lv_pct(100), lv_pct(52));
     lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_keyboard_set_textarea(keyboard, kb_textarea);
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
     lv_obj_set_style_text_font(keyboard, &lv_font_montserrat_14_latin1, LV_PART_ITEMS);
 
     accent_action_keys(keyboard);
     apply_keyboard_theme();
 
-    /* Estado inicial consistente e reacao a mudancas de orientacao. */
+    /* Oculta por padrao; o app mostra ao focar um campo de texto. */
+    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(keyboard, keyboard_ready_cb, LV_EVENT_READY, nullptr);
+    lv_obj_add_event_cb(keyboard, keyboard_cancel_cb, LV_EVENT_CANCEL, nullptr);
+
     apply_keyboard_layout();
     lv_display_add_event_cb(lv_display_get_default(), keyboard_resolution_cb,
                             LV_EVENT_RESOLUTION_CHANGED, nullptr);
+}
+
+void ui_keyboard_attach(lv_obj_t *ta)
+{
+    kb_target = ta;
+    lv_keyboard_set_textarea(keyboard, ta);
+    lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_state(ta, LV_STATE_FOCUSED);
+    apply_keyboard_layout();
+}
+
+void ui_keyboard_hide(void)
+{
+    if (kb_target != nullptr) {
+        lv_obj_clear_state(kb_target, LV_STATE_FOCUSED);
+        kb_target = nullptr;
+    }
+    lv_keyboard_set_textarea(keyboard, nullptr);
+    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
 void ui_keyboard_refresh_theme(void)
