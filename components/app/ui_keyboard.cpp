@@ -1,5 +1,7 @@
 #include "ui_keyboard.h"
 #include "ui_theme.h"
+#include "ui_bar.h"
+#include "ui_font.h"
 #include <string.h>
 
 namespace {
@@ -94,10 +96,12 @@ void ui_keyboard_create(lv_obj_t *parent)
     kb_textarea = lv_textarea_create(parent);
     lv_obj_set_width(kb_textarea, lv_pct(90));
     lv_obj_set_height(kb_textarea, lv_pct(22));
-    lv_obj_align(kb_textarea, LV_ALIGN_TOP_MID, 0, 40);
+    /* Abaixo da barra superior (altura + respiro de 14px). */
+    lv_obj_align(kb_textarea, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT + 14);
     lv_textarea_set_placeholder_text(kb_textarea, "Toque para digitar...");
     lv_textarea_set_one_line(kb_textarea, true);
     lv_textarea_set_cursor_click_pos(kb_textarea, true);
+    lv_obj_set_style_text_font(kb_textarea, &lv_font_montserrat_14_latin1, LV_PART_MAIN);
 
     /* Teclado virtual */
     keyboard = lv_keyboard_create(parent);
@@ -105,6 +109,7 @@ void ui_keyboard_create(lv_obj_t *parent)
     lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_textarea(keyboard, kb_textarea);
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
+    lv_obj_set_style_text_font(keyboard, &lv_font_montserrat_14_latin1, LV_PART_ITEMS);
 
     accent_action_keys(keyboard);
     apply_keyboard_theme();

@@ -6,9 +6,9 @@
 #include "lvgl.h"
 #include "bsp/esp-bsp.h"
 #include "ui_keyboard.h"
-#include "ui_status.h"
-#include "ui_theme.h"
+#include "ui_bar.h"
 #include "imu_reader.h"
+#include "rtc_rx8130.h"
 
 static const char *TAG = "tab5_poc";
 
@@ -19,6 +19,9 @@ extern "C" void app_main(void)
     /* Inicia display + touch + task LVGL (BSP oficial m5stack_tab5) */
     lv_display_t *disp = bsp_display_start();
 
+    /* Semeia o relogio do sistema a partir do RTC RX8130CE (I2C do BSP) */
+    rtc_rx8130_init();
+
     imu_reader_start(disp);
 
     bsp_display_lock(0);
@@ -26,8 +29,7 @@ extern "C" void app_main(void)
     lv_obj_t *scr = lv_disp_get_scr_act(NULL);
 
     ui_keyboard_create(scr);
-    ui_status_init(scr);
-    ui_theme_init(scr);
+    ui_bar_init(scr);
 
     bsp_display_unlock();
 
