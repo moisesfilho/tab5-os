@@ -82,3 +82,56 @@ tab5-os/
 ## 6. Estimativa
 
 ~5–7 dias com o hardware em mãos (F0 0,5 · F1 1 · F2 1 · F3 1 · F4 1–2 · F5 1).
+
+---
+
+# Plano — Teclado PT-BR (acentos + cedilha)
+
+Atualizado em 2026-08-14. Proposta para habilitar escrita em português do Brasil (ç, vogais acentuadas etc.). Ainda **não implementado**.
+
+## 1. Verificação prévia (já feita)
+
+- **Fontes OK — nenhuma mudança necessária**: `lv_font_montserrat_14_latin1` cobre Latin-1 (0xA0–0xFF), ou seja, já possui glifos para `ç ã õ á é í ó ú â ê ô à` e maiúsculas (`Ç Ã Õ Á É Í Ó Ú Â Ê Ô À`). Teclas e textarea usam essa fonte.
+- **Teclado atual**: usa os mapas padrão do LVGL (só ASCII). O modo `SPECIAL` ("1#") hoje mostra números/símbolos genéricos. O LVGL suporta mapas custom por modo via `lv_keyboard_set_map(kb, mode, map[], ctrl_map[])` (confirmado em `lv_keyboard.c/h`), com 4 modos de usuário livres (`USER_1..4`) além dos padrão.
+- **Limitação do mecanismo nativo**: a troca de modo é feita por texto exato de botão ("abc"/"ABC"/"1#"). Criar uma tecla custom de acesso ("áç") exigiria interceptar o handler padrão (static, não removível) — inviável sem hack.
+
+## 2. Abordagem recomendada
+
+**Página de acentos no modo `SPECIAL`** (via `lv_keyboard_set_map`) — aproveita o mecanismo nativo, a tecla "1#" já existente abre a página, sem código custom de troca de modo.
+
+Layout da página de acentos (5 linhas):
+```
+1  2  3  4  5  6  7  8  9  0        ⌫
+à  á  â  ã  ç  é  ê  í  ó  ô  õ  ú
+À  Á  Â  Ã  Ç  É  Ê  Í  Ó  Ô  Õ  Ú
+,  .  ;  :  !  ?  -  _  +  =  /  @  #
+[⌨] [abc] ◀  espaço  ▶  [OK]
+```
+
+- Números + símbolos essenciais permanecem na página (datas, pontuação).
+- "abc"/⌨ voltam para letras; ⌫/◀/▶/OK mantêm comportamento atual.
+
+**Alternativas descartadas (para PoC)**:
+- **B)** Trocar teclas do QWERTY por acentos → cobre menos caracteres e polui o layout.
+- **C)** Long-press/popover por tecla → não é nativo no LVGL 9; exige handler custom frágil.
+
+## 3. Implementação (em `components/app/ui_keyboard.cpp`)
+
+1. Definir `pt_br_map_spec[]` (array de strings com `"\n"` separando linhas) e `pt_br_ctrl_spec[]` (array de controles: `LV_KEYBOARD_CTRL_BUTTON_FLAGS` para ⌫/"abc"/⌨/◀/▶/OK; `LV_KB_BTN(n)` para larguras relativas das letras/números) — espelhando o padrão de `default_kb_map_spec` (lv_keyboard.c:156-175).
+2. Em `ui_keyboard_create`, após `lv_keyboard_create`: `lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_SPECIAL, pt_br_map_spec, pt_br_ctrl_spec)`.
+3. `is_action_key()`/`accent_action_keys()` continuam válidos (⌫, OK, ◀, ▶, "abc", "1#" já são reconhecidos).
+4. `apply_keyboard_layout` **sem mudança** (5 linhas cabem nos 35%/52% atuais) — validar visualmente; só ajustar se as teclas ficarem baixas.
+5. **Polish opcional**: incluir `LV_SYMBOL_NEW_LINE` (Enter) no `is_action_key()` — hoje o Enter do QWERTY não recebe destaque.
+
+## 4. Verificação (hardware)
+
+1. Build + flash + cold boot.
+2. Notas → tocar no textarea → teclar **"1#"** → página de acentos.
+3. Digitar **todos** os acentos (minúsculas e maiúsculas) + números → conferir renderização e inserção corretas no textarea.
+4. Testar **retrato e paisagem** (teclas legíveis) e **temas claro/escuro**.
+5. Voltar com "abc" ou ⌨; ⌫ e OK funcionando.
+
+## 5. Riscos / pontos de atenção
+
+- **5 linhas** deixam teclas da página de acentos mais baixas que as do QWERTY (altura do teclado é fixa em % da tela). Mitigação: aumentar o percentual de altura ou reduzir uma linha se ficar ruim.
+- **Rótulo da tecla de acesso continua "1#"** (limitação do mecanismo nativo). Melhoria futura: botão custom "áç" com handler próprio.
