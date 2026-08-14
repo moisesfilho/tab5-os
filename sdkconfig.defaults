@@ -1,0 +1,13 @@
+CONFIG_IDF_TARGET="esp32p4"
+CONFIG_LV_DPI_DEF=130
+
+# Tab5 usa silício ESP32-P4 rev v1.3 (IDF 5.5.5 default exige rev >= 3.0)
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+
+# PSRAM 32MB (obrigatório: framebuffer do MIPI DPI ~1.8MB nao cabe na RAM interna)
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_USE_MALLOC=y
+
+# Flash real do Tab5: 16MB (default do IDF é 2MB)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y

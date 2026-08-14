@@ -1,0 +1,11 @@
+dependencies:
+  idf: ">=5.4"
+  espressif/m5stack_tab5: "^1.2.0"
+  espressif/esp_lvgl_port: "^2"
+
+overrides:
+  - espressif/m5stack_tab5:
+      with:
+        m5stack_tab5:
+          path: ../components/m5stack_tab5
+      reason: "Patch local da tabela de init do painel (ST7121) - ver PLANO.md"
