@@ -7,6 +7,7 @@
 #include "bsp/esp-bsp.h"
 #include "ui_keyboard.h"
 #include "ui_status.h"
+#include "ui_theme.h"
 #include "imu_reader.h"
 
 static const char *TAG = "tab5_poc";
@@ -23,10 +24,10 @@ extern "C" void app_main(void)
     bsp_display_lock(0);
 
     lv_obj_t *scr = lv_disp_get_scr_act(NULL);
-    lv_obj_set_style_bg_color(scr, lv_color_hex(0x12151c), 0);
 
     ui_keyboard_create(scr);
     ui_status_init(scr);
+    ui_theme_init(scr);
 
     bsp_display_unlock();
 

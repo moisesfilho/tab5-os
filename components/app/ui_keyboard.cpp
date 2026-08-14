@@ -1,17 +1,11 @@
 #include "ui_keyboard.h"
+#include "ui_theme.h"
 #include <string.h>
 
 namespace {
 
-/* Paleta escura compartilhada visualmente com o indicador de orientacao. */
-constexpr uint32_t COLOR_BACKGROUND = 0x10141C;
-constexpr uint32_t COLOR_SURFACE = 0x1A2130;
-constexpr uint32_t COLOR_SURFACE_ALT = 0x202A3D;
-constexpr uint32_t COLOR_BORDER = 0x2A3450;
-constexpr uint32_t COLOR_ACCENT = 0x3B82F6;
-constexpr uint32_t COLOR_ACCENT_SOFT = 0x263E68;
-constexpr uint32_t COLOR_TEXT = 0xE7ECF5;
-constexpr uint32_t COLOR_TEXT_MUTED = 0x8491A8;
+lv_obj_t *kb_textarea = nullptr;
+lv_obj_t *keyboard = nullptr;
 
 bool is_action_key(const char *text)
 {
@@ -48,58 +42,75 @@ void accent_action_keys(lv_obj_t *kb)
     }
 }
 
+/* Reaplica todos os estilos a partir da paleta ativa do tema. */
+void apply_keyboard_theme(void)
+{
+    const ui_palette_t *pal = ui_theme_get();
+
+    /* Area de digitacao */
+    lv_obj_set_style_bg_color(kb_textarea, lv_color_hex(pal->surface), 0);
+    lv_obj_set_style_text_color(kb_textarea, lv_color_hex(pal->text), 0);
+    lv_obj_set_style_border_width(kb_textarea, 1, 0);
+    lv_obj_set_style_border_color(kb_textarea, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_border_color(kb_textarea, lv_color_hex(pal->accent), LV_STATE_FOCUSED);
+    lv_obj_set_style_border_width(kb_textarea, 2, LV_STATE_FOCUSED);
+    lv_obj_set_style_radius(kb_textarea, 10, 0);
+    lv_obj_set_style_pad_left(kb_textarea, 18, 0);
+    lv_obj_set_style_pad_right(kb_textarea, 18, 0);
+    lv_obj_set_style_pad_top(kb_textarea, 12, 0);
+    lv_obj_set_style_pad_bottom(kb_textarea, 12, 0);
+    lv_obj_set_style_text_color(kb_textarea, lv_color_hex(pal->text_muted), LV_PART_TEXTAREA_PLACEHOLDER);
+    lv_obj_set_style_bg_color(kb_textarea, lv_color_hex(pal->accent), LV_PART_CURSOR);
+    lv_obj_set_style_width(kb_textarea, 2, LV_PART_CURSOR);
+
+    /* Teclado virtual */
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(pal->background), 0);
+    lv_obj_set_style_pad_all(keyboard, 8, 0);
+    lv_obj_set_style_pad_row(keyboard, 7, 0);
+    lv_obj_set_style_pad_column(keyboard, 7, 0);
+    lv_obj_set_style_radius(keyboard, 14, 0);
+
+    /* Estado normal das teclas, pressionado, foco e acao tem contraste claro. */
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(pal->surface), LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(pal->surface_alt), LV_PART_ITEMS | LV_STATE_FOCUSED);
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(pal->accent), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(keyboard, lv_color_hex(pal->accent_soft), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(keyboard, lv_color_hex(pal->accent), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(keyboard, lv_color_hex(pal->text), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(keyboard, lv_color_hex(pal->text), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(keyboard, lv_color_white(), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(keyboard, 1, LV_PART_ITEMS);
+    lv_obj_set_style_border_color(keyboard, lv_color_hex(pal->border), LV_PART_ITEMS);
+    lv_obj_set_style_border_color(keyboard, lv_color_hex(pal->accent), LV_PART_ITEMS | LV_STATE_FOCUSED);
+    lv_obj_set_style_radius(keyboard, 8, LV_PART_ITEMS);
+    lv_obj_set_style_shadow_width(keyboard, 0, LV_PART_ITEMS);
+}
+
 } // namespace
 
 void ui_keyboard_create(lv_obj_t *parent)
 {
     /* Area de digitacao */
-    lv_obj_t *ta = lv_textarea_create(parent);
-    lv_obj_set_width(ta, lv_pct(90));
-    lv_obj_set_height(ta, lv_pct(22));
-    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 40);
-    lv_textarea_set_placeholder_text(ta, "Toque para digitar...");
-    lv_textarea_set_one_line(ta, true);
-    lv_textarea_set_cursor_click_pos(ta, true);
-    lv_obj_set_style_bg_color(ta, lv_color_hex(COLOR_SURFACE), 0);
-    lv_obj_set_style_text_color(ta, lv_color_hex(COLOR_TEXT), 0);
-    lv_obj_set_style_border_width(ta, 1, 0);
-    lv_obj_set_style_border_color(ta, lv_color_hex(COLOR_BORDER), 0);
-    lv_obj_set_style_border_color(ta, lv_color_hex(COLOR_ACCENT), LV_STATE_FOCUSED);
-    lv_obj_set_style_border_width(ta, 2, LV_STATE_FOCUSED);
-    lv_obj_set_style_radius(ta, 10, 0);
-    lv_obj_set_style_pad_left(ta, 18, 0);
-    lv_obj_set_style_pad_right(ta, 18, 0);
-    lv_obj_set_style_pad_top(ta, 12, 0);
-    lv_obj_set_style_pad_bottom(ta, 12, 0);
-    lv_obj_set_style_text_color(ta, lv_color_hex(COLOR_TEXT_MUTED), LV_PART_TEXTAREA_PLACEHOLDER);
-    lv_obj_set_style_bg_color(ta, lv_color_hex(COLOR_ACCENT), LV_PART_CURSOR);
-    lv_obj_set_style_width(ta, 2, LV_PART_CURSOR);
+    kb_textarea = lv_textarea_create(parent);
+    lv_obj_set_width(kb_textarea, lv_pct(90));
+    lv_obj_set_height(kb_textarea, lv_pct(22));
+    lv_obj_align(kb_textarea, LV_ALIGN_TOP_MID, 0, 40);
+    lv_textarea_set_placeholder_text(kb_textarea, "Toque para digitar...");
+    lv_textarea_set_one_line(kb_textarea, true);
+    lv_textarea_set_cursor_click_pos(kb_textarea, true);
 
     /* Teclado virtual */
-    lv_obj_t *kb = lv_keyboard_create(parent);
-    lv_obj_set_size(kb, lv_pct(100), lv_pct(58));
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_keyboard_set_textarea(kb, ta);
-    lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_BACKGROUND), 0);
-    lv_obj_set_style_pad_all(kb, 8, 0);
-    lv_obj_set_style_pad_row(kb, 7, 0);
-    lv_obj_set_style_pad_column(kb, 7, 0);
-    lv_obj_set_style_radius(kb, 14, 0);
+    keyboard = lv_keyboard_create(parent);
+    lv_obj_set_size(keyboard, lv_pct(100), lv_pct(58));
+    lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_textarea(keyboard, kb_textarea);
+    lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
 
-    /* Estado normal das teclas, pressionado e foco tem contraste claro. */
-    lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_SURFACE), LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_SURFACE_ALT), LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_ACCENT), LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_ACCENT_SOFT), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_border_color(kb, lv_color_hex(COLOR_ACCENT), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(kb, lv_color_hex(COLOR_TEXT), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(kb, lv_color_hex(COLOR_TEXT), LV_PART_ITEMS);
-    lv_obj_set_style_text_color(kb, lv_color_white(), LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(kb, 1, LV_PART_ITEMS);
-    lv_obj_set_style_border_color(kb, lv_color_hex(COLOR_BORDER), LV_PART_ITEMS);
-    lv_obj_set_style_border_color(kb, lv_color_hex(COLOR_ACCENT), LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_obj_set_style_radius(kb, 8, LV_PART_ITEMS);
-    lv_obj_set_style_shadow_width(kb, 0, LV_PART_ITEMS);
-    accent_action_keys(kb);
+    accent_action_keys(keyboard);
+    apply_keyboard_theme();
+}
+
+void ui_keyboard_refresh_theme(void)
+{
+    apply_keyboard_theme();
 }
