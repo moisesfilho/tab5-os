@@ -29,19 +29,22 @@ bool is_action_key(const char *text)
            strcmp(text, "1#") == 0;
 }
 
-/* Colore as teclas de acao sem alterar o mapa ou o layout do teclado. */
-void keyboard_draw_part_cb(lv_event_t *event)
+/* Marca as teclas de acao com LV_STATE_CHECKED para receberem o destaque
+ * via estilo LV_PART_ITEMS | LV_STATE_CHECKED (mecanismo do LVGL 9). */
+void accent_action_keys(lv_obj_t *kb)
 {
-    lv_obj_draw_part_dsc_t *draw_dsc = lv_event_get_draw_part_dsc(event);
-    if (draw_dsc == nullptr || draw_dsc->part != LV_PART_ITEMS ||
-        draw_dsc->rect_dsc == nullptr || draw_dsc->label_dsc == nullptr) {
-        return;
-    }
-
-    if (is_action_key(draw_dsc->text)) {
-        draw_dsc->rect_dsc->bg_color = lv_color_hex(COLOR_ACCENT_SOFT);
-        draw_dsc->rect_dsc->border_color = lv_color_hex(COLOR_ACCENT);
-        draw_dsc->label_dsc->color = lv_color_hex(COLOR_TEXT);
+    const char *const *map = lv_buttonmatrix_get_map(kb);
+    uint32_t id = 0;
+    for (uint32_t i = 0; map[i] != nullptr && map[i][0] != '\0'; i++) {
+        if (map[i][0] == '\n') {
+            continue;
+        }
+        if (is_action_key(map[i])) {
+            lv_buttonmatrix_set_button_ctrl(kb, id, LV_BUTTONMATRIX_CTRL_CHECKED);
+        } else {
+            lv_buttonmatrix_clear_button_ctrl(kb, id, LV_BUTTONMATRIX_CTRL_CHECKED);
+        }
+        id++;
     }
 }
 
@@ -88,6 +91,9 @@ void ui_keyboard_create(lv_obj_t *parent)
     lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_SURFACE), LV_PART_ITEMS);
     lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_SURFACE_ALT), LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_ACCENT), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(kb, lv_color_hex(COLOR_ACCENT_SOFT), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(kb, lv_color_hex(COLOR_ACCENT), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(kb, lv_color_hex(COLOR_TEXT), LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_text_color(kb, lv_color_hex(COLOR_TEXT), LV_PART_ITEMS);
     lv_obj_set_style_text_color(kb, lv_color_white(), LV_PART_ITEMS | LV_STATE_PRESSED);
     lv_obj_set_style_border_width(kb, 1, LV_PART_ITEMS);
@@ -95,5 +101,5 @@ void ui_keyboard_create(lv_obj_t *parent)
     lv_obj_set_style_border_color(kb, lv_color_hex(COLOR_ACCENT), LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_radius(kb, 8, LV_PART_ITEMS);
     lv_obj_set_style_shadow_width(kb, 0, LV_PART_ITEMS);
-    lv_obj_add_event_cb(kb, keyboard_draw_part_cb, LV_EVENT_DRAW_PART_BEGIN, nullptr);
+    accent_action_keys(kb);
 }
