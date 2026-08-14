@@ -88,6 +88,33 @@ void apply_keyboard_theme(void)
     lv_obj_set_style_shadow_width(keyboard, 0, LV_PART_ITEMS);
 }
 
+/* Ajusta a altura do teclado e do textarea conforme a orientacao:
+ * no retrato as teclas ficam mais compactas (2/3 da altura). Os getters
+ * do LVGL 9 ja devolvem as dimensoes logicas trocadas na rotacao, entao
+ * comparar vertical x horizontal identifica o retrato de forma segura. */
+void apply_keyboard_layout(void)
+{
+    int32_t h = lv_display_get_vertical_resolution(NULL);
+    int32_t w = lv_display_get_horizontal_resolution(NULL);
+
+    if (h > w) {
+        /* Retrato (tela logica 720x1280) */
+        lv_obj_set_height(keyboard, h * 35 / 100);
+        lv_obj_set_height(kb_textarea, h * 10 / 100);
+    } else {
+        /* Paisagem (tela logica 1280x720) */
+        lv_obj_set_height(keyboard, h * 52 / 100);
+        lv_obj_set_height(kb_textarea, h * 22 / 100);
+    }
+}
+
+/* Chamado pelo display a cada mudanca de resolucao/rotacao (task LVGL). */
+void keyboard_resolution_cb(lv_event_t *event)
+{
+    (void)event;
+    apply_keyboard_layout();
+}
+
 } // namespace
 
 void ui_keyboard_create(lv_obj_t *parent)
@@ -113,6 +140,11 @@ void ui_keyboard_create(lv_obj_t *parent)
 
     accent_action_keys(keyboard);
     apply_keyboard_theme();
+
+    /* Estado inicial consistente e reacao a mudancas de orientacao. */
+    apply_keyboard_layout();
+    lv_display_add_event_cb(lv_display_get_default(), keyboard_resolution_cb,
+                            LV_EVENT_RESOLUTION_CHANGED, nullptr);
 }
 
 void ui_keyboard_refresh_theme(void)
