@@ -47,6 +47,28 @@ idf.py -p /dev/ttyACM0 monitor --no-reset
 
 > **Cold boot required**: unplug and replug the USB cable after flashing — a warm reset leaves the DSI display without image.
 
+## Code quality & CI
+
+Automated checks keep the firmware consistent and secure:
+
+- **pre-commit** — local hooks that run on every commit: `clang-format` (project C/C++ style), `cmake-lint` (CMakeLists) and `codespell` (typos, with PT-BR ignore list).
+- **GitHub Actions**:
+  - `ci.yml` — build with **ESP-IDF v5.5.5** (target `esp32p4`) + **clang-tidy** and **cppcheck** via `compile_commands.json`.
+  - `codeql.yml` — static security analysis (SAST) with **CodeQL** (C/C++), manual `idf.py` build.
+
+To enable the hooks locally:
+
+```bash
+pipx install pre-commit   # or: python3 -m venv ~/.local/share/precommit-venv
+pre-commit install
+```
+
+Useful commands:
+
+```bash
+pre-commit run --all-files   # run all hooks on all files
+```
+
 ## Usage
 
 - **Type** on the virtual keyboard (touch)
@@ -72,6 +94,11 @@ tab5-os/
 │   │   └── fonts/            # Custom Latin-1 font
 │   ├── m5stack_tab5/         # Local BSP (override of the official one)
 │   └── rtc_rx8130/           # RX8130CE RTC driver
+├── .github/workflows/        # CI: build + lint (ci.yml) and CodeQL (codeql.yml)
+├── .clang-format             # Project C/C++ style
+├── .clang-tidy               # Static lint checkers
+├── .pre-commit-config.yaml   # Local quality hooks
+├── .codespellrc              # codespell PT-BR ignore list
 └── sdkconfig.defaults
 ```
 
