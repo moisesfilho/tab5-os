@@ -3,10 +3,59 @@
 #include "ui_font.h"
 #include <string.h>
 
+/* Macros privados do LVGL, definidos apenas em lv_keyboard.c e usados nos
+ * mapas custom de teclado. Espelhados aqui para compilar fora do widget.
+ * lv_buttonmatrix_ctrl_t e enum em C++, entao o cast explicito e obrigatorio. */
+#ifndef LV_KB_BTN
+#define LV_KB_BTN(width) ((lv_buttonmatrix_ctrl_t)(LV_BUTTONMATRIX_CTRL_POPOVER | (width)))
+#endif
+#ifndef LV_KB_CTRL_FLAGS_W2
+#define LV_KB_CTRL_FLAGS_W2 ((lv_buttonmatrix_ctrl_t)(LV_KEYBOARD_CTRL_BUTTON_FLAGS | LV_BUTTONMATRIX_CTRL_WIDTH_2))
+#endif
+#ifndef LV_KEYBOARD_CTRL_BUTTON_MODE_TEXT_LOWER
+#define LV_KEYBOARD_CTRL_BUTTON_MODE_TEXT_LOWER "abc"
+#endif
+
 namespace {
 
 lv_obj_t *keyboard = nullptr;
 lv_obj_t *kb_target = nullptr;
+
+/* Pagina de acentos (modo SPECIAL, aberto pela tecla "1#"). O mecanismo
+ * nativo troca de modo por texto exato, entao "abc"/LV_SYMBOL_KEYBOARD
+ * voltam para o QWERTY e o texto nao-reconhecido e inserido no textarea.
+ * Estrutura espelhada em default_kb_map_spec (lv_keyboard.c:156-175). */
+static const char *const pt_br_map_spec[] = {
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", LV_SYMBOL_BACKSPACE, "\n",
+    "à", "á", "â", "ã", "ç", "é", "ê", "í", "ó", "ô", "õ", "ú", "\n",
+    "À", "Á", "Â", "Ã", "Ç", "É", "Ê", "Í", "Ó", "Ô", "Õ", "Ú", "\n",
+    ",", ".", ";", ":", "!", "?", "-", "_", "+", "=", "/", "@", "#", "\n",
+    LV_SYMBOL_KEYBOARD, LV_KEYBOARD_CTRL_BUTTON_MODE_TEXT_LOWER, LV_SYMBOL_LEFT, " ",
+    LV_SYMBOL_RIGHT, LV_SYMBOL_OK, ""
+};
+
+static const lv_buttonmatrix_ctrl_t pt_br_ctrl_spec[] = {
+    /* Linha 1 (11): 1..0 + backspace */
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_CTRL_FLAGS_W2,
+    /* Linha 2 (12): acentos minusculos */
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1),
+    /* Linha 3 (12): acentos maiusculos */
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1),
+    /* Linha 4 (13): pontuacao */
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    /* Linha 5 (6): teclado, abc, esquerda, espaco, direita, OK */
+    LV_KB_CTRL_FLAGS_W2, LV_KB_CTRL_FLAGS_W2,
+    LV_KB_CTRL_FLAGS_W2, LV_BUTTONMATRIX_CTRL_WIDTH_6,
+    LV_KB_CTRL_FLAGS_W2, LV_KB_CTRL_FLAGS_W2
+};
 
 bool is_action_key(const char *text)
 {
@@ -20,6 +69,7 @@ bool is_action_key(const char *text)
            strstr(text, LV_SYMBOL_RIGHT) != nullptr ||
            strstr(text, LV_SYMBOL_CLOSE) != nullptr ||
            strstr(text, LV_SYMBOL_UP) != nullptr ||
+           strstr(text, LV_SYMBOL_NEW_LINE) != nullptr ||
            strcmp(text, "abc") == 0 || strcmp(text, "ABC") == 0 ||
            strcmp(text, "1#") == 0;
 }
@@ -114,6 +164,9 @@ void ui_keyboard_create(lv_obj_t *parent)
     lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
     lv_obj_set_style_text_font(keyboard, &lv_font_montserrat_14_latin1, LV_PART_ITEMS);
+
+    /* Pagina de acentos no modo SPECIAL (aberta pela tecla "1#"). */
+    lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_SPECIAL, pt_br_map_spec, pt_br_ctrl_spec);
 
     accent_action_keys(keyboard);
     apply_keyboard_theme();
