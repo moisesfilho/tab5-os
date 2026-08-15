@@ -10,8 +10,10 @@ idf_component_register(
         "imu_reader.cpp"
         "orientation.cpp"
         "wifi_mgr.cpp"
+        "wifi_storage.cpp"
         "fonts/lv_font_montserrat_14_latin1.c"
         "fonts/lv_font_montserrat_28_latin1.c"
     INCLUDE_DIRS "." "include"
     REQUIRES lvgl m5stack_tab5 sensor_hub nvs_flash esp_wifi esp_netif esp_event
+            fatfs sdmmc
 )

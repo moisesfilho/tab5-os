@@ -23,6 +23,9 @@ CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 # C6 fica sem resposta no send_op_cond 0x107). Mesmo valor do firmware de fabrica da M5Stack.
 CONFIG_FREERTOS_HZ=1000
 
+# FATFS com LFN no SD (BSP avisa se desabilitado)
+CONFIG_FATFS_LFN_HEAP=y
+
 # WiFi do Tab5: rádio é o ESP32-C6 companion (SDIO2) via esp-hosted (esp_wifi_remote)
 CONFIG_ESP_WIFI_REMOTE_LIBRARY_HOSTED=y
 # Board Tab5: GPIOs SDIO corretos (CMD=13, CLK=12, D0=11, D1=10, D2=9, D3=8, RESET=15)

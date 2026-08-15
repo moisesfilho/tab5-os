@@ -9,6 +9,7 @@
 #include "ui_shell.h"
 #include "imu_reader.h"
 #include "wifi_mgr.h"
+#include "wifi_storage.h"
 #include "rtc_rx8130.h"
 
 static const char *TAG = "tab5_poc";
@@ -34,6 +35,18 @@ extern "C" void app_main(void)
 
     /* Liga o radio WiFi (ESP32-C6 companion via SDIO) e inicia o STA + scan */
     wifi_mgr_start();
+
+    /* Monta o SD e carrega a config WiFi salva (ssid/senha) */
+    if (wifi_storage_mount() == ESP_OK) {
+        wifi_cfg_t cfg;
+        if (wifi_storage_load(&cfg) == ESP_OK) {
+            ESP_LOGI(TAG, "wifi.cfg: ssid=\"%s\" senha=%zu chars", cfg.ssid, strlen(cfg.password));
+        } else {
+            memset(&cfg, 0, sizeof(cfg));
+            wifi_storage_save(&cfg);
+            ESP_LOGW(TAG, "wifi.cfg nao existia - criado vazio (Fase 10 conecta com config salva)");
+        }
+    }
 
     bsp_display_lock(0);
 
