@@ -3,6 +3,7 @@ idf_component_register(
         "ui_shell.cpp"
         "ui_desktop.cpp"
         "ui_notas.cpp"
+        "ui_wifi.cpp"
         "ui_keyboard.cpp"
         "ui_status.cpp"
         "ui_theme.cpp"

@@ -23,6 +23,9 @@ static wifi_cfg_t s_cfg;
 static bool s_has_cfg = false;
 static bool s_connected = false;
 static int s_retry_delay_ms = CONNECT_RETRY_BASE_MS;
+static wifi_scan_cb_t s_scan_cb = NULL;
+static void *s_scan_cb_ctx = NULL;
+static char s_connected_ssid[33] = "";
 
 static void log_scan_results(void)
 {
@@ -34,6 +37,9 @@ static void log_scan_results(void)
         ESP_LOGI(TAG, "scan: nenhum AP encontrado");
         return;
     }
+    if (ap_num > WIFI_SCAN_MAX_APS) {
+        ap_num = WIFI_SCAN_MAX_APS;
+    }
 
     wifi_ap_record_t *aps = (wifi_ap_record_t *)calloc(ap_num, sizeof(wifi_ap_record_t));
     if (aps == NULL) {
@@ -43,6 +49,13 @@ static void log_scan_results(void)
         for (int i = 0; i < ap_num; i++) {
             ESP_LOGI(TAG, "scan[%d] ssid=\"%s\" rssi=%d ch=%d auth=%d", i, (char *)aps[i].ssid, aps[i].rssi,
                      aps[i].primary, (int)aps[i].authmode);
+        }
+        if (s_scan_cb != NULL) {
+            wifi_scan_cb_t cb = s_scan_cb;
+            void *ctx = s_scan_cb_ctx;
+            s_scan_cb = NULL;
+            s_scan_cb_ctx = NULL;
+            cb(aps, ap_num, ctx);
         }
     }
     free(aps);
@@ -111,9 +124,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_i
         s_connected = true;
         s_retry_delay_ms = CONNECT_RETRY_BASE_MS;
         xTimerStop(s_retry_timer, 0);
+        if (event_data != NULL) {
+            const wifi_event_sta_connected_t *ev = (const wifi_event_sta_connected_t *)event_data;
+            snprintf(s_connected_ssid, sizeof(s_connected_ssid), "%s", ev->ssid);
+        }
         break;
     case WIFI_EVENT_STA_DISCONNECTED:
         s_connected = false;
+        s_connected_ssid[0] = '\0';
         ESP_LOGW(TAG, "desconectado do AP");
         schedule_retry();
         break;
@@ -145,6 +163,40 @@ esp_err_t wifi_mgr_connect(const char *ssid, const char *password)
 
     xTimerStop(s_retry_timer, 0);
     try_connect();
+    return ESP_OK;
+}
+
+esp_err_t wifi_mgr_scan(wifi_scan_cb_t cb, void *ctx)
+{
+    s_scan_cb = cb;
+    s_scan_cb_ctx = ctx;
+    esp_err_t err = esp_wifi_scan_start(NULL, false);
+    if (err != ESP_OK) {
+        s_scan_cb = NULL;
+        s_scan_cb_ctx = NULL;
+    }
+    return err;
+}
+
+esp_err_t wifi_mgr_get_status(wifi_status_t *status)
+{
+    if (status == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    status->connected = s_connected;
+    snprintf(status->ssid, sizeof(status->ssid), "%s", s_connected_ssid);
+    if (s_connected) {
+        esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        if (netif != NULL) {
+            esp_netif_ip_info_t ip;
+            if (esp_netif_get_ip_info(netif, &ip) == ESP_OK) {
+                snprintf(status->ip, sizeof(status->ip), IPSTR, IP2STR(&ip.ip));
+            }
+        }
+    }
+    if (status->ip[0] == '\0') {
+        snprintf(status->ip, sizeof(status->ip), "-");
+    }
     return ESP_OK;
 }
 

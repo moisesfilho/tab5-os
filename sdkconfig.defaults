@@ -1,6 +1,16 @@
 CONFIG_IDF_TARGET="esp32p4"
 CONFIG_LV_DPI_DEF=130
 
+# LVGL aloca via malloc do sistema (heap com 32MB PSRAM). O default
+# LV_USE_BUILTIN_MALLOC usa pool interno de 64KB que nao comporta 3 telas
+# (desktop + notas + wifi): lv_obj_create retorna NULL -> assert trava em
+# lv_obj_clean (loop WDT). Mesma config do firmware de fabrica da M5Stack.
+CONFIG_LV_USE_CLIB_MALLOC=y
+
+# Stack da task main: criacao da UI (desktop+notas+wifi) usa pilha profunda
+# de LVGL; 3584 default corrompia o heap e lv_obj_create retornava NULL
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
 # Tab5 usa silício ESP32-P4 rev v1.3 (IDF 5.5.5 default exige rev >= 3.0)
 CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
 CONFIG_ESP32P4_REV_MIN_100=y

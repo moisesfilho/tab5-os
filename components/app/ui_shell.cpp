@@ -3,6 +3,7 @@
 #include "ui_keyboard.h"
 #include "ui_desktop.h"
 #include "ui_notas.h"
+#include "ui_wifi.h"
 #include "ui_theme.h"
 #include "ui_font.h"
 
@@ -10,6 +11,7 @@ namespace {
 
 lv_obj_t *desktop_scr = nullptr;
 lv_obj_t *notas_scr = nullptr;
+lv_obj_t *wifi_scr = nullptr;
 lv_obj_t *splash = nullptr;
 lv_obj_t *splash_label = nullptr;
 
@@ -56,6 +58,7 @@ void ui_shell_init(void)
 
     ui_desktop_create(desktop_scr);
     notas_scr = ui_notas_create();
+    wifi_scr = ui_wifi_create();
 
     splash_start();
 }
@@ -72,10 +75,23 @@ void ui_shell_close_notas(void)
     lv_disp_load_scr(desktop_scr);
 }
 
+void ui_shell_open_wifi(void)
+{
+    ui_keyboard_hide();
+    lv_disp_load_scr(wifi_scr);
+}
+
+void ui_shell_close_wifi(void)
+{
+    ui_keyboard_hide();
+    lv_disp_load_scr(desktop_scr);
+}
+
 void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
     ui_notas_refresh_theme();
+    ui_wifi_refresh_theme();
 
     if (splash != nullptr) {
         lv_obj_set_style_bg_color(splash, lv_color_hex(ui_theme_get()->background), 0);
