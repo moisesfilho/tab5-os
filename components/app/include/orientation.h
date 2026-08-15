@@ -3,6 +3,7 @@
 #include "lvgl.h"
 
 void orientation_reset(void);
+void orientation_set_current(lv_disp_rotation_t rot);
 
 /**
  * @brief Atualiza a orientacao a partir do vetor gravidade (unidade G).

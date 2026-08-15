@@ -15,6 +15,13 @@ void orientation_reset(void)
     s_stable = 0;
 }
 
+void orientation_set_current(lv_disp_rotation_t rot)
+{
+    s_rotation = rot;
+    s_target = rot;
+    s_stable = 0;
+}
+
 /* Vetor gravidade (g = -acce) projetado no plano da tela.
  * idx: 0 = gravidade p/ +Y, 1 = +X, 2 = -Y, 3 = -X */
 static lv_disp_rotation_t gravity_to_rotation(float gx, float gy)

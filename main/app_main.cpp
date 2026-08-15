@@ -31,12 +31,7 @@ extern "C" void app_main(void)
     /* Semeia o relogio do sistema a partir do RTC RX8130CE (I2C do BSP) */
     rtc_rx8130_init();
 
-    imu_reader_start(disp);
-
-    /* Liga o radio WiFi (ESP32-C6 companion via SDIO) e inicia o STA + scan */
-    wifi_mgr_start();
-
-    /* Monta o SD e carrega a config WiFi salva (ssid/senha) */
+    /* Monta o SD para restaurar configs persistidas (display e wifi) */
     if (wifi_storage_mount() == ESP_OK) {
         wifi_cfg_t cfg;
         if (wifi_storage_load(&cfg) == ESP_OK) {
@@ -44,9 +39,14 @@ extern "C" void app_main(void)
         } else {
             memset(&cfg, 0, sizeof(cfg));
             wifi_storage_save(&cfg);
-            ESP_LOGW(TAG, "wifi.cfg nao existia - criado vazio (Fase 10 conecta com config salva)");
+            ESP_LOGW(TAG, "wifi.cfg nao existia - criado vazio");
         }
     }
+
+    imu_reader_start(disp);
+
+    /* Liga o radio WiFi (ESP32-C6 companion via SDIO) e inicia o STA + scan */
+    wifi_mgr_start();
 
     bsp_display_lock(0);
 

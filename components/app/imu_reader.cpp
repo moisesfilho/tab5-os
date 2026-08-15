@@ -7,6 +7,7 @@
 #include "sensor_type.h"
 #include "orientation.h"
 #include "ui_status.h"
+#include "display_storage.h"
 
 static const char *TAG = "tab5_imu";
 
@@ -53,13 +54,24 @@ static void rotation_timer_cb(lv_timer_t *timer)
     if (target != lv_display_get_rotation(disp)) {
         lv_display_set_rotation(disp, target);
         ui_status_set_rotation(target);
-        ESP_LOGI(TAG, "rotacao aplicada -> %d", (int)target);
+        display_storage_save_rotation(target);
+        ESP_LOGI(TAG, "rotacao aplicada -> %d (salva no SD)", (int)target);
     }
 }
 
 esp_err_t imu_reader_start(lv_display_t *disp)
 {
     s_disp = disp;
+
+    /* Tenta carregar a ultima orientacao salva no SD card */
+    lv_disp_rotation_t saved_rot = LV_DISPLAY_ROTATION_0;
+    if (display_storage_load_rotation(&saved_rot) == ESP_OK) {
+        s_target_rot = saved_rot;
+        orientation_set_current(saved_rot);
+        lv_display_set_rotation(disp, saved_rot);
+        ui_status_set_rotation(saved_rot);
+        ESP_LOGI(TAG, "orientacao inicial recuperada do SD: %d", (int)saved_rot);
+    }
 
     const bsp_sensor_config_t cfg = {
         .type = IMU_ID, .mode = MODE_POLLING, .period = 100, /* 10 Hz */

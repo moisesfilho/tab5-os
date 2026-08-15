@@ -6,20 +6,15 @@
 
 namespace {
 
-lv_obj_t *status_label = nullptr;
 lv_obj_t *wifi_icon_btn = nullptr;
 lv_obj_t *wifi_icon_label = nullptr;
 lv_timer_t *wifi_status_timer = nullptr;
 bool s_last_wifi_connected = false;
 
-/* Atualiza o tema do badge de rotacao e do icone de status Wi-Fi */
+/* Atualiza o tema do icone de status Wi-Fi */
 void apply_status_theme(void)
 {
     const ui_palette_t *pal = ui_theme_get();
-
-    if (status_label != nullptr) {
-        lv_obj_set_style_text_color(status_label, lv_color_hex(pal->text), 0);
-    }
 
     if (wifi_icon_label != nullptr) {
         lv_obj_set_style_text_color(wifi_icon_label,
@@ -59,7 +54,7 @@ void wifi_icon_click_cb(lv_event_t *event)
 
 void ui_status_init(lv_obj_t *parent)
 {
-    /* Icone Wi-Fi interativo */
+    /* Icone Wi-Fi interativo alinhado a esquerda do relogio */
     wifi_icon_btn = lv_obj_create(parent);
     lv_obj_set_size(wifi_icon_btn, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_opa(wifi_icon_btn, LV_OPA_TRANSP, 0);
@@ -70,18 +65,13 @@ void ui_status_init(lv_obj_t *parent)
     lv_obj_set_style_pad_right(wifi_icon_btn, 6, 0);
     lv_obj_set_style_pad_top(wifi_icon_btn, 4, 0);
     lv_obj_set_style_pad_bottom(wifi_icon_btn, 4, 0);
+    lv_obj_set_style_margin_right(wifi_icon_btn, 6, 0);
     lv_obj_clear_flag(wifi_icon_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(wifi_icon_btn, wifi_icon_click_cb, LV_EVENT_CLICKED, nullptr);
 
     wifi_icon_label = lv_label_create(wifi_icon_btn);
     lv_label_set_text(wifi_icon_label, LV_SYMBOL_WIFI);
     lv_obj_set_style_text_font(wifi_icon_label, &lv_font_montserrat_14_latin1, 0);
-
-    /* Badge de rotacao */
-    status_label = lv_label_create(parent);
-    lv_label_set_text(status_label, "0°");
-    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_set_style_margin_right(status_label, 10, 0);
 
     apply_status_theme();
 
@@ -96,23 +86,5 @@ void ui_status_refresh_theme(void)
 
 void ui_status_set_rotation(lv_disp_rotation_t rot)
 {
-    if (status_label == nullptr) {
-        return;
-    }
-
-    switch (rot) {
-    case LV_DISPLAY_ROTATION_90:
-        lv_label_set_text(status_label, "90°");
-        break;
-    case LV_DISPLAY_ROTATION_180:
-        lv_label_set_text(status_label, "180°");
-        break;
-    case LV_DISPLAY_ROTATION_270:
-        lv_label_set_text(status_label, "270°");
-        break;
-    case LV_DISPLAY_ROTATION_0:
-    default:
-        lv_label_set_text(status_label, "0°");
-        break;
-    }
+    (void)rot;
 }
