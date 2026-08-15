@@ -2,6 +2,8 @@ dependencies:
   idf: ">=5.4"
   espressif/m5stack_tab5: "^1.2.0"
   espressif/esp_lvgl_port: "^2"
+  espressif/esp_hosted: "^2.11.0"
+  espressif/esp_wifi_remote: "^1.6.4"
 
 overrides:
   - espressif/m5stack_tab5:

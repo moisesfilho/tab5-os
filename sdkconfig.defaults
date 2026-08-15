@@ -11,3 +11,25 @@ CONFIG_SPIRAM_USE_MALLOC=y
 
 # Flash real do Tab5: 16MB (default do IDF é 2MB)
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# Particao factory de 2MB (WiFi + UI cresceram alem do default de 1MB)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Console via USB-Serial-JTAG (Tab5 nao tem ponte USB-UART; UART fisico GPIO 38/37 nao conectado)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# FreeRTOS tick 1kHz: esp_hosted recomenda 1000 (com 100 o SDIO fica com jitter e o
+# C6 fica sem resposta no send_op_cond 0x107). Mesmo valor do firmware de fabrica da M5Stack.
+CONFIG_FREERTOS_HZ=1000
+
+# WiFi do Tab5: rádio é o ESP32-C6 companion (SDIO2) via esp-hosted (esp_wifi_remote)
+CONFIG_ESP_WIFI_REMOTE_LIBRARY_HOSTED=y
+# Board Tab5: GPIOs SDIO corretos (CMD=13, CLK=12, D0=11, D1=10, D2=9, D3=8, RESET=15)
+CONFIG_ESP32P4_TAB5_C6_BOARD=y
+# Reset do C6: ACTIVE_HIGH no esp_hosted 2.x. O 1.4.0 (UserDemo M5Stack) usava #ifdef
+# (ACTIVE sempre = HIGH); o 2.x usa #if e com ACTIVE_LOW a sequencia ACTIVE->INACTIVE->ACTIVE
+# termina com o C6 em reset (send_op_cond 0x107). ACTIVE_HIGH reproduz o comportamento do 1.4.0.
+CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=y
+# Mempool SDIO em SPIRAM (RAM interna DMA-capable do P4 é escassa)
+CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y
