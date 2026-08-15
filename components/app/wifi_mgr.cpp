@@ -1,5 +1,7 @@
 #include "wifi_mgr.h"
+#include "wifi_storage.h"
 #include <stdlib.h>
+#include <string.h>
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -12,8 +14,15 @@
 static const char *TAG = "tab5_wifi";
 
 #define SCAN_PERIOD_MS 30000
+#define CONNECT_RETRY_BASE_MS 2000
+#define CONNECT_RETRY_MAX_MS 30000
 
 static TimerHandle_t s_scan_timer = NULL;
+static TimerHandle_t s_retry_timer = NULL;
+static wifi_cfg_t s_cfg;
+static bool s_has_cfg = false;
+static bool s_connected = false;
+static int s_retry_delay_ms = CONNECT_RETRY_BASE_MS;
 
 static void log_scan_results(void)
 {
@@ -39,12 +48,59 @@ static void log_scan_results(void)
     free(aps);
 }
 
+static void try_connect(void)
+{
+    if (!s_has_cfg || s_cfg.ssid[0] == '\0') {
+        return;
+    }
+    wifi_config_t wcfg = {0};
+    strlcpy((char *)wcfg.sta.ssid, s_cfg.ssid, sizeof(wcfg.sta.ssid));
+    strlcpy((char *)wcfg.sta.password, s_cfg.password, sizeof(wcfg.sta.password));
+    if (esp_wifi_set_config(WIFI_IF_STA, &wcfg) != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_set_config falhou");
+        return;
+    }
+    ESP_LOGI(TAG, "conectando a \"%s\"", s_cfg.ssid);
+    esp_wifi_connect();
+}
+
+static void schedule_retry(void)
+{
+    if (!s_has_cfg) {
+        return;
+    }
+    xTimerChangePeriod(s_retry_timer, pdMS_TO_TICKS(s_retry_delay_ms), 0);
+    xTimerStart(s_retry_timer, 0);
+    s_retry_delay_ms *= 2;
+    if (s_retry_delay_ms > CONNECT_RETRY_MAX_MS) {
+        s_retry_delay_ms = CONNECT_RETRY_MAX_MS;
+    }
+}
+
+static void retry_timer_cb(TimerHandle_t timer)
+{
+    ESP_LOGI(TAG, "reconectando (backoff %d ms)", s_retry_delay_ms);
+    esp_wifi_connect();
+}
+
+static void ip_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data)
+{
+    if (event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        ESP_LOGI(TAG, "IP obtido: " IPSTR, IP2STR(&event->ip_info.ip));
+    }
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     switch (event_id) {
     case WIFI_EVENT_STA_START:
         ESP_LOGI(TAG, "STA iniciado");
-        esp_wifi_scan_start(NULL, false);
+        if (s_has_cfg) {
+            try_connect();
+        } else {
+            esp_wifi_scan_start(NULL, false);
+        }
         break;
     case WIFI_EVENT_SCAN_DONE:
         ESP_LOGI(TAG, "scan concluido");
@@ -52,9 +108,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_i
         break;
     case WIFI_EVENT_STA_CONNECTED:
         ESP_LOGI(TAG, "conectado ao AP");
+        s_connected = true;
+        s_retry_delay_ms = CONNECT_RETRY_BASE_MS;
+        xTimerStop(s_retry_timer, 0);
         break;
     case WIFI_EVENT_STA_DISCONNECTED:
-        ESP_LOGI(TAG, "desconectado do AP");
+        s_connected = false;
+        ESP_LOGW(TAG, "desconectado do AP");
+        schedule_retry();
         break;
     default:
         break;
@@ -63,12 +124,41 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_i
 
 static void scan_timer_cb(TimerHandle_t timer)
 {
-    esp_wifi_scan_start(NULL, false);
+    if (!s_has_cfg && !s_connected) {
+        esp_wifi_scan_start(NULL, false);
+    }
+}
+
+esp_err_t wifi_mgr_connect(const char *ssid, const char *password)
+{
+    if (ssid == NULL || ssid[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    snprintf(s_cfg.ssid, sizeof(s_cfg.ssid), "%s", ssid);
+    snprintf(s_cfg.password, sizeof(s_cfg.password), "%s", password != NULL ? password : "");
+    s_has_cfg = true;
+
+    if (wifi_storage_mount() == ESP_OK) {
+        wifi_storage_save(&s_cfg);
+        ESP_LOGI(TAG, "config salva no SD");
+    }
+
+    xTimerStop(s_retry_timer, 0);
+    try_connect();
+    return ESP_OK;
 }
 
 esp_err_t wifi_mgr_start(void)
 {
     ESP_RETURN_ON_ERROR(bsp_feature_enable(BSP_FEATURE_WIFI, true), TAG, "falha ao ligar radio WiFi");
+
+    /* Carrega a config salva no SD (se existir) para conexao automatica */
+    if (wifi_storage_mount() == ESP_OK && wifi_storage_load(&s_cfg) == ESP_OK) {
+        s_has_cfg = s_cfg.ssid[0] != '\0';
+        if (s_has_cfg) {
+            ESP_LOGI(TAG, "config carregada: ssid=\"%s\"", s_cfg.ssid);
+        }
+    }
 
     ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "esp_netif_init failed");
     ESP_RETURN_ON_ERROR(esp_event_loop_create_default(), TAG, "event loop create failed");
@@ -79,12 +169,15 @@ esp_err_t wifi_mgr_start(void)
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "set mode failed");
     ESP_RETURN_ON_ERROR(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL), TAG,
                         "registro WIFI_EVENT falhou");
+    ESP_RETURN_ON_ERROR(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, ip_event_handler, NULL), TAG,
+                        "registro IP_EVENT falhou");
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "esp_wifi_start failed");
 
     s_scan_timer = xTimerCreate("wifi_scan", pdMS_TO_TICKS(SCAN_PERIOD_MS), pdTRUE, NULL, scan_timer_cb);
     if (s_scan_timer != NULL) {
         xTimerStart(s_scan_timer, 0);
     }
+    s_retry_timer = xTimerCreate("wifi_retry", pdMS_TO_TICKS(CONNECT_RETRY_BASE_MS), pdFALSE, NULL, retry_timer_cb);
 
     ESP_LOGI(TAG, "WiFi iniciado (radio C6 via SDIO)");
     return ESP_OK;
