@@ -1,0 +1,29 @@
+# Estilo do projeto (espelha o estilo atual do código):
+#   - indentação 4 espaços
+#   - chave de função na linha seguinte (Allman)
+#   - chave de if/for/while na mesma linha
+#   - ponteiro alinhado à esquerda (int *x)
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+# clang-format: Right = asterisco junto ao NOME (int *x), que é o estilo
+# do projeto; Left = junto ao TIPO (int* x).
+PointerAlignment: Right
+DerivePointerAlignment: false
+SortIncludes: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: true
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  BeforeLambdaBody: false
+  BeforeWhile: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+NamespaceIndentation: None

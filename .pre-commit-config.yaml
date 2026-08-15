@@ -1,0 +1,53 @@
+# Hooks de qualidade local (espelham o padrão do espressif/esp-idf).
+# Instalar: pip install pre-commit && pre-commit install
+#
+# Vendido/gerado não é formatado nem alterado pelos hooks:
+#   - components/m5stack_tab5   (BSP local vendido, com checksums)
+#   - components/rtc_rx8130     (driver RTC de terceiros)
+#   - components/app/fonts/     (fontes geradas pelo conversor LVGL)
+#   - managed_components/       (componentes gerenciados)
+exclude: >
+  (?x)^(
+    components/m5stack_tab5/|
+    components/rtc_rx8130/|
+    components/app/fonts/|
+    managed_components/
+  )
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+
+  # Formatação C/C++ (clang-format; a Espressif usa astyle_py, mas
+  # clang-format é o padrão da comunidade e funciona com VS Code/SonarLint)
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v18.1.8
+    hooks:
+      - id: clang-format
+        types_or: [c, c++]
+        # BSP local vendido (components/m5stack_tab5) não é formatado
+        exclude: ^components/m5stack_tab5/
+
+  # Lint de arquivos CMake (CMakeLists.txt / .cmake)
+  - repo: https://github.com/cheshirekow/cmake-format-precommit
+    rev: v0.6.13
+    hooks:
+      - id: cmake-lint
+        exclude: ^components/m5stack_tab5/
+
+  # Typos em comentários/strings
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        args: ["--skip=*build*,*managed_components*,*m5stack_tab5*"]
+        additional_dependencies:
+          - tomli

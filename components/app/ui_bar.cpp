@@ -75,8 +75,7 @@ void menu_header_create(const char *text)
 
 /* Item do menu: linha clicavel com label. `chevron` adiciona uma seta
  * discreta a direita (usa LV_SYMBOL_RIGHT, coberto pela fonte default). */
-void menu_row_create(const char *text, lv_event_cb_t cb,
-                     lv_obj_t **out_row, lv_obj_t **out_label, bool chevron)
+void menu_row_create(const char *text, lv_event_cb_t cb, lv_obj_t **out_row, lv_obj_t **out_label, bool chevron)
 {
     lv_obj_t *row = lv_obj_create(menu_panel);
     lv_obj_set_width(row, lv_pct(100));

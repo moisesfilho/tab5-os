@@ -166,8 +166,7 @@ lv_obj_t *ui_notas_create(void)
     lv_group_add_obj(notas_group, notas_ta);
 
     apply_notas_layout();
-    lv_display_add_event_cb(lv_display_get_default(), notas_resolution_cb,
-                            LV_EVENT_RESOLUTION_CHANGED, nullptr);
+    lv_display_add_event_cb(lv_display_get_default(), notas_resolution_cb, LV_EVENT_RESOLUTION_CHANGED, nullptr);
 
     apply_notas_theme();
 

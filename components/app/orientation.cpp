@@ -2,7 +2,7 @@
 #include <math.h>
 
 #define ORIENT_FLAT_THRESHOLD 0.45f /* gravidade no plano da tela abaixo disso = deitado */
-#define ORIENT_DEBOUNCE 5            /* leituras consecutivas antes de trocar */
+#define ORIENT_DEBOUNCE 5           /* leituras consecutivas antes de trocar */
 
 static lv_disp_rotation_t s_rotation = LV_DISPLAY_ROTATION_0;
 static lv_disp_rotation_t s_target = LV_DISPLAY_ROTATION_0;

@@ -7,15 +7,15 @@ namespace {
 
 /* Ordem dos campos: background, surface, surface_alt, border, accent,
  * accent_soft, text, text_muted (posicional, compativel com C++11). */
+/* clang-format off (tabela 2x4, posicional) */
 const ui_palette_t PALETTE_DARK = {
-    0x10141C, 0x1A2130, 0x202A3D, 0x2A3450,
-    0x3B82F6, 0x263E68, 0xE7ECF5, 0x8491A8,
+    0x10141C, 0x1A2130, 0x202A3D, 0x2A3450, 0x3B82F6, 0x263E68, 0xE7ECF5, 0x8491A8,
 };
 
 const ui_palette_t PALETTE_LIGHT = {
-    0xF2F4F8, 0xFFFFFF, 0xE9EDF4, 0xD7DCE5,
-    0x3B82F6, 0xD6E4FB, 0x1F2430, 0x6B7385,
+    0xF2F4F8, 0xFFFFFF, 0xE9EDF4, 0xD7DCE5, 0x3B82F6, 0xD6E4FB, 0x1F2430, 0x6B7385,
 };
+/* clang-format on */
 
 bool theme_is_dark = true;
 

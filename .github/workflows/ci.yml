@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (ESP-IDF v5.5.1 / esp32p4)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: esp-idf build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          # >=5.5.3 obrigatório (bug do componente usb ^1 com HAL do 5.5+)
+          esp_idf_version: v5.5.5
+          target: esp32p4
+          path: '.'
+
+  lint:
+    name: Lint (clang-tidy + cppcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ESP-IDF
+        uses: espressif/install-esp-idf-action@v1
+        with:
+          version: v5.5.5
+
+      # Gera build/compile_commands.json (base p/ clang-tidy e cppcheck)
+      - name: Configure + build (compile db)
+        run: |
+          idf.py build
+
+      - name: Install lint tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy cppcheck
+
+      - name: clang-tidy (app code only)
+        run: |
+          set +e
+          clang-tidy -p build \
+            --header-filter='components/app/' \
+            main/app_main.cpp \
+            components/app/*.cpp 2>&1 | tee clang-tidy.log
+          if grep -qE 'error:|warning:' clang-tidy.log; then
+            echo "::error::clang-tidy encontrou problemas — ver clang-tidy.log"
+            exit 1
+          fi
+
+      - name: cppcheck (via compile db)
+        run: |
+          cppcheck --project=build/compile_commands.json \
+            --enable=warning,performance,portability \
+            --suppress=missingIncludeSystem \
+            --error-exitcode=1 \
+            --inline-suppr
+
+      - name: Upload lint logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-logs
+          path: |
+            clang-tidy.log

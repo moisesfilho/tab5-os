@@ -25,37 +25,86 @@ lv_obj_t *kb_target = nullptr;
  * nativo troca de modo por texto exato, entao "abc"/LV_SYMBOL_KEYBOARD
  * voltam para o QWERTY e o texto nao-reconhecido e inserido no textarea.
  * Estrutura espelhada em default_kb_map_spec (lv_keyboard.c:156-175). */
-static const char *const pt_br_map_spec[] = {
-    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", LV_SYMBOL_BACKSPACE, "\n",
-    "à", "á", "â", "ã", "ç", "é", "ê", "í", "ó", "ô", "õ", "ú", "\n",
-    "À", "Á", "Â", "Ã", "Ç", "É", "Ê", "Í", "Ó", "Ô", "Õ", "Ú", "\n",
-    ",", ".", ";", ":", "!", "?", "-", "_", "+", "=", "/", "@", "#", "\n",
-    LV_SYMBOL_KEYBOARD, LV_KEYBOARD_CTRL_BUTTON_MODE_TEXT_LOWER, LV_SYMBOL_LEFT, " ",
-    LV_SYMBOL_RIGHT, LV_SYMBOL_OK, ""
-};
+/* clang-format off (tabela espelha as linhas do teclado na tela) */
+static const char *const pt_br_map_spec[] = {"1",
+                                             "2",
+                                             "3",
+                                             "4",
+                                             "5",
+                                             "6",
+                                             "7",
+                                             "8",
+                                             "9",
+                                             "0",
+                                             LV_SYMBOL_BACKSPACE,
+                                             "\n",
+                                             "à",
+                                             "á",
+                                             "â",
+                                             "ã",
+                                             "ç",
+                                             "é",
+                                             "ê",
+                                             "í",
+                                             "ó",
+                                             "ô",
+                                             "õ",
+                                             "ú",
+                                             "\n",
+                                             "À",
+                                             "Á",
+                                             "Â",
+                                             "Ã",
+                                             "Ç",
+                                             "É",
+                                             "Ê",
+                                             "Í",
+                                             "Ó",
+                                             "Ô",
+                                             "Õ",
+                                             "Ú",
+                                             "\n",
+                                             ",",
+                                             ".",
+                                             ";",
+                                             ":",
+                                             "!",
+                                             "?",
+                                             "-",
+                                             "_",
+                                             "+",
+                                             "=",
+                                             "/",
+                                             "@",
+                                             "#",
+                                             "\n",
+                                             LV_SYMBOL_KEYBOARD,
+                                             LV_KEYBOARD_CTRL_BUTTON_MODE_TEXT_LOWER,
+                                             LV_SYMBOL_LEFT,
+                                             " ",
+                                             LV_SYMBOL_RIGHT,
+                                             LV_SYMBOL_OK,
+                                             ""};
+/* clang-format on */
 
+/* clang-format off (controle espelha as larguras das linhas do teclado) */
 static const lv_buttonmatrix_ctrl_t pt_br_ctrl_spec[] = {
     /* Linha 1 (11): 1..0 + backspace */
-    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
-    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
-    LV_KB_CTRL_FLAGS_W2,
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_CTRL_FLAGS_W2,
     /* Linha 2 (12): acentos minusculos */
-    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
-    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
-    LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
     /* Linha 3 (12): acentos maiusculos */
-    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
-    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
-    LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
     /* Linha 4 (13): pontuacao */
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
     LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
-    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
-    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
     /* Linha 5 (6): teclado, abc, esquerda, espaco, direita, OK */
-    LV_KB_CTRL_FLAGS_W2, LV_KB_CTRL_FLAGS_W2,
-    LV_KB_CTRL_FLAGS_W2, LV_BUTTONMATRIX_CTRL_WIDTH_6,
-    LV_KB_CTRL_FLAGS_W2, LV_KB_CTRL_FLAGS_W2
-};
+    LV_KB_CTRL_FLAGS_W2, LV_KB_CTRL_FLAGS_W2, LV_KB_CTRL_FLAGS_W2, LV_BUTTONMATRIX_CTRL_WIDTH_6, LV_KB_CTRL_FLAGS_W2,
+    LV_KB_CTRL_FLAGS_W2};
+/* clang-format on */
 
 bool is_action_key(const char *text)
 {
@@ -63,14 +112,10 @@ bool is_action_key(const char *text)
         return false;
     }
 
-    return strstr(text, LV_SYMBOL_BACKSPACE) != nullptr ||
-           strstr(text, LV_SYMBOL_OK) != nullptr ||
-           strstr(text, LV_SYMBOL_LEFT) != nullptr ||
-           strstr(text, LV_SYMBOL_RIGHT) != nullptr ||
-           strstr(text, LV_SYMBOL_CLOSE) != nullptr ||
-           strstr(text, LV_SYMBOL_UP) != nullptr ||
-           strstr(text, LV_SYMBOL_NEW_LINE) != nullptr ||
-           strcmp(text, "abc") == 0 || strcmp(text, "ABC") == 0 ||
+    return strstr(text, LV_SYMBOL_BACKSPACE) != nullptr || strstr(text, LV_SYMBOL_OK) != nullptr ||
+           strstr(text, LV_SYMBOL_LEFT) != nullptr || strstr(text, LV_SYMBOL_RIGHT) != nullptr ||
+           strstr(text, LV_SYMBOL_CLOSE) != nullptr || strstr(text, LV_SYMBOL_UP) != nullptr ||
+           strstr(text, LV_SYMBOL_NEW_LINE) != nullptr || strcmp(text, "abc") == 0 || strcmp(text, "ABC") == 0 ||
            strcmp(text, "1#") == 0;
 }
 
@@ -177,8 +222,7 @@ void ui_keyboard_create(lv_obj_t *parent)
     lv_obj_add_event_cb(keyboard, keyboard_cancel_cb, LV_EVENT_CANCEL, nullptr);
 
     apply_keyboard_layout();
-    lv_display_add_event_cb(lv_display_get_default(), keyboard_resolution_cb,
-                            LV_EVENT_RESOLUTION_CHANGED, nullptr);
+    lv_display_add_event_cb(lv_display_get_default(), keyboard_resolution_cb, LV_EVENT_RESOLUTION_CHANGED, nullptr);
 }
 
 void ui_keyboard_attach(lv_obj_t *ta)

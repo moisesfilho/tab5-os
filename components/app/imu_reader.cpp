@@ -62,14 +62,11 @@ esp_err_t imu_reader_start(lv_display_t *disp)
     s_disp = disp;
 
     const bsp_sensor_config_t cfg = {
-        .type = IMU_ID,
-        .mode = MODE_POLLING,
-        .period = 100, /* 10 Hz */
+        .type = IMU_ID, .mode = MODE_POLLING, .period = 100, /* 10 Hz */
     };
 
     ESP_RETURN_ON_ERROR(bsp_sensor_init(&cfg, &s_imu), TAG, "bsp_sensor_init failed");
-    ESP_RETURN_ON_ERROR(iot_sensor_handler_register(s_imu, imu_event_handler, NULL), TAG,
-                        "handler register failed");
+    ESP_RETURN_ON_ERROR(iot_sensor_handler_register(s_imu, imu_event_handler, NULL), TAG, "handler register failed");
     ESP_RETURN_ON_ERROR(iot_sensor_start(s_imu), TAG, "sensor start failed");
 
     lv_timer_create(rotation_timer_cb, 150, disp);

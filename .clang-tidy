@@ -1,0 +1,18 @@
+---
+# Checkers do clang-tidy usados no CI (lint estático).
+# Set conservador p/ firmware embarcado: sem WarningsAsErrors para
+# não bloquear o build em false positives do toolchain RISC-V.
+Checks: >
+  clang-diagnostic-*,
+  bugprone-*,
+  performance-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-named-parameter,
+  -readability-function-cognitive-complexity
+WarningsAsErrors: ''
+HeaderFilterRegex: 'components/app/'
+FormatStyle: none
