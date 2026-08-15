@@ -45,8 +45,8 @@ void ta_click_cb(lv_event_t *event)
     ui_keyboard_attach(notas_ta);
 }
 
-/* O textarea encosta na barra do app (janela maximizada), com margem
- * de 12px apenas na parte inferior. */
+/* O textarea encosta na barra do app (janela maximizada), reduzindo
+ * seu tamanho quando o teclado virtual estiver aberto. */
 void apply_notas_layout(void)
 {
     if (notas_ta == nullptr) {
@@ -54,7 +54,11 @@ void apply_notas_layout(void)
     }
 
     int32_t h = lv_display_get_vertical_resolution(NULL);
-    lv_obj_set_height(notas_ta, h - 2 * UI_BAR_HEIGHT - 12);
+    int32_t kb_h = ui_keyboard_is_visible() ? ui_keyboard_get_height() : 0;
+    lv_obj_set_height(notas_ta, h - 2 * UI_BAR_HEIGHT - kb_h - 12);
+    if (ui_keyboard_is_visible()) {
+        lv_obj_scroll_to_view(notas_ta, LV_ANIM_OFF);
+    }
 }
 
 void notas_resolution_cb(lv_event_t *event)
@@ -182,4 +186,9 @@ lv_obj_t *ui_notas_create(void)
 void ui_notas_refresh_theme(void)
 {
     apply_notas_theme();
+}
+
+void ui_notas_apply_layout(void)
+{
+    apply_notas_layout();
 }

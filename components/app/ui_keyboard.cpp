@@ -1,6 +1,7 @@
 #include "ui_keyboard.h"
 #include "ui_theme.h"
 #include "ui_font.h"
+#include "ui_shell.h"
 #include <string.h>
 
 /* Macros privados do LVGL, definidos apenas em lv_keyboard.c e usados nos
@@ -70,6 +71,7 @@ static const char *const pt_br_map_spec[] = {"1",
                                              ":",
                                              "!",
                                              "?",
+                                             "*",
                                              "-",
                                              "_",
                                              "+",
@@ -98,9 +100,9 @@ static const lv_buttonmatrix_ctrl_t pt_br_ctrl_spec[] = {
     /* Linha 3 (12): acentos maiusculos */
     LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
     LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
-    /* Linha 4 (13): pontuacao */
+    /* Linha 4 (14): pontuacao com '*' */
     LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
-    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
+    LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1), LV_KB_BTN(1),
     /* Linha 5 (6): teclado, abc, esquerda, espaco, direita, OK */
     LV_KB_CTRL_FLAGS_W2, LV_KB_CTRL_FLAGS_W2, LV_KB_CTRL_FLAGS_W2, LV_BUTTONMATRIX_CTRL_WIDTH_6, LV_KB_CTRL_FLAGS_W2,
     LV_KB_CTRL_FLAGS_W2};
@@ -185,6 +187,7 @@ void keyboard_resolution_cb(lv_event_t *event)
 {
     (void)event;
     apply_keyboard_layout();
+    ui_shell_notify_keyboard_layout();
 }
 
 /* OK e fechar escondem o teclado (comportamento de SO). */
@@ -232,6 +235,7 @@ void ui_keyboard_attach(lv_obj_t *ta)
     lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_state(ta, LV_STATE_FOCUSED);
     apply_keyboard_layout();
+    ui_shell_notify_keyboard_layout();
 }
 
 void ui_keyboard_hide(void)
@@ -242,9 +246,26 @@ void ui_keyboard_hide(void)
     }
     lv_keyboard_set_textarea(keyboard, nullptr);
     lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    ui_shell_notify_keyboard_layout();
 }
 
 void ui_keyboard_refresh_theme(void)
 {
     apply_keyboard_theme();
+}
+
+bool ui_keyboard_is_visible(void)
+{
+    if (keyboard == nullptr) {
+        return false;
+    }
+    return !lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+}
+
+int32_t ui_keyboard_get_height(void)
+{
+    if (keyboard == nullptr || lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN)) {
+        return 0;
+    }
+    return lv_obj_get_height(keyboard);
 }

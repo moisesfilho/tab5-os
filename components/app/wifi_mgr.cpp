@@ -66,7 +66,8 @@ static void try_connect(void)
     if (!s_has_cfg || s_cfg.ssid[0] == '\0') {
         return;
     }
-    wifi_config_t wcfg = {0};
+    wifi_config_t wcfg;
+    memset(&wcfg, 0, sizeof(wcfg));
     strlcpy((char *)wcfg.sta.ssid, s_cfg.ssid, sizeof(wcfg.sta.ssid));
     strlcpy((char *)wcfg.sta.password, s_cfg.password, sizeof(wcfg.sta.password));
     if (esp_wifi_set_config(WIFI_IF_STA, &wcfg) != ESP_OK) {

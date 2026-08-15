@@ -98,3 +98,13 @@ void ui_shell_refresh_theme(void)
         lv_obj_set_style_text_color(splash_label, lv_color_hex(ui_theme_get()->text), 0);
     }
 }
+
+void ui_shell_notify_keyboard_layout(void)
+{
+    lv_obj_t *act = lv_disp_get_scr_act(NULL);
+    if (act == notas_scr) {
+        ui_notas_apply_layout();
+    } else if (act == wifi_scr) {
+        ui_wifi_apply_layout();
+    }
+}
