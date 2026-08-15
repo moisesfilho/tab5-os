@@ -14,7 +14,7 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 
 ## Funcionalidades
 
-- **Teclado virtual** — teclado nativo LVGL + textarea, funciona em retrato e paisagem
+- **Teclado virtual PT-BR** — teclado nativo LVGL + textarea, funciona em retrato e paisagem, com página de acentos (ç, vogais acentuadas minúsculas e maiúsculas) acessada pela tecla "1#"
 - **Rotação automática por IMU** — o vetor de gravidade do BMI270 aciona `lv_display_set_rotation` (0/90/180/270) com debounce
 - **Barra superior estilo SO** — botão de engrenagem, badge de orientação e relógio ao vivo
 - **Menu de configurações** — Configuração → Tema (claro/escuro) com destaque do item ativo
@@ -50,6 +50,7 @@ idf.py -p /dev/ttyACM0 monitor --no-reset
 ## Uso
 
 - **Digite** no teclado virtual (touch)
+- **"1#"** abre a página de acentos (à á â ã ç é ê í ó ô õ ú e maiúsculas); **"abc"** volta ao QWERTY
 - **Incline** o aparelho para girar a interface (retrato/paisagem)
 - A **engrenagem** (canto superior esquerdo) abre o menu de configurações: Configuração → Tema → Claro/Escuro
 - O **relógio** mostra a hora real lida do RTC
@@ -63,7 +64,7 @@ tab5-os/
 ├── components/
 │   ├── app/                  # UI + IMU
 │   │   ├── ui_bar.cpp        # Barra superior, menu de configurações, relógio
-│   │   ├── ui_keyboard.cpp   # Teclado virtual + textarea
+│   │   ├── ui_keyboard.cpp   # Teclado virtual + página de acentos PT-BR
 │   │   ├── ui_status.cpp     # Badge de orientação
 │   │   ├── ui_theme.cpp      # Paletas claro/escuro
 │   │   ├── imu_reader.cpp    # Eventos do BMI270 → alvo de rotação

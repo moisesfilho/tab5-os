@@ -14,7 +14,7 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 
 ## Features
 
-- **Virtual keyboard** — LVGL native keyboard + textarea, works in portrait and landscape
+- **PT-BR virtual keyboard** — LVGL native keyboard + textarea, works in portrait and landscape, with an accents page (ç, accented lowercase and uppercase vowels) reachable through the "1#" key
 - **Auto-rotation by IMU** — BMI270 gravity vector drives `lv_display_set_rotation` (0/90/180/270) with debounce
 - **OS-style top bar** — gear button, orientation badge and live clock
 - **Settings menu** — Configuração → Tema (light/dark) with active item highlight
@@ -50,6 +50,7 @@ idf.py -p /dev/ttyACM0 monitor --no-reset
 ## Usage
 
 - **Type** on the virtual keyboard (touch)
+- **"1#"** opens the accents page (à á â ã ç é ê í ó ô õ ú and uppercase); **"abc"** returns to the QWERTY
 - **Tilt** the device to rotate the UI (portrait/landscape)
 - **Gear** (top-left) opens the settings menu: Configuração → Tema → Claro/Escuro
 - The **clock** shows the real time read from the RTC
@@ -63,7 +64,7 @@ tab5-os/
 ├── components/
 │   ├── app/                  # UI + IMU
 │   │   ├── ui_bar.cpp        # Top bar, settings menu, clock
-│   │   ├── ui_keyboard.cpp   # Virtual keyboard + textarea
+│   │   ├── ui_keyboard.cpp   # Virtual keyboard + PT-BR accents page
 │   │   ├── ui_status.cpp     # Orientation badge
 │   │   ├── ui_theme.cpp      # Light/dark palettes
 │   │   ├── imu_reader.cpp    # BMI270 events → rotation target
