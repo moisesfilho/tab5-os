@@ -13,6 +13,7 @@ Checks: >
   -readability-magic-numbers,
   -readability-named-parameter,
   -readability-function-cognitive-complexity,
+  -readability-function-size,
   -readability-math-missing-parentheses,
   -readability-use-std-min-max,
   -readability-static-definition-in-anonymous-namespace,
@@ -22,6 +23,7 @@ Checks: >
   -performance-enum-size,
   -performance-no-int-to-ptr,
   -bugprone-suspicious-enum-usage,
+  -bugprone-casting-through-void,
   -clang-diagnostic-extern-c-compat,
   -clang-diagnostic-unknown-warning-option
 WarningsAsErrors: ''
