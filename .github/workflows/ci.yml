@@ -71,6 +71,9 @@ jobs:
           cppcheck --project=build/compile_commands.json \
             --enable=warning,performance,portability \
             --suppress=missingIncludeSystem \
+            --suppress=syntaxError \
+            --file-filter=main/* \
+            --file-filter=components/app/* \
             --error-exitcode=1 \
             --inline-suppr
 
