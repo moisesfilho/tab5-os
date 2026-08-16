@@ -1,0 +1,32 @@
+🚀 Criar um sistema operacional do zero sempre pareceu um desafio épico... e está sendo uma das experiências mais enriquecedoras e instrutivas da minha jornada!
+
+Apresento o tab5-os: uma prova de conceito de sistema operacional desenvolvida para o M5Stack Tab5, aproveitando o poder do ESP32-P4 (RISC-V dual core de 360 MHz) e a biblioteca gráfica LVGL 9. 💡
+
+O que o sistema já entrega:
+
+✨ Interface e Usabilidade:
+• Barra superior estilo SO com relógio RTC integrado (RX8130CE) e alternância de temas claro e escuro.
+• Rotação automática suave de tela orientada pelo sensor de gravidade IMU (BMI270).
+• Teclado virtual nativo com suporte completo à acentuação PT-BR e redimensionamento reativo das janelas.
+
+🖱️ Conectividade e Periféricos:
+• Suporte a Bluetooth BLE HID para teclados físicos, mouses e touchpads com cursor visual em tempo real adaptado a qualquer orientação de tela.
+• Gerenciador de Wi-Fi avançado com suporte a múltiplas redes salvas no cartão SD e reconexão automática inteligente.
+
+📂 Produtividade:
+• Gerenciador de Arquivos com visualização em grade e lista navegando direto no SD Card.
+• Aplicativo de Notas integrado para criação e edição direta de arquivos de texto (.txt e .cfg).
+
+⚡ O papel da Inteligência Artificial no desenvolvimento:
+Construir tudo isso está sendo incrivelmente rápido e eficiente graças ao uso de IA no fluxo de trabalho. Em especial, a combinação dos modelos DeepSeek V4 Flash e Gemini 3.7 Flash tem feito uma diferença gigantesca na estruturação da arquitetura, depuração de baixo nível com ESP-IDF e implementação ágil de novas funcionalidades.
+
+Está sendo um aprendizado fascinante ver hardware, sistemas embarcados e inteligência artificial trabalhando juntos de forma tão sinérgica.
+
+⭐ Gostou da iniciativa?
+O projeto é 100% open-source! Dê uma passada no repositório do GitHub para conferir o código, acompanhar a evolução e deixar aquela estrela (Star) para fortalecer o projeto:
+
+🔗 https://github.com/moisesfilho/tab5-os
+
+Feedbacks, ideias e sugestões são sempre muito bem-vindos nos comentários! 👇
+
+#ESP32 #Embedded #SistemasEmbarcados #M5Stack #LVGL #OpenSource #DeepSeek #Gemini #InteligenciaArtificial #IoT #Desenvolvimento #Tech

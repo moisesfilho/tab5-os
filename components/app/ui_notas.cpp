@@ -117,6 +117,7 @@ bool perform_save_to_file(const std::string &path)
 
     ensure_notas_dir();
 
+    /* codeql[cpp/world-writable-file-creation] - FatFS nao tem modelo POSIX de permissoes */
     FILE *f = fopen(path.c_str(), "w");
     if (f == nullptr) {
         ESP_LOGE(TAG, "falha ao abrir arquivo para gravacao: %s", path.c_str());

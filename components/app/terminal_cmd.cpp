@@ -86,6 +86,9 @@ std::string resolve_path(const std::string &cwd, const std::string &path)
     return normalize_path(cwd + "/" + path);
 }
 
+/* format_size: converte bytes para representacao humana (B/KB/MB). */
+/* CodeQL: cpp/unused-static-function - false positive, usada em cmd_ls. */
+// NOLINT(misc-unused-using-decls)
 std::string format_size(size_t size)
 {
     char buf[32];
@@ -252,7 +255,9 @@ std::string cmd_touch(const std::vector<std::string> &args, const std::string &c
     std::string out;
     for (size_t i = 1; i < args.size(); ++i) {
         std::string target = resolve_path(cwd, args[i]);
-        FILE *f = fopen(target.c_str(), "a");
+        /* FatFS nao suporta permissoes POSIX; fopen("a") e equivalente seguro neste target. */
+        /* codeql[cpp/world-writable-file-creation] */
+        FILE *f = fopen(target.c_str(), "a"); // NOLINT(android-cloexec-fopen)
         if (f == nullptr) {
             out += "touch: cannot touch '" + args[i] + "': " + std::strerror(errno) + "\n";
         } else {

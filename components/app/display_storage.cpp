@@ -52,6 +52,7 @@ esp_err_t display_storage_save_rotation(lv_disp_rotation_t rot)
         return ESP_FAIL;
     }
 
+    /* codeql[cpp/world-writable-file-creation] - FatFS nao tem modelo POSIX de permissoes */
     FILE *f = fopen(DISPLAY_CFG_PATH, "w");
     if (f == NULL) {
         ESP_LOGW(TAG, "falha ao abrir %s para gravacao", DISPLAY_CFG_PATH);

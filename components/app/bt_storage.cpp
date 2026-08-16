@@ -154,6 +154,7 @@ esp_err_t bt_storage_save_all(const bt_saved_list_t *list)
     /* Assegura que o diretorio exista */
     mkdir("/sdcard/tab5_os", 0777);
 
+    /* codeql[cpp/world-writable-file-creation] - FatFS nao tem modelo POSIX de permissoes */
     FILE *f = fopen(BT_CFG_PATH, "w");
     if (f == NULL) {
         ESP_LOGE(TAG, "Falha ao abrir %s para gravacao", BT_CFG_PATH);

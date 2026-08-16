@@ -360,6 +360,18 @@ int on_disc_svc_seq(uint16_t conn_handle, const struct ble_gatt_error *error, co
     return 0;
 }
 
+/**
+ * @brief Callback principal de eventos GAP/GATT BLE (NimBLE).
+ *
+ * Processa o ciclo de vida completo de conexões BLE HID: descoberta por scan,
+ * conexão, autenticação (bonding), descoberta de serviços/características,
+ * subscription de notificações HID e tratamento de dados de teclado, mouse e
+ * touchpad recebidos por notificação GATT.
+ *
+ * @param event  Estrutura do evento GAP recebido pela stack NimBLE.
+ * @param arg    Argumento de usuário (não utilizado).
+ * @return       0 em todos os casos (convenção NimBLE).
+ */
 int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
 {
     if (event == nullptr) {
@@ -598,7 +610,10 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
             char hex_buf[80] = "";
             int pos = 0;
             for (int i = 0; i < len && i < 20; i++) {
-                pos += snprintf(hex_buf + pos, sizeof(hex_buf) - pos, "%02X ", data[i]);
+                if (pos >= (int)(sizeof(hex_buf) - 4)) {
+                    break; /* evita overflow: cada byte ocupa ate 3 chars + NUL */
+                }
+                pos += snprintf(hex_buf + pos, sizeof(hex_buf) - (size_t)pos, "%02X ", data[i]);
             }
             ESP_LOGI(TAG, "NOTIFY len=%d [%s]", (int)len, hex_buf);
 
@@ -1060,6 +1075,19 @@ esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
     return ESP_OK;
 }
 
+/**
+ * @brief Inicia conexão BLE com um dispositivo HID previamente pareado.
+ *
+ * Valida o estado do Bluetooth, o endereço MAC e inicia um procedimento GAP
+ * Connect via NimBLE. Aguarda se já houver um procedimento GAP em andamento.
+ * Suporta tipos de dispositivo: teclado, mouse e genérico (bt_dev_type_t).
+ *
+ * @param mac   Endereço MAC do dispositivo no formato "XX:XX:XX:XX:XX:XX".
+ * @param name  Nome amigável do dispositivo (para logs e UI).
+ * @param type  Tipo do dispositivo HID (BT_DEV_KEYBOARD, BT_DEV_MOUSE, etc.).
+ * @return      ESP_OK em sucesso, ESP_ERR_INVALID_STATE se BT desabilitado,
+ *              ESP_ERR_INVALID_ARG se mac for nulo/vazio.
+ */
 esp_err_t bt_mgr_connect(const char *mac, const char *name, bt_dev_type_t type)
 {
     if (!s_bt_enabled) {

@@ -27,16 +27,12 @@ static void imu_event_handler(void *arg, esp_event_base_t base, int32_t event_id
         return;
     }
 
-    switch (event_id) {
-    case SENSOR_ACCE_DATA_READY:
+    if (event_id == SENSOR_ACCE_DATA_READY) {
         /* Somente calcula o alvo; a rotacao e aplicada pelo timer na task LVGL */
         s_target_rot = orientation_update(data->acce.x, data->acce.y, data->acce.z);
         if ((s_log_div++ % 50) == 0) {
             ESP_LOGI(TAG, "acce x=%.2f y=%.2f z=%.2f G", data->acce.x, data->acce.y, data->acce.z);
         }
-        break;
-    default:
-        break;
     }
 }
 

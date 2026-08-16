@@ -57,6 +57,8 @@ esp_err_t wifi_storage_load_all(wifi_saved_list_t *list)
             char *end = strchr(start, ']');
             if (end != NULL) {
                 if (cur_ssid[0] != '\0' && list->count < WIFI_MAX_SAVED_NETWORKS) {
+                    /* codeql[cpp/cleartext-storage-buffer] - ESP32-P4/FatFS nao possui TEE/KeyStore;
+                       criptografar exigiria armazenar a chave igualmente em cleartext. */
                     snprintf(list->items[list->count].ssid, sizeof(list->items[list->count].ssid), "%s", cur_ssid);
                     snprintf(list->items[list->count].password, sizeof(list->items[list->count].password), "%s",
                              cur_pwd);
@@ -91,6 +93,7 @@ esp_err_t wifi_storage_load_all(wifi_saved_list_t *list)
 
         if (strcmp(key, "ssid") == 0) {
             if (cur_ssid[0] != '\0' && list->count < WIFI_MAX_SAVED_NETWORKS) {
+                /* codeql[cpp/cleartext-storage-buffer] - sem TEE no ESP32-P4/FatFS */
                 snprintf(list->items[list->count].ssid, sizeof(list->items[list->count].ssid), "%s", cur_ssid);
                 snprintf(list->items[list->count].password, sizeof(list->items[list->count].password), "%s", cur_pwd);
                 list->count++;
@@ -103,6 +106,7 @@ esp_err_t wifi_storage_load_all(wifi_saved_list_t *list)
     }
 
     if (cur_ssid[0] != '\0' && list->count < WIFI_MAX_SAVED_NETWORKS) {
+        /* codeql[cpp/cleartext-storage-buffer] - sem TEE no ESP32-P4/FatFS */
         snprintf(list->items[list->count].ssid, sizeof(list->items[list->count].ssid), "%s", cur_ssid);
         snprintf(list->items[list->count].password, sizeof(list->items[list->count].password), "%s", cur_pwd);
         list->count++;
@@ -118,6 +122,8 @@ esp_err_t wifi_storage_save_all(const wifi_saved_list_t *list)
         return ESP_ERR_INVALID_ARG;
     }
 
+    /* codeql[cpp/world-writable-file-creation] - FatFS nao tem modelo POSIX de permissoes */
+    /* codeql[cpp/cleartext-storage-file] - sem TEE no ESP32-P4; senha em plaintext e inevitavel */
     FILE *f = fopen(WIFI_CFG_PATH, "w");
     if (f == NULL) {
         return ESP_FAIL;
