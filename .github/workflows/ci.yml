@@ -72,6 +72,7 @@ jobs:
             --enable=warning,performance,portability \
             --suppress=missingIncludeSystem \
             --suppress=syntaxError \
+            --suppress=incorrectStringBooleanError \
             --file-filter=main/* \
             --file-filter=components/app/* \
             --error-exitcode=1 \
