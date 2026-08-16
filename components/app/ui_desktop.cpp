@@ -15,6 +15,10 @@ lv_obj_t *wifi_tile = nullptr;
 lv_obj_t *wifi_icon = nullptr;
 lv_obj_t *wifi_icon_label = nullptr;
 lv_obj_t *wifi_label = nullptr;
+lv_obj_t *files_tile = nullptr;
+lv_obj_t *files_icon = nullptr;
+lv_obj_t *files_icon_label = nullptr;
+lv_obj_t *files_label = nullptr;
 
 void app_tile_cb(lv_event_t *event)
 {
@@ -26,6 +30,12 @@ void wifi_tile_cb(lv_event_t *event)
 {
     (void)event;
     ui_shell_open_wifi();
+}
+
+void files_tile_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_shell_open_files();
 }
 
 /* Reaplica a paleta ativa na area de trabalho. */
@@ -56,6 +66,15 @@ void apply_desktop_theme(void)
     }
     if (wifi_label != nullptr) {
         lv_obj_set_style_text_color(wifi_label, lv_color_hex(pal->text), 0);
+    }
+    if (files_icon != nullptr) {
+        lv_obj_set_style_bg_color(files_icon, lv_color_hex(pal->accent_soft), 0);
+    }
+    if (files_icon_label != nullptr) {
+        lv_obj_set_style_text_color(files_icon_label, lv_color_hex(pal->accent), 0);
+    }
+    if (files_label != nullptr) {
+        lv_obj_set_style_text_color(files_label, lv_color_hex(pal->text), 0);
     }
 }
 
@@ -123,6 +142,35 @@ void ui_desktop_create(lv_obj_t *scr)
     lv_label_set_text(wifi_label, "WiFi");
     lv_obj_set_style_text_font(wifi_label, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_pad_top(wifi_label, 6, 0);
+
+    /* Tile do app Arquivos */
+    files_tile = lv_obj_create(scr);
+    lv_obj_set_size(files_tile, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_align(files_tile, LV_ALIGN_TOP_LEFT, 232, UI_BAR_HEIGHT + 24);
+    lv_obj_set_style_bg_opa(files_tile, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(files_tile, 0, 0);
+    lv_obj_set_style_shadow_width(files_tile, 0, 0);
+    lv_obj_set_style_pad_all(files_tile, 8, 0);
+    lv_obj_clear_flag(files_tile, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(files_tile, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(files_tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_add_event_cb(files_tile, files_tile_cb, LV_EVENT_CLICKED, nullptr);
+
+    files_icon = lv_obj_create(files_tile);
+    lv_obj_set_size(files_icon, 76, 76);
+    lv_obj_set_style_radius(files_icon, 18, 0);
+    lv_obj_set_style_border_width(files_icon, 0, 0);
+    lv_obj_set_style_shadow_width(files_icon, 0, 0);
+    lv_obj_clear_flag(files_icon, LV_OBJ_FLAG_CLICKABLE);
+    files_icon_label = lv_label_create(files_icon);
+    lv_label_set_text(files_icon_label, LV_SYMBOL_DIRECTORY);
+    lv_obj_set_style_text_font(files_icon_label, &lv_font_montserrat_28_latin1, 0);
+    lv_obj_center(files_icon_label);
+
+    files_label = lv_label_create(files_tile);
+    lv_label_set_text(files_label, "Arquivos");
+    lv_obj_set_style_text_font(files_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_pad_top(files_label, 6, 0);
 
     apply_desktop_theme();
 }

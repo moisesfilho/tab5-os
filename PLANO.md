@@ -216,3 +216,57 @@ Deps a adicionar em `main/idf_component.yml`: `espressif/esp_hosted` + `espressi
 4. Fase 10: boot conecta na rede salva (GOT_IP no serial); AP desligado → retry; AP de volta → reconecta.
 5. Fase 11: fluxo completo pela tela (escanear → selecionar → senha com teclado → conectar), em retrato e paisagem, temas claro/escuro.
 6. Fase 12: ícone correto por estado; clique desconectado abre config; clique conectado abre info com "Reconfigurar WiFi" voltando à config.
+
+---
+
+# Planejamento: Aplicação "Arquivos" (Fase 16)
+
+## 1. Contexto & Objetivo
+- Criação do aplicativo **"Arquivos"** (File Manager do `tab5-os`), permitindo navegar e visualizar diretórios e arquivos armazenados no cartão SD (`/sdcard`).
+- Dois modos de exibição dinâmicos com alternador na barra de ferramentas:
+  1. **Modo Ícones (Grade/Grid)**: Pastas e arquivos dispostos em blocos com ícone (`LV_SYMBOL_DIRECTORY` / `LV_SYMBOL_FILE`) e nome.
+  2. **Modo Lista (Detalhes)**: Tabela/lista com nome, tamanho formatado (Bytes, KB, MB ou `<DIR>`) e data/hora da última modificação (`DD/MM/AAAA HH:MM`).
+- Navegação interativa: toque em diretórios para abrir subpastas e botão de retorno para subir de nível até a raiz `/sdcard`.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha |
+|---|---|---|
+| D1 | Launcher/Desktop | Adição de tile "Arquivos" no `ui_desktop.cpp` ao lado de Notas e WiFi |
+| D2 | Leitura de Arquivos | APIs POSIX padrão (`opendir`, `readdir`, `stat`) sobre o VFS do FATFS (`/sdcard`) |
+| D3 | Modos de Exibição | Estado interno com alternador: `VIEW_MODE_GRID` e `VIEW_MODE_LIST`, re-renderizando a área de visualização |
+| D4 | UI e Janela | Padrão `ui_shell` com barra própria (`surface_alt`), botão voltar (`LV_SYMBOL_PREV`), caminho atual, alternador de visualização e botão fechar |
+| D5 | Redimensionamento | Integração com `ui_shell_notify_keyboard_layout()` e rotação dinâmica de tela |
+
+## 3. Estrutura de Arquivos
+
+```
+components/app/
+├── include/
+│   ├── ui_files.h         # Declarações do ciclo de vida e visualização do app Arquivos
+├── ui_files.cpp           # Leitura do SD, alternância de modos (ícones/lista) e navegação
+├── ui_desktop.cpp         # Novo tile 'Arquivos' no desktop
+├── ui_shell.cpp           # Integração com ui_shell_open_files / close_files
+└── CMakeLists.txt         # Registro de ui_files.cpp
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+### Etapa 1 — Backend de Listagem de Arquivos
+- Mapeamento e paginação/leitura de diretórios via `stat` e `readdir`.
+- Formatação de tamanho (`B`, `KB`, `MB`) e data (`localtime_r`).
+- Tratamento para SD ausente ou pastas vazias.
+
+### Etapa 2 — Criação da Interface `ui_files`
+- Janela com barra de navegação superior (título/caminho, botão subir nível `..`, alternador Ícones/Lista, fechar).
+- Renderização em modo Grade (`LV_FLEX_FLOW_ROW_WRAP`).
+- Renderização em modo Lista (`LV_FLEX_FLOW_COLUMN`).
+
+### Etapa 3 — Integração com o Desktop e Shell
+- Registro do tile no launcher desktop.
+- Transições de tela no `ui_shell`.
+- Suporte a temas claro/escuro e rotação de tela.
+
+### Etapa 4 — Validação e Gravação
+- Execução de `pre-commit run --all-files`.
+- Teste em hardware navegando pelas pastas e arquivos criados pelo sistema (`/sdcard/tab5_os/`).
