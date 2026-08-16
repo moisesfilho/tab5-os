@@ -5,6 +5,7 @@
 #include "ui_shell.h"
 #include "ui_theme.h"
 #include "wifi_mgr.h"
+#include "wifi_storage.h"
 #include "bsp/esp-bsp.h"
 
 #include <cstdio>
@@ -34,6 +35,10 @@ lv_obj_t *show_pwd_btn = nullptr;
 lv_obj_t *show_pwd_label = nullptr;
 lv_obj_t *connect_button = nullptr;
 lv_obj_t *connect_label = nullptr;
+lv_obj_t *disconnect_button = nullptr;
+lv_obj_t *disconnect_label = nullptr;
+lv_obj_t *forget_button = nullptr;
+lv_obj_t *forget_label = nullptr;
 lv_obj_t *status_label = nullptr;
 lv_group_t *wifi_group = nullptr;
 lv_timer_t *connect_timer = nullptr;
@@ -44,6 +49,9 @@ int network_count = 0;
 char selected_ssid[33] = {};
 uint32_t connect_ticks = 0;
 bool show_password = false;
+
+void render_networks(void);
+void apply_wifi_layout(void);
 
 void cursor_blink_cb(lv_timer_t *timer)
 {
@@ -75,6 +83,49 @@ void set_status(const char *text, uint32_t color)
     lv_obj_set_style_text_color(status_label, lv_color_hex(color), 0);
 }
 
+void update_action_buttons_state(void)
+{
+    if (wifi_scr == nullptr) {
+        return;
+    }
+
+    wifi_status_t status = {};
+    wifi_mgr_get_status(&status);
+
+    bool is_selected = selected_ssid[0] != '\0';
+    bool is_connected_curr = status.connected && is_selected && (strcmp(status.ssid, selected_ssid) == 0);
+    bool is_saved = is_selected && wifi_storage_find(selected_ssid, nullptr, 0);
+
+    /* Botao Desconectar so aparece se a rede selecionada estiver conectada */
+    if (disconnect_button != nullptr) {
+        if (is_connected_curr) {
+            lv_obj_remove_flag(disconnect_button, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(disconnect_button, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    /* Botao Esquecer aparece se a rede estiver salva */
+    if (forget_button != nullptr) {
+        if (is_saved) {
+            lv_obj_remove_flag(forget_button, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(forget_button, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    /* Botao Conectar fica visivel se nao estiver ja conectada */
+    if (connect_button != nullptr) {
+        if (is_connected_curr) {
+            lv_obj_add_flag(connect_button, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_remove_flag(connect_button, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    apply_wifi_layout();
+}
+
 void apply_wifi_layout(void)
 {
     if (wifi_scr == nullptr) {
@@ -86,7 +137,7 @@ void apply_wifi_layout(void)
     int32_t side = width < 560 ? 12 : 24;
     int32_t usable_w = width - 2 * side;
 
-    /* Posicionamento em relacao ao topo da tela (2 * UI_BAR_HEIGHT = 80: barra do SO + barra do App) */
+    /* Posicionamento em relacao ao topo da tela (2 * UI_BAR_HEIGHT = 80) */
     /* Linha 1: Botao Escanear (altura 38) */
     if (scan_button != nullptr) {
         lv_obj_set_width(scan_button, usable_w);
@@ -94,25 +145,65 @@ void apply_wifi_layout(void)
         lv_obj_set_y(scan_button, 2 * UI_BAR_HEIGHT + 8);
     }
 
-    /* Linha 2: Campo de Senha (altura 38) + Botao Exibir Senha (largura 44) + Botao Conectar (largura ~105) */
-    int32_t btn_w = 105;
-    int32_t eye_w = 44;
-    int32_t gap = 8;
-    int32_t ta_w = usable_w - eye_w - btn_w - (2 * gap);
+    /* Linha 2: Campo de Senha + Eye + Botoes de Acao (Conectar, Desconectar, Esquecer) */
+    wifi_status_t status = {};
+    wifi_mgr_get_status(&status);
+    bool is_selected = selected_ssid[0] != '\0';
+    bool is_connected_curr = status.connected && is_selected && (strcmp(status.ssid, selected_ssid) == 0);
+    bool is_saved = is_selected && wifi_storage_find(selected_ssid, nullptr, 0);
+
+    int32_t btn_w = 95;
+    int32_t eye_w = 40;
+    int32_t gap = 6;
+
+    int32_t extra_btns_w = 0;
+    if (is_connected_curr) {
+        extra_btns_w += btn_w + gap; /* Desconectar */
+    } else {
+        extra_btns_w += btn_w + gap; /* Conectar */
+    }
+    if (is_saved) {
+        extra_btns_w += btn_w + gap; /* Esquecer */
+    }
+
+    int32_t ta_w = usable_w - eye_w - gap - extra_btns_w;
+    if (ta_w < 120) {
+        ta_w = 120;
+    }
+
+    int32_t cur_x = side;
     if (password_ta != nullptr) {
         lv_obj_set_width(password_ta, ta_w);
-        lv_obj_set_x(password_ta, side);
+        lv_obj_set_x(password_ta, cur_x);
         lv_obj_set_y(password_ta, 2 * UI_BAR_HEIGHT + 52);
+        cur_x += ta_w + gap;
     }
     if (show_pwd_btn != nullptr) {
         lv_obj_set_width(show_pwd_btn, eye_w);
-        lv_obj_set_x(show_pwd_btn, side + ta_w + gap);
+        lv_obj_set_x(show_pwd_btn, cur_x);
         lv_obj_set_y(show_pwd_btn, 2 * UI_BAR_HEIGHT + 52);
+        cur_x += eye_w + gap;
     }
-    if (connect_button != nullptr) {
+
+    if (connect_button != nullptr && !is_connected_curr) {
         lv_obj_set_width(connect_button, btn_w);
-        lv_obj_set_x(connect_button, side + ta_w + eye_w + (2 * gap));
+        lv_obj_set_x(connect_button, cur_x);
         lv_obj_set_y(connect_button, 2 * UI_BAR_HEIGHT + 52);
+        cur_x += btn_w + gap;
+    }
+
+    if (disconnect_button != nullptr && is_connected_curr) {
+        lv_obj_set_width(disconnect_button, btn_w);
+        lv_obj_set_x(disconnect_button, cur_x);
+        lv_obj_set_y(disconnect_button, 2 * UI_BAR_HEIGHT + 52);
+        cur_x += btn_w + gap;
+    }
+
+    if (forget_button != nullptr && is_saved) {
+        lv_obj_set_width(forget_button, btn_w);
+        lv_obj_set_x(forget_button, cur_x);
+        lv_obj_set_y(forget_button, 2 * UI_BAR_HEIGHT + 52);
+        cur_x += btn_w + gap;
     }
 
     /* Linha 3: Status da conexao / selecao */
@@ -199,6 +290,22 @@ void apply_wifi_theme(void)
     if (connect_label != nullptr) {
         lv_obj_set_style_text_color(connect_label, lv_color_hex(pal->text), 0);
     }
+    if (disconnect_button != nullptr) {
+        lv_obj_set_style_bg_color(disconnect_button, lv_color_hex(pal->surface_alt), 0);
+        lv_obj_set_style_border_color(disconnect_button, lv_color_hex(pal->border), 0);
+        lv_obj_set_style_bg_color(disconnect_button, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
+    }
+    if (disconnect_label != nullptr) {
+        lv_obj_set_style_text_color(disconnect_label, lv_color_hex(pal->text), 0);
+    }
+    if (forget_button != nullptr) {
+        lv_obj_set_style_bg_color(forget_button, lv_color_hex(pal->surface_alt), 0);
+        lv_obj_set_style_border_color(forget_button, lv_color_hex(pal->border), 0);
+        lv_obj_set_style_bg_color(forget_button, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
+    }
+    if (forget_label != nullptr) {
+        lv_obj_set_style_text_color(forget_label, lv_color_hex(pal->text), 0);
+    }
     if (status_label != nullptr) {
         lv_obj_set_style_text_color(status_label, lv_color_hex(pal->text_muted), 0);
     }
@@ -212,9 +319,29 @@ void select_network_cb(lv_event_t *event)
     }
     std::strncpy(selected_ssid, item->ssid, sizeof(selected_ssid) - 1);
     selected_ssid[sizeof(selected_ssid) - 1] = '\0';
-    lv_textarea_set_text(password_ta, "");
+
+    char saved_pwd[65] = "";
+    bool is_saved = wifi_storage_find(selected_ssid, saved_pwd, sizeof(saved_pwd));
+    if (is_saved) {
+        lv_textarea_set_text(password_ta, saved_pwd);
+    } else {
+        lv_textarea_set_text(password_ta, "");
+    }
     lv_textarea_set_placeholder_text(password_ta, selected_ssid);
-    set_status("Rede selecionada", ui_theme_get()->text_muted);
+
+    wifi_status_t status = {};
+    wifi_mgr_get_status(&status);
+    if (status.connected && strcmp(status.ssid, selected_ssid) == 0) {
+        set_status("Rede conectada", ui_theme_get()->accent);
+    } else if (is_saved) {
+        set_status("Rede salva (senha memorizada)", ui_theme_get()->text_muted);
+    } else {
+        set_status("Rede selecionada", ui_theme_get()->text_muted);
+    }
+
+    update_action_buttons_state();
+    render_networks();
+
     lv_obj_set_style_bg_opa(password_ta, LV_OPA_COVER, LV_PART_CURSOR);
     if (password_cursor_timer != nullptr) {
         lv_timer_resume(password_cursor_timer);
@@ -238,29 +365,74 @@ void render_networks(void)
         return;
     }
 
+    wifi_status_t status = {};
+    wifi_mgr_get_status(&status);
+
     const ui_palette_t *pal = ui_theme_get();
     for (int i = 0; i < network_count; ++i) {
+        bool is_conn = status.connected && (strcmp(status.ssid, networks[i].ssid) == 0);
+        bool is_saved = wifi_storage_find(networks[i].ssid, nullptr, 0);
+        bool is_selected = (selected_ssid[0] != '\0') && (strcmp(selected_ssid, networks[i].ssid) == 0);
+
         lv_obj_t *item = lv_obj_create(network_list);
         lv_obj_set_width(item, lv_pct(100));
-        lv_obj_set_height(item, 40);
-        lv_obj_set_style_bg_color(item, lv_color_hex(pal->surface), 0);
+        lv_obj_set_height(item, 42);
+
+        if (is_selected) {
+            lv_obj_set_style_bg_color(item, lv_color_hex(pal->accent_soft), 0);
+        } else {
+            lv_obj_set_style_bg_color(item, lv_color_hex(pal->surface), 0);
+        }
         lv_obj_set_style_bg_color(item, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
         lv_obj_set_style_border_width(item, 0, 0);
-        lv_obj_set_style_radius(item, 0, 0);
+        lv_obj_set_style_radius(item, 6, 0);
         lv_obj_set_style_pad_left(item, 12, 0);
         lv_obj_set_style_pad_right(item, 12, 0);
+        lv_obj_set_style_pad_top(item, 0, 0);
+        lv_obj_set_style_pad_bottom(item, 0, 0);
         lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_add_event_cb(item, select_network_cb, LV_EVENT_CLICKED, &networks[i]);
 
-        lv_obj_t *label = lv_label_create(item);
-        char text[64];
-        std::snprintf(text, sizeof(text), "%s   %d dBm", networks[i].ssid, networks[i].rssi);
-        lv_label_set_text(label, text);
-        lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(label, lv_pct(100));
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14_latin1, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(pal->text), 0);
-        lv_obj_center(label);
+        /* Icone de status: Conectado (OK) ou Salva (SAVE) ou espaco */
+        lv_obj_t *icon_lbl = lv_label_create(item);
+        if (is_conn) {
+            lv_label_set_text(icon_lbl, LV_SYMBOL_OK);
+            lv_obj_set_style_text_color(icon_lbl, lv_color_hex(pal->accent), 0);
+        } else if (is_saved) {
+            lv_label_set_text(icon_lbl, LV_SYMBOL_SAVE);
+            lv_obj_set_style_text_color(icon_lbl, lv_color_hex(pal->text_muted), 0);
+        } else {
+            lv_label_set_text(icon_lbl, LV_SYMBOL_WIFI);
+            lv_obj_set_style_text_color(icon_lbl, lv_color_hex(pal->text_muted), 0);
+        }
+        lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_margin_right(icon_lbl, 8, 0);
+
+        /* Nome da rede (SSID) */
+        lv_obj_t *name_lbl = lv_label_create(item);
+        char name_text[64];
+        if (is_conn) {
+            std::snprintf(name_text, sizeof(name_text), "%s (Conectado)", networks[i].ssid);
+        } else if (is_saved) {
+            std::snprintf(name_text, sizeof(name_text), "%s (Salva)", networks[i].ssid);
+        } else {
+            std::snprintf(name_text, sizeof(name_text), "%s", networks[i].ssid);
+        }
+        lv_label_set_text(name_lbl, name_text);
+        lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
+        lv_obj_set_flex_grow(name_lbl, 1);
+        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_color(name_lbl, lv_color_hex(pal->text), 0);
+
+        /* Sinal em dBm */
+        lv_obj_t *rssi_lbl = lv_label_create(item);
+        char rssi_text[20];
+        std::snprintf(rssi_text, sizeof(rssi_text), "%d dBm", networks[i].rssi);
+        lv_label_set_text(rssi_lbl, rssi_text);
+        lv_obj_set_style_text_font(rssi_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_color(rssi_lbl, lv_color_hex(pal->text_muted), 0);
     }
 }
 
@@ -272,19 +444,46 @@ void scan_ui_cb(void *data)
         lv_label_set_text(scan_label, "Escanear");
     }
     set_status(network_count > 0 ? "Redes encontradas" : "Nenhuma rede encontrada", ui_theme_get()->text_muted);
+    update_action_buttons_state();
 }
 
 void scan_cb(const wifi_ap_record_t *aps, int count, void *ctx)
 {
     (void)ctx;
-    network_count = count > MAX_NETWORKS ? MAX_NETWORKS : count;
-    for (int i = 0; i < network_count; ++i) {
-        std::memset(&networks[i], 0, sizeof(networks[i]));
-        std::strncpy(networks[i].ssid, reinterpret_cast<const char *>(aps[i].ssid), sizeof(networks[i].ssid) - 1);
-        networks[i].rssi = aps[i].rssi;
-        networks[i].channel = aps[i].primary;
-        networks[i].authmode = aps[i].authmode;
+    network_count = 0;
+
+    for (int i = 0; i < count; ++i) {
+        const char *ssid = reinterpret_cast<const char *>(aps[i].ssid);
+        if (ssid[0] == '\0') {
+            continue; /* Desconsidera redes ocultas sem SSID */
+        }
+
+        /* Procura se ja existe uma entrada com este SSID */
+        int existing_idx = -1;
+        for (int j = 0; j < network_count; ++j) {
+            if (strcmp(networks[j].ssid, ssid) == 0) {
+                existing_idx = j;
+                break;
+            }
+        }
+
+        if (existing_idx >= 0) {
+            /* Se ja existe, mantem a de maior intensidade (RSSI mais alto / menos negativo) */
+            if (aps[i].rssi > networks[existing_idx].rssi) {
+                networks[existing_idx].rssi = aps[i].rssi;
+                networks[existing_idx].channel = aps[i].primary;
+                networks[existing_idx].authmode = aps[i].authmode;
+            }
+        } else if (network_count < MAX_NETWORKS) {
+            std::memset(&networks[network_count], 0, sizeof(networks[network_count]));
+            std::strncpy(networks[network_count].ssid, ssid, sizeof(networks[network_count].ssid) - 1);
+            networks[network_count].rssi = aps[i].rssi;
+            networks[network_count].channel = aps[i].primary;
+            networks[network_count].authmode = aps[i].authmode;
+            network_count++;
+        }
     }
+
     if (bsp_display_lock(0)) {
         lv_async_call(scan_ui_cb, nullptr);
         bsp_display_unlock();
@@ -314,11 +513,15 @@ void connect_timer_cb(lv_timer_t *timer)
         std::strncmp(status.ssid, selected_ssid, sizeof(selected_ssid)) == 0) {
         set_status("Conectado", ui_theme_get()->accent);
         lv_timer_pause(connect_timer);
+        render_networks();
+        update_action_buttons_state();
         return;
     }
     if (++connect_ticks >= 30) {
         set_status("Falhou ao conectar", ui_theme_get()->accent);
         lv_timer_pause(connect_timer);
+        render_networks();
+        update_action_buttons_state();
     }
 }
 
@@ -337,6 +540,28 @@ void connect_cb(lv_event_t *event)
     connect_ticks = 0;
     set_status("Conectando...", ui_theme_get()->text_muted);
     lv_timer_resume(connect_timer);
+}
+
+void disconnect_cb(lv_event_t *event)
+{
+    (void)event;
+    wifi_mgr_disconnect();
+    set_status("Desconectado", ui_theme_get()->text_muted);
+    render_networks();
+    update_action_buttons_state();
+}
+
+void forget_cb(lv_event_t *event)
+{
+    (void)event;
+    if (selected_ssid[0] == '\0') {
+        return;
+    }
+    wifi_mgr_forget(selected_ssid);
+    lv_textarea_set_text(password_ta, "");
+    set_status("Rede esquecida", ui_theme_get()->text_muted);
+    render_networks();
+    update_action_buttons_state();
 }
 
 void password_ta_click_cb(lv_event_t *event)
@@ -377,19 +602,23 @@ lv_obj_t *ui_wifi_create(void)
     lv_obj_set_style_border_side(wifi_bar, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_radius(wifi_bar, 0, 0);
     lv_obj_set_style_shadow_width(wifi_bar, 0, 0);
+    lv_obj_set_style_pad_left(wifi_bar, 12, 0);
+    lv_obj_set_style_pad_right(wifi_bar, 8, 0);
+    lv_obj_set_style_pad_top(wifi_bar, 0, 0);
+    lv_obj_set_style_pad_bottom(wifi_bar, 0, 0);
     lv_obj_clear_flag(wifi_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(wifi_bar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(wifi_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     wifi_title = lv_label_create(wifi_bar);
     lv_label_set_text(wifi_title, "WiFi");
     lv_obj_set_style_text_font(wifi_title, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_align(wifi_title, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_set_x(wifi_title, 0);
+    lv_obj_set_flex_grow(wifi_title, 1);
 
     wifi_close = lv_obj_create(wifi_bar);
     lv_obj_set_size(wifi_close, 36, 36);
-    lv_obj_align(wifi_close, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_x(wifi_close, lv_obj_get_width(wifi_bar) - lv_obj_get_width(wifi_close));
     lv_obj_set_style_radius(wifi_close, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(wifi_close, 1, 0);
     lv_obj_set_style_shadow_width(wifi_close, 0, 0);
     lv_obj_clear_flag(wifi_close, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(wifi_close, close_cb, LV_EVENT_CLICKED, nullptr);
@@ -410,8 +639,9 @@ lv_obj_t *ui_wifi_create(void)
 
     network_list = lv_obj_create(wifi_scr);
     lv_obj_set_style_radius(network_list, 8, 0);
-    lv_obj_set_style_pad_all(network_list, 0, 0);
-    lv_obj_set_style_pad_row(network_list, 1, 0);
+    lv_obj_set_style_border_width(network_list, 1, 0);
+    lv_obj_set_style_pad_all(network_list, 4, 0);
+    lv_obj_set_style_pad_row(network_list, 4, 0);
     lv_obj_set_flex_flow(network_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(network_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_scroll_dir(network_list, LV_DIR_VER);
@@ -439,6 +669,7 @@ lv_obj_t *ui_wifi_create(void)
     lv_obj_set_style_text_font(show_pwd_label, &lv_font_montserrat_14_latin1, 0);
     lv_obj_center(show_pwd_label);
 
+    /* Botao Conectar */
     connect_button = lv_obj_create(wifi_scr);
     lv_obj_set_height(connect_button, 38);
     lv_obj_set_style_radius(connect_button, 8, 0);
@@ -448,6 +679,32 @@ lv_obj_t *ui_wifi_create(void)
     lv_label_set_text(connect_label, "Conectar");
     lv_obj_set_style_text_font(connect_label, &lv_font_montserrat_14_latin1, 0);
     lv_obj_center(connect_label);
+
+    /* Botao Desconectar */
+    disconnect_button = lv_obj_create(wifi_scr);
+    lv_obj_set_height(disconnect_button, 38);
+    lv_obj_set_style_radius(disconnect_button, 8, 0);
+    lv_obj_set_style_border_width(disconnect_button, 1, 0);
+    lv_obj_clear_flag(disconnect_button, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(disconnect_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(disconnect_button, disconnect_cb, LV_EVENT_CLICKED, nullptr);
+    disconnect_label = lv_label_create(disconnect_button);
+    lv_label_set_text(disconnect_label, "Desconectar");
+    lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_center(disconnect_label);
+
+    /* Botao Esquecer */
+    forget_button = lv_obj_create(wifi_scr);
+    lv_obj_set_height(forget_button, 38);
+    lv_obj_set_style_radius(forget_button, 8, 0);
+    lv_obj_set_style_border_width(forget_button, 1, 0);
+    lv_obj_clear_flag(forget_button, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(forget_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(forget_button, forget_cb, LV_EVENT_CLICKED, nullptr);
+    forget_label = lv_label_create(forget_button);
+    lv_label_set_text(forget_label, "Esquecer");
+    lv_obj_set_style_text_font(forget_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_center(forget_label);
 
     status_label = lv_label_create(wifi_scr);
     lv_label_set_text(status_label, "Selecione uma rede para conectar");
@@ -465,6 +722,7 @@ lv_obj_t *ui_wifi_create(void)
     connect_timer = lv_timer_create(connect_timer_cb, 500, nullptr);
     lv_timer_pause(connect_timer);
     render_networks();
+    update_action_buttons_state();
     return wifi_scr;
 }
 

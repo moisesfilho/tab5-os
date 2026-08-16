@@ -154,16 +154,55 @@ esp_err_t wifi_mgr_connect(const char *ssid, const char *password)
         return ESP_ERR_INVALID_ARG;
     }
     snprintf(s_cfg.ssid, sizeof(s_cfg.ssid), "%s", ssid);
-    snprintf(s_cfg.password, sizeof(s_cfg.password), "%s", password != NULL ? password : "");
+
+    /* Se password for NULL ou vazio, verifica se ja esta salvo */
+    char saved_pwd[65] = "";
+    if ((password == NULL || password[0] == '\0') && wifi_storage_find(ssid, saved_pwd, sizeof(saved_pwd))) {
+        snprintf(s_cfg.password, sizeof(s_cfg.password), "%s", saved_pwd);
+    } else {
+        snprintf(s_cfg.password, sizeof(s_cfg.password), "%s", password != NULL ? password : "");
+    }
     s_has_cfg = true;
 
     if (wifi_storage_mount() == ESP_OK) {
-        wifi_storage_save(&s_cfg);
-        ESP_LOGI(TAG, "config salva no SD");
+        wifi_storage_add_or_update(s_cfg.ssid, s_cfg.password);
+        ESP_LOGI(TAG, "rede salva no SD: ssid=\"%s\"", s_cfg.ssid);
     }
 
     xTimerStop(s_retry_timer, 0);
     try_connect();
+    return ESP_OK;
+}
+
+esp_err_t wifi_mgr_disconnect(void)
+{
+    xTimerStop(s_retry_timer, 0);
+    s_has_cfg = false;
+    s_cfg.ssid[0] = '\0';
+    s_cfg.password[0] = '\0';
+    s_connected = false;
+    s_connected_ssid[0] = '\0';
+
+    esp_err_t err = esp_wifi_disconnect();
+    ESP_LOGI(TAG, "desconectado manualmente da rede");
+    return err;
+}
+
+esp_err_t wifi_mgr_forget(const char *ssid)
+{
+    if (ssid == NULL || ssid[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (wifi_storage_mount() == ESP_OK) {
+        wifi_storage_remove(ssid);
+        ESP_LOGI(TAG, "rede esquecida do SD: ssid=\"%s\"", ssid);
+    }
+
+    /* Se a rede esquecida for a conectada ou a configurada atual, desconecta */
+    if (strcmp(s_connected_ssid, ssid) == 0 || strcmp(s_cfg.ssid, ssid) == 0) {
+        wifi_mgr_disconnect();
+    }
     return ESP_OK;
 }
 

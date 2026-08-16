@@ -7,11 +7,13 @@
 #include "ui_files.h"
 #include "ui_theme.h"
 #include "ui_font.h"
+#include "file_assoc.h"
 
 namespace {
 
 lv_obj_t *desktop_scr = nullptr;
 lv_obj_t *notas_scr = nullptr;
+lv_obj_t *notas_caller_scr = nullptr;
 lv_obj_t *wifi_scr = nullptr;
 lv_obj_t *files_scr = nullptr;
 lv_obj_t *splash = nullptr;
@@ -58,6 +60,8 @@ void ui_shell_init(void)
     ui_bar_init(lv_layer_top());
     ui_keyboard_create(lv_layer_top());
 
+    file_assoc_init();
+
     ui_desktop_create(desktop_scr);
     notas_scr = ui_notas_create();
     wifi_scr = ui_wifi_create();
@@ -69,13 +73,26 @@ void ui_shell_init(void)
 void ui_shell_open_notas(void)
 {
     ui_keyboard_hide();
+    notas_caller_scr = desktop_scr;
+    lv_disp_load_scr(notas_scr);
+}
+
+void ui_shell_open_notas_with_file(const char *filepath)
+{
+    ui_keyboard_hide();
+    /* Salva a tela atualmente ativa (ex: files_scr) para retorno ao fechar */
+    lv_obj_t *act = lv_disp_get_scr_act(NULL);
+    notas_caller_scr = (act != nullptr && act != notas_scr) ? act : desktop_scr;
+    ui_notas_open_file(filepath);
     lv_disp_load_scr(notas_scr);
 }
 
 void ui_shell_close_notas(void)
 {
     ui_keyboard_hide();
-    lv_disp_load_scr(desktop_scr);
+    lv_obj_t *target = (notas_caller_scr != nullptr) ? notas_caller_scr : desktop_scr;
+    notas_caller_scr = nullptr;
+    lv_disp_load_scr(target);
 }
 
 void ui_shell_open_wifi(void)

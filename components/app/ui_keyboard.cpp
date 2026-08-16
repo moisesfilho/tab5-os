@@ -267,5 +267,11 @@ int32_t ui_keyboard_get_height(void)
     if (keyboard == nullptr || lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN)) {
         return 0;
     }
-    return lv_obj_get_height(keyboard);
+
+    int32_t h = lv_display_get_vertical_resolution(NULL);
+    int32_t w = lv_display_get_horizontal_resolution(NULL);
+    if (h > w) {
+        return h * 35 / 100;
+    }
+    return h * 52 / 100;
 }

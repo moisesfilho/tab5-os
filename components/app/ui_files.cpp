@@ -4,6 +4,7 @@
 #include "ui_shell.h"
 #include "ui_theme.h"
 #include "wifi_storage.h"
+#include "file_assoc.h"
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -132,8 +133,13 @@ void item_click_cb(lv_event_t *event)
     next_path += name;
 
     struct stat st;
-    if (stat(next_path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
-        load_directory(next_path);
+    if (stat(next_path.c_str(), &st) == 0) {
+        if (S_ISDIR(st.st_mode)) {
+            load_directory(next_path);
+        } else {
+            /* Tenta abrir o arquivo com o app associado a sua extensao */
+            file_assoc_open(next_path.c_str());
+        }
     }
 }
 
@@ -299,9 +305,7 @@ void render_content(void)
             lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
             lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-            if (entry.is_dir) {
-                lv_obj_add_event_cb(tile, item_click_cb, LV_EVENT_CLICKED, (void *)entry.name.c_str());
-            }
+            lv_obj_add_event_cb(tile, item_click_cb, LV_EVENT_CLICKED, (void *)entry.name.c_str());
 
             lv_obj_t *icon_label = lv_label_create(tile);
             lv_label_set_text(icon_label, entry.is_dir ? LV_SYMBOL_DIRECTORY : LV_SYMBOL_FILE);
@@ -340,9 +344,7 @@ void render_content(void)
             lv_obj_set_style_pad_bottom(item, 0, 0);
             lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
 
-            if (entry.is_dir) {
-                lv_obj_add_event_cb(item, item_click_cb, LV_EVENT_CLICKED, (void *)entry.name.c_str());
-            }
+            lv_obj_add_event_cb(item, item_click_cb, LV_EVENT_CLICKED, (void *)entry.name.c_str());
 
             /* Linha flex com colunas */
             lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);

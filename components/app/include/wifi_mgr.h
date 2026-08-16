@@ -25,6 +25,12 @@ esp_err_t wifi_mgr_connect(const char *ssid, const char *password);
 /* Dispara um scan; chama cb com os APs encontrados (copia valida ate o retorno) */
 esp_err_t wifi_mgr_scan(wifi_scan_cb_t cb, void *ctx);
 
+/* Desconecta da rede ativa e interrompe tentativas de reconexao */
+esp_err_t wifi_mgr_disconnect(void);
+
+/* Esquece uma rede (remove do SD) e desconecta se for a rede atual */
+esp_err_t wifi_mgr_forget(const char *ssid);
+
 /* Estado atual da conexao */
 esp_err_t wifi_mgr_get_status(wifi_status_t *status);
 

@@ -270,3 +270,104 @@ components/app/
 ### Etapa 4 — Validação e Gravação
 - Execução de `pre-commit run --all-files`.
 - Teste em hardware navegando pelas pastas e arquivos criados pelo sistema (`/sdcard/tab5_os/`).
+
+---
+
+# Planejamento: Persistência de Notas e Registro de Associações de Arquivo (Fase 17)
+
+## 1. Contexto & Objetivo
+- **Salvar Notas em `/sdcard/notas/`**:
+  - A aplicação **Notas** salvará e carregará notas como arquivos `.txt`.
+  - A pasta `/sdcard/notas` será criada automaticamente se não existir.
+  - O app Notas terá botões de ação na barra superior: **Salvar** (`LV_SYMBOL_SAVE`), **Novo** (`LV_SYMBOL_PLUS`) e indicador do arquivo em edição.
+  - Ao salvar uma nova nota, gera nome automático com timestamp ou sequencia numerica (ex: `nota_YYYYMMDD_HHMM.txt`), ou atualiza o arquivo aberto.
+- **Tabela / Registro de Associações de Tipos de Arquivo (File Associations)**:
+  - Criação de um módulo central no SO (`file_assoc`) que mapeia extensões de arquivo para seus respectivos manipuladores de abertura.
+  - Registro de extensão `.txt` mapeado para abrir o app Notas com o caminho do arquivo.
+- **Abertura de Arquivos a partir do app "Arquivos"**:
+  - No aplicativo **Arquivos**, ao clicar em um item de arquivo (ex: `documento.txt`), o sistema consulta a tabela de associações.
+  - Se houver um app associado para a extensão `.txt`, o arquivo é aberto diretamente no aplicativo **Notas**, carregando o seu conteúdo para leitura e edição.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha |
+|---|---|---|
+| D1 | Registro de Extensões | Módulo `file_assoc.h` / `file_assoc.cpp` com tabela `ext -> handler_fn(const char *path)` |
+| D2 | Diretório Padrão de Notas | `/sdcard/notas/` (criado automaticamente com `mkdir`) |
+| D3 | Ações no App Notas | Botão **Salvar** (`LV_SYMBOL_SAVE`), **Novo** (`LV_SYMBOL_PLUS`) e exibição do nome do arquivo |
+| D4 | Integração no App Arquivos | `item_click_cb`: se `S_ISDIR`, entra na pasta; se for arquivo, consulta `file_assoc_open()` |
+| D5 | Abertura com Argumento | `ui_shell_open_notas_file(const char *filepath)` carrega o conteúdo via I/O no `notas_ta` |
+
+## 3. Estrutura de Arquivos
+
+```
+components/app/
+├── include/
+│   ├── file_assoc.h       # [NEW] Registro de extensões do sistema (.txt -> Notas)
+│   ├── ui_notas.h         # [MODIFY] Exporta ui_notas_open_file e ui_notas_save_current
+│   └── ui_files.h         # [MODIFY] Mantém interface do navegador de arquivos
+├── file_assoc.cpp         # [NEW] Implementação do dispatcher de extensões
+├── ui_notas.cpp           # [MODIFY] Botões Salvar/Novo, lógica de I/O em /sdcard/notas/
+├── ui_files.cpp           # [MODIFY] Acionamento de file_assoc_open_file() no clique de arquivo
+├── ui_shell.cpp           # [MODIFY] Roteamento de abertura de notas com caminho de arquivo
+└── CMakeLists.txt         # [MODIFY] Registro de file_assoc.cpp
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+### Etapa 1 — Módulo `file_assoc`
+- Tabela associativa de extensões de arquivo para callbacks de abertura do sistema.
+- Função `file_assoc_open(const char *filepath)` para despacho automático.
+
+### Etapa 2 — Aprimoramento do App "Notas"
+- Botões Salvar (`💾`) e Novo (`+`) na barra do aplicativo.
+- I/O com `/sdcard/notas/` (gravação e leitura de arquivos `.txt`).
+- Indicador do nome do arquivo ativo na barra superior.
+
+### Etapa 3 — Integração no App "Arquivos"
+- Ao tocar em um arquivo `.txt` na grade ou na lista, dispara a abertura automática no app Notas.
+
+### Etapa 4 — Validação e Gravação
+- Executar `pre-commit run --all-files`.
+- Compilação e gravação no dispositivo.
+- Teste prático de criação, salvamento e reabertura via gerenciador de arquivos.
+
+---
+
+# Planejamento: Múltiplas Redes WiFi, Status Conectado/Salvo, Desconectar e Esquecer (Fase 18)
+
+## 1. Contexto & Objetivo
+- Suporte a múltiplas redes salvas no arquivo `/sdcard/tab5_os/wifi.cfg`.
+- Identificação visual na lista de scan do app WiFi:
+  - Indicação de rede atualmente **Conectada** (`LV_SYMBOL_OK` / `(Conectado)`).
+  - Indicação de redes **Salvas** (`LV_SYMBOL_SAVE` / `(Salva)`).
+- Ações contextuais de rede:
+  - Botão **Desconectar** para a rede ativa.
+  - Botão **Esquecer** para apagar as credenciais salvas de uma rede.
+  - Botão **Conectar** usando a senha salva ou inserindo nova senha.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha |
+|---|---|---|
+| D1 | Formato do `wifi.cfg` | Múltiplas seções `[rede]` ou linhas `ssid=...` e `password=...`, mantendo compatibilidade retroativa |
+| D2 | API de Armazenamento | `wifi_storage_load_all()`, `wifi_storage_add_or_update()`, `wifi_storage_remove()`, `wifi_storage_find()` |
+| D3 | Controle de Conexão | `wifi_mgr_disconnect()`, `wifi_mgr_forget()` e seleção de melhor rede conhecida no boot |
+| D4 | UI Contextual | Botões Conectar / Desconectar / Esquecer dinâmicos conforme o estado da rede selecionada |
+
+## 3. Fases de Execução
+
+### Etapa 1 — Backend `wifi_storage`
+- Implementar parsing e serialização de múltiplas redes em `wifi.cfg`.
+- Operações de busca, adição, atualização e remoção de rede.
+
+### Etapa 2 — Controle `wifi_mgr`
+- Implementar métodos de desconexão e esquecimento de rede no FreeRTOS/ESP-WiFi.
+
+### Etapa 3 — Interface de Usuário `ui_wifi`
+- Renderização de badges/ícones na listagem (Conectado / Salva / Sinal).
+- Controles de ação: Conectar, Desconectar, Esquecer e campo de senha contextual.
+
+### Etapa 4 — Validação e Gravação
+- `pre-commit run --all-files` 100% aprovado.
+- Gravação no Tab5 e validação em hardware.

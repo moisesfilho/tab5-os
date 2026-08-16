@@ -26,35 +26,122 @@ esp_err_t wifi_storage_mount(void)
     return ESP_OK;
 }
 
-esp_err_t wifi_storage_load(wifi_cfg_t *cfg)
+esp_err_t wifi_storage_load_all(wifi_saved_list_t *list)
 {
-    if (cfg == NULL) {
+    if (list == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+    list->count = 0;
 
     FILE *f = fopen(WIFI_CFG_PATH, "r");
     if (f == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
 
-    char line[128];
-    cfg->ssid[0] = '\0';
-    cfg->password[0] = '\0';
+    char line[160];
+    char cur_ssid[33] = "";
+    char cur_pwd[65] = "";
+
     while (fgets(line, sizeof(line), f) != NULL) {
+        /* Trata linhas vazias e comentarios */
+        char *start = line;
+        while (*start == ' ' || *start == '\t') {
+            start++;
+        }
+        if (*start == '#' || *start == ';' || *start == '\r' || *start == '\n' || *start == '\0') {
+            continue;
+        }
+
+        /* Suporte a secao [nome_da_rede] */
+        if (*start == '[') {
+            char *end = strchr(start, ']');
+            if (end != NULL) {
+                if (cur_ssid[0] != '\0' && list->count < WIFI_MAX_SAVED_NETWORKS) {
+                    snprintf(list->items[list->count].ssid, sizeof(list->items[list->count].ssid), "%s", cur_ssid);
+                    snprintf(list->items[list->count].password, sizeof(list->items[list->count].password), "%s",
+                             cur_pwd);
+                    list->count++;
+                    cur_pwd[0] = '\0';
+                }
+                size_t len = end - (start + 1);
+                if (len >= sizeof(cur_ssid)) {
+                    len = sizeof(cur_ssid) - 1;
+                }
+                strncpy(cur_ssid, start + 1, len);
+                cur_ssid[len] = '\0';
+                continue;
+            }
+        }
+
         char *eq = strchr(line, '=');
         if (eq == NULL) {
             continue;
         }
         *eq = '\0';
+        char *key = start;
         char *value = eq + 1;
         value[strcspn(value, "\r\n")] = '\0';
-        if (strcmp(line, "ssid") == 0) {
-            snprintf(cfg->ssid, sizeof(cfg->ssid), "%s", value);
-        } else if (strcmp(line, "password") == 0) {
-            snprintf(cfg->password, sizeof(cfg->password), "%s", value);
+
+        /* Trim em key */
+        char *key_end = key + strlen(key) - 1;
+        while (key_end > key && (*key_end == ' ' || *key_end == '\t')) {
+            *key_end = '\0';
+            key_end--;
+        }
+
+        if (strcmp(key, "ssid") == 0) {
+            if (cur_ssid[0] != '\0' && list->count < WIFI_MAX_SAVED_NETWORKS) {
+                snprintf(list->items[list->count].ssid, sizeof(list->items[list->count].ssid), "%s", cur_ssid);
+                snprintf(list->items[list->count].password, sizeof(list->items[list->count].password), "%s", cur_pwd);
+                list->count++;
+                cur_pwd[0] = '\0';
+            }
+            snprintf(cur_ssid, sizeof(cur_ssid), "%s", value);
+        } else if (strcmp(key, "password") == 0 || strcmp(key, "pwd") == 0) {
+            snprintf(cur_pwd, sizeof(cur_pwd), "%s", value);
         }
     }
+
+    if (cur_ssid[0] != '\0' && list->count < WIFI_MAX_SAVED_NETWORKS) {
+        snprintf(list->items[list->count].ssid, sizeof(list->items[list->count].ssid), "%s", cur_ssid);
+        snprintf(list->items[list->count].password, sizeof(list->items[list->count].password), "%s", cur_pwd);
+        list->count++;
+    }
+
     fclose(f);
+    return ESP_OK;
+}
+
+esp_err_t wifi_storage_save_all(const wifi_saved_list_t *list)
+{
+    if (list == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE *f = fopen(WIFI_CFG_PATH, "w");
+    if (f == NULL) {
+        return ESP_FAIL;
+    }
+
+    for (int i = 0; i < list->count; i++) {
+        fprintf(f, "ssid=%s\npassword=%s\n\n", list->items[i].ssid, list->items[i].password);
+    }
+    fclose(f);
+    return ESP_OK;
+}
+
+esp_err_t wifi_storage_load(wifi_cfg_t *cfg)
+{
+    if (cfg == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    wifi_saved_list_t list;
+    esp_err_t err = wifi_storage_load_all(&list);
+    if (err != ESP_OK || list.count == 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    snprintf(cfg->ssid, sizeof(cfg->ssid), "%s", list.items[0].ssid);
+    snprintf(cfg->password, sizeof(cfg->password), "%s", list.items[0].password);
     return ESP_OK;
 }
 
@@ -63,12 +150,98 @@ esp_err_t wifi_storage_save(const wifi_cfg_t *cfg)
     if (cfg == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+    return wifi_storage_add_or_update(cfg->ssid, cfg->password);
+}
 
-    FILE *f = fopen(WIFI_CFG_PATH, "w");
-    if (f == NULL) {
-        return ESP_FAIL;
+esp_err_t wifi_storage_add_or_update(const char *ssid, const char *password)
+{
+    if (ssid == NULL || ssid[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
     }
-    fprintf(f, "ssid=%s\npassword=%s\n", cfg->ssid, cfg->password);
-    fclose(f);
-    return ESP_OK;
+
+    wifi_saved_list_t list;
+    if (wifi_storage_load_all(&list) != ESP_OK) {
+        list.count = 0;
+    }
+
+    int found_idx = -1;
+    for (int i = 0; i < list.count; i++) {
+        if (strcmp(list.items[i].ssid, ssid) == 0) {
+            found_idx = i;
+            break;
+        }
+    }
+
+    if (found_idx >= 0) {
+        /* Atualiza a senha da rede ja existente */
+        snprintf(list.items[found_idx].password, sizeof(list.items[found_idx].password), "%s",
+                 password != NULL ? password : "");
+    } else {
+        if (list.count >= WIFI_MAX_SAVED_NETWORKS) {
+            /* Se lotou, substitui a mais antiga (posicao 0) deslocando a fila */
+            for (int i = 0; i < list.count - 1; i++) {
+                list.items[i] = list.items[i + 1];
+            }
+            list.count = WIFI_MAX_SAVED_NETWORKS - 1;
+        }
+        snprintf(list.items[list.count].ssid, sizeof(list.items[list.count].ssid), "%s", ssid);
+        snprintf(list.items[list.count].password, sizeof(list.items[list.count].password), "%s",
+                 password != NULL ? password : "");
+        list.count++;
+    }
+
+    return wifi_storage_save_all(&list);
+}
+
+esp_err_t wifi_storage_remove(const char *ssid)
+{
+    if (ssid == NULL || ssid[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    wifi_saved_list_t list;
+    if (wifi_storage_load_all(&list) != ESP_OK || list.count == 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    int found_idx = -1;
+    for (int i = 0; i < list.count; i++) {
+        if (strcmp(list.items[i].ssid, ssid) == 0) {
+            found_idx = i;
+            break;
+        }
+    }
+
+    if (found_idx < 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    for (int i = found_idx; i < list.count - 1; i++) {
+        list.items[i] = list.items[i + 1];
+    }
+    list.count--;
+
+    return wifi_storage_save_all(&list);
+}
+
+bool wifi_storage_find(const char *ssid, char *out_password, size_t max_len)
+{
+    if (ssid == NULL || ssid[0] == '\0') {
+        return false;
+    }
+
+    wifi_saved_list_t list;
+    if (wifi_storage_load_all(&list) != ESP_OK) {
+        return false;
+    }
+
+    for (int i = 0; i < list.count; i++) {
+        if (strcmp(list.items[i].ssid, ssid) == 0) {
+            if (out_password != NULL && max_len > 0) {
+                snprintf(out_password, max_len, "%s", list.items[i].password);
+            }
+            return true;
+        }
+    }
+    return false;
 }

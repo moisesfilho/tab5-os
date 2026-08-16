@@ -14,10 +14,11 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 
 ## Funcionalidades
 
-- **Gerenciador de Arquivos ("Arquivos")** — navegador de arquivos e pastas do cartão SD com suporte a navegação por diretórios e dois modos de visualização (Ícones em grade ou Lista detalhada com tamanho e data de modificação)
+- **Gerenciador de Arquivos ("Arquivos")** — navegador de arquivos e pastas do cartão SD com suporte a navegação por diretórios, dois modos de visualização (Ícones em grade ou Lista detalhada) e abertura automática de arquivos associados
+- **Aplicativo Notas e Associações de Arquivos** — editor de texto integrado com criação de notas, salvamento modal com sugestão/edição de nome e suporte nativo a abertura e edição de arquivos `.txt` e `.cfg`
+- **Gerenciador de Wi-Fi Avançado** — suporte a múltiplas redes salvas no SD (`wifi.cfg`), desduplicação inteligente de redes Mesh (mantendo o maior RSSI), indicadores visuais de rede conectada e redes salvas, além de ações para conectar, desconectar e esquecer rede
 - **Teclado virtual PT-BR** — teclado nativo LVGL + textarea, funciona em retrato e paisagem, com símbolos (`*`, `@`, `#`, etc.) e página de acentos (ç, vogais acentuadas minúsculas e maiúsculas) acessada pela tecla "1#"
-- **Redimensionamento reativo** — janelas de aplicativos ajustam sua altura visível automaticamente ao abrir e fechar o teclado virtual
-- **Gerenciador de Wi-Fi** — scan de redes sem fio com rolagem, campo de senha com alternador de visibilidade (exibir/ocultar senha), cursor piscante, conexão automática com retry e persistência no cartão SD
+- **Redimensionamento reativo** — janelas de aplicativos e modais ajustam sua altura e posição visível automaticamente ao abrir e fechar o teclado virtual
 - **Persistência de Orientação** — a posição da tela é persistida automaticamente no cartão SD e restaurada no boot
 - **Barra superior estilo SO** — botão de engrenagem, ícone de status Wi-Fi com indicador de conexão e relógio ao vivo
 - **Rotação automática por IMU** — o vetor de gravidade do BMI270 aciona `lv_display_set_rotation` (0/90/180/270) com debounce

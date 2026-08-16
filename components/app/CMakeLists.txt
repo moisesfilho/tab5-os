@@ -14,6 +14,7 @@ idf_component_register(
         "wifi_mgr.cpp"
         "wifi_storage.cpp"
         "display_storage.cpp"
+        "file_assoc.cpp"
         "fonts/lv_font_montserrat_14_latin1.c"
         "fonts/lv_font_montserrat_28_latin1.c"
     INCLUDE_DIRS "." "include"
