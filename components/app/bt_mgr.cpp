@@ -658,7 +658,9 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
                     }
                 }
                 return 0;
-            } else if (data[0] == 0x05) {
+            }
+
+            if (data[0] == 0x05) {
                 /* Toque finalizado / dedo levantado do touchpad */
                 if (s_touch_active) {
                     uint32_t dur = esp_log_timestamp() - s_touch_start_time;

@@ -18,7 +18,9 @@ Checks: >
   -readability-static-definition-in-anonymous-namespace,
   -readability-implicit-bool-conversion,
   -readability-braces-around-statements,
+  -readability-else-after-return,
   -performance-enum-size,
+  -performance-no-int-to-ptr,
   -bugprone-suspicious-enum-usage,
   -clang-diagnostic-extern-c-compat,
   -clang-diagnostic-unknown-warning-option
