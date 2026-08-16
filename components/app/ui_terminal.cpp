@@ -81,26 +81,26 @@ void execute_current_command(void)
     }
 
     std::string text_str = full_text;
-    std::string cmd;
+    std::string input_line;
     if (text_str.size() >= prompt_min_index) {
-        cmd = text_str.substr(prompt_min_index);
+        input_line = text_str.substr(prompt_min_index);
     }
 
     // Remove eventuais newlines/quebras do comando
-    while (!cmd.empty() && (cmd.back() == '\n' || cmd.back() == '\r')) {
-        cmd.pop_back();
+    while (!input_line.empty() && (input_line.back() == '\n' || input_line.back() == '\r')) {
+        input_line.pop_back();
     }
 
-    if (cmd == "clear") {
+    if (input_line == "clear") {
         reset_terminal();
         return;
     }
 
     // Registra o comando no histórico com quebra de linha
-    term_history += cmd + "\n";
+    term_history += input_line + "\n";
 
-    if (!cmd.empty()) {
-        std::string output = terminal_exec(cmd, current_cwd);
+    if (!input_line.empty()) {
+        std::string output = terminal_exec(input_line, current_cwd);
         if (output == "\x0C") {
             reset_terminal();
             return;

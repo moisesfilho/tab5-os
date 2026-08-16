@@ -295,12 +295,19 @@ std::string cmd_cat(const std::vector<std::string> &args, const std::string &cwd
         char buf[512];
         size_t total_read = 0;
         const size_t max_bytes = 4096;
-        while (!feof(f) && total_read < max_bytes) {
+        while (total_read < max_bytes) {
             size_t n = fread(buf, 1, sizeof(buf) - 1, f);
             if (n > 0) {
                 buf[n] = '\0';
                 out.append(buf, n);
                 total_read += n;
+            }
+            if (feof(f)) {
+                break; /* fim do arquivo */
+            }
+            if (ferror(f)) {
+                out += "\n[read error]\n";
+                break; /* erro de I/O: aborta leitura */
             }
         }
         if (total_read >= max_bytes && !feof(f)) {
