@@ -11,6 +11,7 @@
 #include "wifi_mgr.h"
 #include "wifi_storage.h"
 #include "bt_mgr.h"
+#include "ui_mouse.h"
 #include "rtc_rx8130.h"
 
 static const char *TAG = "tab5_poc";
@@ -55,6 +56,7 @@ extern "C" void app_main(void)
     bsp_display_lock(0);
 
     ui_shell_init();
+    ui_mouse_init();
 
     bsp_display_unlock();
 

@@ -52,7 +52,9 @@ jobs:
         run: |
           set +e
           clang-tidy -p build \
+            --config-file=.clang-tidy \
             --extra-arg="-Wno-unknown-warning-option" \
+            --extra-arg="-Wno-extern-c-compat" \
             --header-filter='components/app/' \
             main/app_main.cpp \
             components/app/*.cpp 2>&1 | tee clang-tidy.log

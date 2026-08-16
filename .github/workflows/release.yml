@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish Release Firmware
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install ESP-IDF
+        uses: espressif/install-esp-idf-action@v1
+        with:
+          version: v5.5.5
+
+      - name: Build Firmware
+        run: |
+          idf.py build
+
+      - name: Prepare Release Artifacts
+        run: |
+          mkdir -p release_binaries
+          cp build/tab5_os.bin release_binaries/
+          cp build/bootloader/bootloader.bin release_binaries/
+          cp build/partition_table/partition-table.bin release_binaries/
+          cd release_binaries
+          zip -r ../tab5_os_firmware.zip ./*
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            tab5_os_firmware.zip
+            build/tab5_os.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+          generate_release_notes: true
+          draft: false
+          prerelease: false

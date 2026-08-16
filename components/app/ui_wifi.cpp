@@ -202,23 +202,24 @@ void apply_wifi_layout(void)
     if (forget_button != nullptr && is_saved) {
         lv_obj_set_width(forget_button, btn_w);
         lv_obj_set_x(forget_button, cur_x);
-        lv_obj_set_y(forget_button, 2 * UI_BAR_HEIGHT + 52);
+        lv_obj_set_y(forget_button, (2 * UI_BAR_HEIGHT) + 52);
         cur_x += btn_w + gap;
     }
 
     /* Linha 3: Status da conexao / selecao */
     if (status_label != nullptr) {
         lv_obj_set_x(status_label, side);
-        lv_obj_set_y(status_label, 2 * UI_BAR_HEIGHT + 96);
+        lv_obj_set_y(status_label, (2 * UI_BAR_HEIGHT) + 96);
     }
 
     /* Linha 4 em diante: Lista de redes ocupando o espaco restante */
     if (network_list != nullptr) {
-        int32_t list_top = 2 * UI_BAR_HEIGHT + 120;
+        int32_t list_top = (2 * UI_BAR_HEIGHT) + 120;
         int32_t kb_h = ui_keyboard_is_visible() ? ui_keyboard_get_height() : 0;
         int32_t list_h = height - list_top - kb_h - 12;
-        if (list_h < 70)
+        if (list_h < 70) {
             list_h = 70;
+        }
         lv_obj_set_width(network_list, usable_w);
         lv_obj_set_height(network_list, list_h);
         lv_obj_set_x(network_list, side);

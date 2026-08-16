@@ -7,6 +7,7 @@ idf_component_register(
         "ui_files.cpp"
         "ui_bluetooth.cpp"
         "ui_keyboard.cpp"
+        "ui_mouse.cpp"
         "ui_status.cpp"
         "ui_theme.cpp"
         "ui_bar.cpp"

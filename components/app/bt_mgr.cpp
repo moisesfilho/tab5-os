@@ -18,6 +18,7 @@
 #include "nimble/nimble_port_freertos.h"
 #include "store/config/ble_store_config.h"
 #include "ui_keyboard.h"
+#include "ui_mouse.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -540,6 +541,7 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
             xSemaphoreGive(s_bt_mutex);
         }
         ui_keyboard_notify_hardware_change();
+        ui_mouse_set_connected(false);
 
         {
             bt_saved_list_t list = {};
@@ -590,32 +592,102 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_NOTIFY_RX: {
         uint16_t len = OS_MBUF_PKTLEN(event->notify_rx.om);
         if (len >= 3) {
-            uint8_t data[16] = {};
-            os_mbuf_copydata(event->notify_rx.om, 0, len < 16 ? len : 16, data);
+            uint8_t data[32] = {};
+            os_mbuf_copydata(event->notify_rx.om, 0, len < 32 ? len : 32, data);
 
-            ESP_LOGI(TAG, "NOTIFY len=%d [0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X]", (int)len, data[0],
-                     data[1], data[2], data[3], data[4], data[5], data[6], data[7]);
+            char hex_buf[80] = "";
+            int pos = 0;
+            for (int i = 0; i < len && i < 20; i++) {
+                pos += snprintf(hex_buf + pos, sizeof(hex_buf) - pos, "%02X ", data[i]);
+            }
+            ESP_LOGI(TAG, "NOTIFY len=%d [%s]", (int)len, hex_buf);
 
-            /* Se for relatório curto de Mouse/Touchpad: tamanho 3 a 5 bytes */
-            if (len <= 5 && (data[0] == 0x02 || len <= 4)) {
+            /* 1. Relatório de Mouse Padrão (Report ID 0x02 ou len 3..5 sem ID) */
+            if ((len <= 7 && data[0] == 0x02) || (len <= 5 && data[0] != 0x01)) {
                 int offset = (data[0] == 0x02) ? 1 : 0;
                 uint8_t buttons = data[offset];
                 int8_t dx = (int8_t)data[offset + 1];
                 int8_t dy = (int8_t)data[offset + 2];
-                ESP_LOGI(TAG, "HID Mouse/Touchpad: btn=0x%02X dx=%d dy=%d", buttons, dx, dy);
+                int8_t wheel = (len > (uint16_t)(offset + 3)) ? (int8_t)data[offset + 3] : 0;
+                ESP_LOGI(TAG, "HID Mouse Padrão: btn=0x%02X dx=%d dy=%d wheel=%d", buttons, dx, dy, wheel);
+                ui_mouse_inject_motion(dx, dy, buttons, wheel);
                 return 0;
             }
 
-            /* Relatório de Teclado (8 bytes sem ID ou 9 bytes com Report ID) */
-            uint8_t mod = data[0];
-            int key_offset = 2;
+            /* 2. Relatório de Touchpad / Multi-Touch (Report ID 0x07 e 0x05) */
+            static uint16_t s_prev_touch_x = 0;
+            static uint16_t s_prev_touch_y = 0;
+            static bool s_touch_active = false;
+            static uint32_t s_touch_start_time = 0;
+            static int32_t s_total_move = 0;
+
+            if (data[0] == 0x07 && len >= 4) {
+                uint16_t cur_x = data[1] | ((uint16_t)(data[2] & 0x0F) << 8);
+                uint16_t cur_y = (data[2] >> 4) | ((uint16_t)data[3] << 4);
+
+                if (!s_touch_active) {
+                    s_touch_active = true;
+                    s_touch_start_time = esp_log_timestamp();
+                    s_total_move = 0;
+                    s_prev_touch_x = cur_x;
+                    s_prev_touch_y = cur_y;
+                } else {
+                    int32_t dx = (int32_t)cur_x - (int32_t)s_prev_touch_x;
+                    int32_t dy = (int32_t)cur_y - (int32_t)s_prev_touch_y;
+
+                    s_prev_touch_x = cur_x;
+                    s_prev_touch_y = cur_y;
+
+                    s_total_move += (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+
+                    if (dx > 80) {
+                        dx = 80;
+                    }
+                    if (dx < -80) {
+                        dx = -80;
+                    }
+                    if (dy > 80) {
+                        dy = 80;
+                    }
+                    if (dy < -80) {
+                        dy = -80;
+                    }
+
+                    if (dx != 0 || dy != 0) {
+                        ui_mouse_inject_motion((int8_t)dx, (int8_t)dy, 0, 0);
+                    }
+                }
+                return 0;
+            } else if (data[0] == 0x05) {
+                /* Toque finalizado / dedo levantado do touchpad */
+                if (s_touch_active) {
+                    uint32_t dur = esp_log_timestamp() - s_touch_start_time;
+                    if (dur < 350 && s_total_move < 30) {
+                        ESP_LOGI(TAG, "Touchpad: TAP-TO-CLICK detectado (dur=%u ms, move=%d)", (unsigned)dur,
+                                 (int)s_total_move);
+                        ui_mouse_inject_click();
+                    }
+                }
+                s_touch_active = false;
+                s_prev_touch_x = 0;
+                s_prev_touch_y = 0;
+                s_total_move = 0;
+                return 0;
+            }
+
+            /* 3. Relatório de Teclado (Report ID 0x01 com len >= 9 ou 8 bytes sem ID) */
+            uint8_t mod = 0;
+            int key_offset = 0;
 
             if (len >= 9 && data[0] == 0x01) {
                 mod = data[1];
                 key_offset = 3;
-            } else if (len >= 9) {
-                mod = data[1];
-                key_offset = 3;
+            } else if (len == 8 && data[0] != 0x01) {
+                mod = data[0];
+                key_offset = 2;
+            } else {
+                /* Outro tipo de relatório não reconhecido como teclado */
+                return 0;
             }
 
             static uint8_t s_prev_keys[6] = {};
@@ -835,6 +907,7 @@ esp_err_t bt_mgr_set_enabled(bool enabled)
         }
         s_curr_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         ui_keyboard_notify_hardware_change();
+        ui_mouse_set_connected(false);
     } else {
         if (s_nimble_synced) {
             bt_saved_list_t list = {};
@@ -1116,6 +1189,7 @@ esp_err_t bt_mgr_disconnect(const char *mac)
     }
 
     update_device_connection_flags_locked();
+    ui_mouse_set_connected(false);
     if (s_bt_mutex != nullptr) {
         xSemaphoreGive(s_bt_mutex);
     }

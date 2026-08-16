@@ -490,3 +490,31 @@ Adicionar opções independentes no Menu de Configurações (painel da engrenage
 - **Persistência em NVS**: Salvo na partição NVS (`radios`) e restaurado em cada boot.
 - **Controle Efetivo de Rádio**: Desconexão e bloqueio de buscas quando desativado; auto-reconexão imediata e inteligente a redes (`wifi.cfg`) e dispositivos Bluetooth (`bt.cfg`) quando reativado.
 - **Sincronização Visual**: Barra de status e aplicativos de rede refletem em tempo real o estado de cada rádio.
+
+---
+
+# Fase 8: Suporte a Mouse/Touchpad BLE HID e Cursor Visual
+
+## 1. Visão Geral
+Adicionar suporte completo a periféricos de apontamento Bluetooth Low Energy (HOGP) como Touchpads integrados a teclados físicos e mouses sem fio, com cursor visual renderizado na tela do LVGL 9, movimentação com adaptação automática à rotação do display (0°, 90°, 180°, 270°) e detecção dinâmica de conexão/desconexão.
+
+## 2. Escopo e Entregáveis
+1. **Driver de Ponteiro LVGL 9 (`ui_mouse.h`, `ui_mouse.cpp`)**:
+   - Registro de dispositivo de entrada `LV_INDEV_TYPE_POINTER` no LVGL 9 via `lv_indev_create()`.
+   - Cursor visual nítido criado na camada de sistema (`lv_layer_sys()`) com desenho de alta visibilidade em temas claro e escuro.
+   - Rastreamento absoluto `(s_cursor_x, s_cursor_y)` com clamp nos limites da resolução ativa.
+   - Ajuste angular dos eixos `(dx, dy)` conforme a rotação de tela do IMU.
+   - Suporte a cliques esquerdo/toque (`LV_INDEV_STATE_PRESSED` / `LV_INDEV_STATE_RELEASED`).
+2. **Integração com o Gerenciador Bluetooth (`bt_mgr.cpp`)**:
+   - Extração de pacotes HID de Mouse (Report ID `0x02` ou relatórios curtos de 3 a 5 bytes com botões, `dx`, `dy`, `wheel`).
+   - Despacho imediato para `ui_mouse_inject_motion()`.
+   - Exibição do cursor ao conectar / mover e ocultação imediata ao desconectar ou desligar o Bluetooth.
+3. **Inicialização do Sistema (`app_main.cpp` e `CMakeLists.txt`)**:
+   - Adição de `ui_mouse.cpp` ao build do componente `app`.
+   - Chamada `ui_mouse_init()` na inicialização do sistema.
+
+## 3. Status de Conclusão: CONCLUÍDO (100%)
+- **Driver de Mouse no LVGL 9**: Ponteiro registrado como `LV_INDEV_TYPE_POINTER` com cursor em bitmap ARGB8888 no `lv_layer_sys()`.
+- **Navegação em Todas as Rotações**: Mapeamento e transformação inversa cobrindo 100% da resolução ativa em modo retrato (0°, 180°) e modo paisagem (90°, 270°).
+- **Detecção de Gestos e Toque**: Suporte completo a tap-to-click e cliques físicos com liberação atômica no LVGL.
+- **Integração BLE**: Desconexão automática e restauração transparente em reconexões.

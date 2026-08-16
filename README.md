@@ -15,6 +15,7 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 ## Funcionalidades
 
 - **Gerenciador de Bluetooth & Teclado Físico (BLE HID)** — suporte a conexão, pareamento e auto-reconexão com periféricos Bluetooth Low Energy (HOGP), como teclados físicos e mouses/touchpads integrados, com injeção direta de digitação nos aplicativos (ex: Notas), ocultação dinâmica do teclado virtual e indicador de conexão na barra superior
+- **Suporte a Mouse & Touchpad BLE HID com Cursor Visual** — identificação automática de mouses e touchpads BLE, cursor visual de alta visibilidade no LVGL 9, navegação e clique com adaptação completa a todas as rotações da tela (0°, 90°, 180°, 270°) e detecção de gestos de toque rápido (tap-to-click)
 - **Gerenciador de Arquivos ("Arquivos")** — navegador de arquivos e pastas do cartão SD com suporte a navegação por diretórios, dois modos de visualização (Ícones em grade ou Lista detalhada) e abertura automática de arquivos associados
 - **Aplicativo Notas e Associações de Arquivos** — editor de texto integrado com criação de notas, salvamento modal com sugestão/edição de nome e suporte nativo a abertura e edição de arquivos `.txt` e `.cfg`
 - **Gerenciador de Wi-Fi Avançado** — suporte a múltiplas redes salvas no SD (`wifi.cfg`), desduplicação inteligente de redes Mesh (mantendo o maior RSSI), indicadores visuais de rede conectada e redes salvas, além de ações para conectar, desconectar e esquecer rede

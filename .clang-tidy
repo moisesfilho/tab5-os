@@ -12,7 +12,11 @@ Checks: >
   -readability-identifier-length,
   -readability-magic-numbers,
   -readability-named-parameter,
-  -readability-function-cognitive-complexity
+  -readability-function-cognitive-complexity,
+  -readability-math-missing-parentheses,
+  -readability-use-std-min-max,
+  -clang-diagnostic-extern-c-compat,
+  -clang-diagnostic-unknown-warning-option
 WarningsAsErrors: ''
 HeaderFilterRegex: 'components/app/'
 FormatStyle: none
