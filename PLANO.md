@@ -28,6 +28,9 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 20** | Aplicativo Terminal Interativo | Aplicativo / Shell | Mini-shell C++, comandos POSIX em `/sdcard`, buffer circular 8 KB |
 | `[ ]` | **Fase 21** | Cliente SSH Remoto no Terminal | Conectividade / CLI | Task FreeRTOS, `david-cermak/libssh`, PTY xterm, auth por senha/chave |
 | `[ ]` | **Fase 22** | Protetor de Tela Anti-Burn-in com Data e Hora | Sistema / Display | Screensaver fundo preto, relógio grande, reposicionamento 30s, wake no toque |
+| `[ ]` | **Fase 23** | Controle de Brilho da Tela no Menu de Configurações | Sistema / Display | Slider de brilho no menu, PWM 10–100%, feedback visual, persistência |
+| `[ ]` | **Fase 24** | Aplicativos de Câmera e Galeria de Fotos | Aplicativo / Mídia | Preview MIPI-CSI, gravação `/sdcard/imagens/`, galeria com swipe/toque, exclusão e associação no app Arquivos |
+| `[ ]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
 
 ---
 
@@ -828,3 +831,308 @@ components/app/
 
 ## 8. Status de Conclusão: `[ ] PLANEJADO`
 - **Protetor de Tela**: Arquitetura e especificação anti-burn-in planejadas e prontas para implementação na Fase 22.
+
+---
+
+# [ ] Fase 23: Controle de Brilho da Tela no Menu de Configurações `⏳ PLANEJADO`
+
+## 1. Contexto & Objetivos
+- Adicionar controle interativo da intensidade de **brilho do backlight** do display MIPI-DSI no **Menu de Configurações** (painel popover da engrenagem).
+- **Suporte de Hardware e BSP**: O Tab5 possui controle de backlight por modulação PWM através da função oficial do BSP `bsp_display_brightness_set(int brightness_percent)`.
+- **Interface e Ergonomia**:
+  - Slider horizontal (`lv_slider`) elegante e responsivo no popover de configurações.
+  - Indicador numérico percentual em tempo real (ex: `75%`) e ícone indicativo de luminosidade (`LV_SYMBOL_IMAGE` / `LV_SYMBOL_EYE_OPEN`).
+  - Faixa de ajuste seguro entre **10% e 100%** (com limite inferior de 10% para impedir que o usuário apague completamente a tela por engano).
+- **Persistência de Estado**:
+  - O nível de brilho selecionado é persistido em NVS (namespace `display`, chave `brightness`) ou `/sdcard/tab5_os/display.cfg` e restaurado automaticamente em cada boot.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Controle de Hardware | `bsp_display_brightness_set(int percent)` | API nativa do BSP que gerencia o driver PWM do backlight |
+| D2 | Componente de UI | `lv_slider` em `ui_bar.cpp` (popover de configurações) | Controle intuitivo, contínuo e integrado ao painel existente |
+| D3 | Limites de Brilho | Mínimo de 10% e Máximo de 100% | Evita tela preta acidental mantendo a UI sempre visível |
+| D4 | Persistência | NVS (`display/brightness`) e/ou `display_storage` | Rápido, seguro e independente do cartão microSD |
+| D5 | Estratégia de I/O | PWM imediato no arraste e gravação em NVS ao soltar | Resposta visual instantânea sem desgaste de escrita em Flash |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── display_storage.h      # [MODIFY] Protótipos para salvar e carregar brilho
+│   └── ui_bar.h               # [MODIFY] Declarações do slider de brilho
+├── display_storage.cpp        # [MODIFY] I/O do nível de brilho em NVS / SD
+├── ui_bar.cpp                 # [MODIFY] Slider de brilho, label percentual e eventos
+└── CMakeLists.txt             # [MODIFY] Mantém os módulos do componente app
+```
+
+## 4. Layout no Menu de Configurações
+
+```
+┌─────────────────────────────────────────┐
+│ Configurações                           │
+├─────────────────────────────────────────┤
+│ Rotação Automática              [ O ]   │
+│ Wi-Fi                           [ O ]   │
+│ Bluetooth                       [ O ]   │
+├─────────────────────────────────────────┤
+│ Brilho                            80%   │
+│ [☼] ━━━━━━━●━━━━━━━━━━━━ [10% - 100%]   │
+├─────────────────────────────────────────┤
+│ Protetor de Tela               [ 2 min] │
+└─────────────────────────────────────────┘
+```
+
+## 5. Fases de Execução da Funcionalidade
+
+- [ ] **Etapa 1 — Backend de Persistência (`display_storage`)**: Funções `display_storage_load_brightness(int *percent)` e `display_storage_save_brightness(int percent)` com fallback padrão de 80%. Aplicação do brilho no boot durante `app_main.cpp`.
+- [ ] **Etapa 2 — Slider de Brilho no `ui_bar.cpp`**: Adição da linha "Brilho" no menu popover com `lv_slider`, label de porcentagem e estilização compatível com temas claro e escuro.
+- [ ] **Etapa 3 — Eventos e Ajuste em Tempo Real**: Callback `LV_EVENT_VALUE_CHANGED` chamando `bsp_display_brightness_set()` imediatamente e evento `LV_EVENT_RELEASED` gravando o valor persistente.
+- [ ] **Etapa 4 — Build, Validação e Teste em Hardware**: Teste físico de variação de intensidade luminosa do backlight e validação de persistência após desligar e ligar o Tab5.
+
+## 6. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Usuário zerar o brilho e perder visibilidade | Clamp rígido `lv_slider_set_range(slider, 10, 100)` impedindo valores inferiores a 10% |
+| Desgaste de Flash por escrita contínua durante o arraste | Gravação em NVS/SD despachada apenas no evento `LV_EVENT_RELEASED` (ao soltar o toque) |
+
+## 7. Critérios de Validação & Teste em Hardware
+1. Abrir o menu de configurações (engrenagem) na barra superior.
+2. Arrastar o slider de brilho e observar a variação imediata e fluida da iluminação do display.
+3. Verificar que o slider não permite ajuste abaixo de 10%.
+4. Reiniciar o Tab5 e validar que o nível de brilho configurado é restaurado no boot.
+
+## 8. Status de Conclusão: `[ ] PLANEJADO`
+- **Controle de Brilho**: Arquitetura planejada e pronta para implementação na Fase 23.
+
+---
+
+# [ ] Fase 24: Aplicativos de Câmera e Galeria de Fotos `⏳ PLANEJADO`
+
+## 1. Contexto & Objetivos
+- **Aplicativo "Câmera" (`ui_camera`)**:
+  - Integração com o sensor de câmera MIPI-CSI do ESP32-P4 através do subsistema `esp_video` (V4L2) e inicialização via `bsp_camera_start()`.
+  - Exibição de preview em tempo real na tela em widget LVGL (canvas RGB565 / frame buffer em PSRAM).
+  - Botão de disparo centralizado na barra inferior e atalho direto para a Galeria de Fotos.
+  - **Salvamento Automático no microSD**:
+    - Criação automática do diretório `/sdcard/imagens/` (se inexistente).
+    - Nomenclatura no formato ISO/Americano: `IMG_YYYYMMDD_HHMMSS.jpg` (ex: `IMG_20260816_195500.jpg`), garantindo **ordenação natural cronológica**.
+- **Aplicativo "Galeria" (`ui_gallery`)**:
+  - Leitura e listagem de fotos de `/sdcard/imagens/` ordenadas da **mais recente para a mais antiga**.
+  - Exibição da imagem em tela cheia com cabeçalho contendo nome do arquivo, data/hora e contador de fotos (`1 de N`).
+  - **Navegação Intuitiva por Gestos e Toque**:
+    - **Próxima imagem (mais antiga)**: Gesto de arrastar (swipe) da **direita para a esquerda** (`LV_DIR_LEFT`) OU toque simples na **metade direita** da tela.
+    - **Imagem anterior (mais recente)**: Gesto de arrastar (swipe) da **esquerda para a direita** (`LV_DIR_RIGHT`) OU toque simples na **metade esquerda** da tela.
+    - Botão superior de retorno ao launcher e atalho para abrir o app Câmera.
+  - **Exclusão de Fotos com Confirmação**:
+    - Botão de exclusão (`LV_SYMBOL_TRASH`) na barra superior do aplicativo.
+    - Modal de confirmação (`lv_msgbox`) para prevenir exclusões acidentais.
+    - Ao confirmar, o arquivo físico é removido do microSD (`unlink()`), o índice e contador (`N de Total`) são atualizados e a próxima foto (ou anterior) é exibida automaticamente (ou mensagem de "Nenhuma foto" se esvaziada).
+- **Integração com a Tabela de Associações de Tipos de Arquivo (`file_assoc`)**:
+  - Registro de extensões de imagem (`.jpg`, `.jpeg`, `.png`, `.bmp`) associadas à função `ui_shell_open_gallery_with_file(filepath)`.
+  - **Abertura a partir do Gerenciador de Arquivos ("Arquivos")**: Ao navegar pelas pastas do microSD no aplicativo Arquivos (seja em `/sdcard/imagens/` ou em qualquer outro diretório), o clique em uma imagem dispara `file_assoc_open()`, abrindo diretamente o aplicativo **Galeria** para exibir a foto clicada em tela cheia e contextualizar a lista de fotos a partir daquele ponto.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Subsistema de Câmera | `esp_video` (V4L2) via MIPI-CSI / `bsp_camera_start()` | Padrão oficial de captura de alta performance no ESP32-P4 |
+| D2 | Diretório e Nomes | `/sdcard/imagens/` + `IMG_YYYYMMDD_HHMMSS.jpg` | Ordenação lexicográfica idêntica à ordem cronológica |
+| D3 | Ordenação na Galeria | Varredura de diretório com ordenação reversa (decrescente) | Prioriza as fotos mais recentes imediatamente ao abrir |
+| D4 | Controles de Navegação | `LV_EVENT_GESTURE` (swipe) + detecção de quadrante no `LV_EVENT_CLICKED` | Ergonomia tátil moderna e natural sem depender de botões minúsculos |
+| D5 | Exclusão de Fotos | Botão `LV_SYMBOL_TRASH` + diálogo de confirmação | Previne remoção acidental e atualiza a galeria em tempo real |
+| D6 | Associação no SO | Registro de `.jpg`/`.jpeg`/`.png`/`.bmp` em `file_assoc` | Abertura nativa e transparente a partir do app "Arquivos" |
+| D7 | Lançadores no Desktop | Tiles dedicados "Câmera" e "Galeria" no `ui_desktop.cpp` | Acesso direto da tela principal com ciclo de vida no `ui_shell` |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── camera_mgr.h           # [NEW] Captura MIPI-CSI, frame buffers e compressão JPEG
+│   ├── ui_camera.h            # [NEW] Interface do app Câmera (preview + botão de disparo)
+│   ├── ui_gallery.h           # [NEW] Interface da Galeria (renderizador, gestos swipe/touch e exclusão)
+│   ├── file_assoc.h           # [MODIFY] Registro de extensões (.jpg, .jpeg, .png, .bmp -> Galeria)
+│   ├── ui_desktop.h           # [MODIFY] Tiles 'Câmera' e 'Galeria' no desktop
+│   └── ui_shell.h             # [MODIFY] Rotinas ui_shell_open_gallery_with_file / close_gallery
+├── camera_mgr.cpp             # [NEW] Backend de captura de vídeo e I/O de imagens no SD
+├── ui_camera.cpp              # [NEW] UI da Câmera, atualização de preview e disparo
+├── ui_gallery.cpp             # [NEW] UI da Galeria, ordenação decrescente, navegação e exclusão
+├── file_assoc.cpp             # [MODIFY] Dispatcher para ui_shell_open_gallery_with_file
+├── ui_desktop.cpp             # [MODIFY] Registro visual dos novos tiles
+├── ui_shell.cpp               # [MODIFY] Transições de tela da câmera e galeria com suporte a caminho de arquivo
+└── CMakeLists.txt             # [MODIFY] Registro de camera_mgr.cpp, ui_camera.cpp e ui_gallery.cpp
+```
+
+## 4. Especificação Visual e Layout dos Aplicativos
+
+### Layout do Aplicativo "Câmera"
+```
+┌─────────────────────────────────────────┐
+│  [←] Câmera                       [🖼]  │  ← Barra com voltar e atalho para Galeria
+├─────────────────────────────────────────┤
+│                                         │
+│                                         │
+│            Área de Preview              │  ← Video stream MIPI-CSI em tempo real
+│                                         │
+│                                         │
+├─────────────────────────────────────────┤
+│               [  (●)  ]                 │  ← Botão de disparo centralizado
+└─────────────────────────────────────────┘
+```
+
+### Layout do Aplicativo "Galeria"
+```
+┌─────────────────────────────────────────┐
+│  [←] IMG_20260816_195500.jpg (1/12) [🗑][📷]│ ← Barra com nome, índice, lixeira e atalho Câmera
+├─────────────────────────────────────────┤
+│ ◄ Toque / Swipe Dir │ Toque / Swipe Esq ►│
+│ (Imagem Anterior)   │ (Próxima Imagem)   │
+│                     │                    │
+│                 [ FOTO ]                 │  ← Imagem em tela cheia com clamp
+│                     │                    │
+│                     │                    │
+└─────────────────────────────────────────┘
+```
+
+## 5. Fases de Execução da Funcionalidade
+
+- [ ] **Etapa 1 — Backend de Câmera e Captura (`camera_mgr`)**: Inicialização do driver MIPI-CSI com `bsp_camera_start()`, streaming V4L2 em buffer PSRAM e gravação JPEG com nome `IMG_YYYYMMDD_HHMMSS.jpg` em `/sdcard/imagens/`.
+- [ ] **Etapa 2 — Interface do Aplicativo Câmera (`ui_camera`)**: Janela LVGL com canvas/image de preview, botão circular de disparo e atalho para galeria no `ui_shell`.
+- [ ] **Etapa 3 — Interface e Navegação da Galeria (`ui_gallery`)**: Leitura de `/sdcard/imagens/`, ordenação decrescente por data/nome e renderização em tela cheia com suporte a abertura de imagem específica via `ui_gallery_open_file(filepath)`.
+- [ ] **Etapa 4 — Sistema de Gestos, Cliques e Exclusão de Fotos**: Manipulação de `LV_EVENT_GESTURE` (`LV_DIR_LEFT` = próxima foto mais antiga, `LV_DIR_RIGHT` = foto anterior mais recente), toques nas metades laterais da tela e botão `[🗑]` com modal de confirmação para remoção física de fotos do SD.
+- [ ] **Etapa 5 — Atualização de Associações (`file_assoc`) e Desktop**: Registro de `.jpg`, `.jpeg`, `.png` e `.bmp` no `file_assoc_init()` apontando para a Galeria, e adição dos tiles "Câmera" e "Galeria" no `ui_desktop.cpp`.
+- [ ] **Etapa 6 — Build, Validação e Teste em Hardware**: Teste físico de captura de foto, gravação com nome cronológico no microSD, navegação por swipe na galeria, exclusão de fotos com diálogo de confirmação e validação de abertura de fotos diretamente pelo app Arquivos.
+
+## 6. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Taxa de atualização do preview concorrer com o renderizador LVGL | Alocação de frame buffers duplos em PSRAM e lock `bsp_display_lock()` apenas na troca de ponteiro de frame |
+| Atraso (lag) na gravação de imagem bloqueando o preview | Task assíncrona dedicada FreeRTOS para compressão e gravação no SD |
+| Decodificação de imagens de alta resolução na Galeria | Uso do hardware JPEG decoder do ESP32-P4 ou decodificação com scaling para a resolução do display |
+| Exclusão acidental de foto por toque inadvertido | Diálogo de confirmação obrigatório antes da remoção no microSD |
+
+## 7. Critérios de Validação & Teste em Hardware
+1. Abrir o app Câmera pelo Desktop e validar preview de vídeo fluido e nítido.
+2. Pressionar o botão de disparo: verificar feedback de captura e criação de arquivo `IMG_YYYYMMDD_HHMMSS.jpg` na pasta `/sdcard/imagens/`.
+3. Tocar no atalho de galeria: verificar abertura da Galeria exibindo a foto recém-tirada como a primeira da lista.
+4. Deslizar o dedo da direita para a esquerda (ou clicar na direita da tela) e confirmar avanço para a foto anterior.
+5. Deslizar da esquerda para a direita (ou clicar na esquerda da tela) e confirmar retorno.
+6. Pressionar o botão de lixeira `[🗑]`, confirmar a exclusão e verificar a remoção do arquivo do SD e a exibição da foto subsequente.
+7. Abrir o aplicativo **Arquivos**, navegar até `/sdcard/imagens/`, tocar em um arquivo `.jpg` e validar a abertura imediata no aplicativo **Galeria** exibindo a foto correspondente.
+
+## 8. Status de Conclusão: `[ ] PLANEJADO`
+- **Câmera & Galeria**: Arquitetura planejada e pronta para implementação na Fase 24.
+
+
+---
+
+# [ ] Fase 25: Aplicativo Gravador de Voz e Player de Áudio `⏳ PLANEJADO`
+
+## 1. Contexto & Objetivos
+- Criação do aplicativo nativo **"Gravador"** (`ui_recorder`) para captura de voz através dos microfones integrados do M5Stack Tab5 e reprodução no alto-falante interno.
+- **Hardware & Codecs**:
+  - Captura de áudio através do codec ADC **ES7210** (`bsp_audio_codec_microphone_init()`) conectado ao barramento I2S DMA do ESP32-P4.
+  - Reprodução através do codec DAC **ES8388** com amplificador de potência (`bsp_audio_codec_speaker_init()`).
+- **Armazenamento e Padronização**:
+  - Criação automática do diretório `/sdcard/gravacoes/` para persistência dos áudios.
+  - Padrão de nomenclatura cronológico no formato ISO/Americano: `REC_YYYYMMDD_HHMMSS.wav` (ex: `REC_20260816_200530.wav`), estruturado em formato **WAV PCM 16-bit** (RIFF WAV header padrão de 44 bytes).
+- **Interface e Recursos de Gravação**:
+  - **Contador Digital de Tempo**: Formato `MM:SS` (ex: `00:00`, `02:45`) atualizado em tempo real a cada segundo durante a gravação.
+  - **Limite Máximo Seguro de 5 Minutos (`05:00`)**: Trava automática de segurança que finaliza e salva a gravação ao atingir 5 minutos, protegendo a memória e o espaço de armazenamento.
+  - **Botão de Gravação Principal**: Botão de início/parada com feedback de status visual (ícone de gravação animado/vermelho).
+- **Listagem e Gestão de Gravações**:
+  - Exibição de lista rolável das gravações salvas em `/sdcard/gravacoes/`, ordenadas da **mais recente para a mais antiga**.
+  - **Ações por Item**:
+    - Botão **Reproduzir / Pausar** (`LV_SYMBOL_PLAY` / `LV_SYMBOL_PAUSE`).
+    - Botão **Excluir** (`LV_SYMBOL_TRASH`) com modal de confirmação antes da remoção definitiva do arquivo.
+  - **Barra de Progresso de Reprodução**: Quando um áudio estiver em reprodução, exibe uma barra de progresso visual (`lv_bar` ou `lv_slider`) indicando a posição atual em relação à duração total (`01:20 / 03:45`).
+- **Integração com a Tabela de Associações (`file_assoc`)**:
+  - Registro da extensão `.wav` (e `.pcm`) no `file_assoc_init()` apontando para `ui_shell_open_recorder_with_file(filepath)`.
+  - Ao clicar em um arquivo de áudio no aplicativo **"Arquivos"**, o sistema abre diretamente o **Gravador** carregando a gravação para reprodução com sua barra de progresso.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Codecs de Áudio | ES7210 (Microfone ADC) + ES8388 (Alto-falante DAC) via I2S | Suporte nativo do BSP `espressif/m5stack_tab5` |
+| D2 | Formato de Gravação | WAV PCM linear 16-bit (16 kHz ou 44.1 kHz, mono) | Qualidade nítida de voz sem sobrecarga de CPU para compressão |
+| D3 | Diretório e Nomes | `/sdcard/gravacoes/` + `REC_YYYYMMDD_HHMMSS.wav` | Ordenação cronológica natural idêntica à ordem alfabética |
+| D4 | Limite de Gravação | 5 minutos fixos (`300 segundos`) | Previne esgotamento de heap/PSRAM e espaço em disco |
+| D5 | Player e Barra de Progresso | Task I2S assíncrona despachando progresso percentual para `lv_bar` | Reprodução suave sem bloquear a thread gráfica da interface |
+| D6 | Associação no SO | Registro de `.wav` em `file_assoc` -> `ui_shell_open_recorder_with_file` | Permite reproduzir áudios diretamente a partir do app "Arquivos" |
+| D7 | Lançador no Desktop | Tile "Gravador" no `ui_desktop.cpp` | Acesso direto da tela principal com ciclo de vida no `ui_shell` |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── audio_recorder.h       # [NEW] API de captura/playback I2S, encoder WAV e task de áudio
+│   ├── ui_recorder.h          # [NEW] Interface do app Gravador (contador MM:SS, player e lista)
+│   ├── file_assoc.h           # [MODIFY] Registro da extensão .wav -> Gravador
+│   ├── ui_desktop.h           # [MODIFY] Tile 'Gravador' no launcher desktop
+│   └── ui_shell.h             # [MODIFY] Rotinas ui_shell_open_recorder_with_file / close_recorder
+├── audio_recorder.cpp         # [NEW] Backend de I/O de microfone/speaker, buffers e cabeçalho WAV
+├── ui_recorder.cpp            # [NEW] Interface LVGL: contador digital, lista reversa e barra de progresso
+├── file_assoc.cpp             # [MODIFY] Dispatcher para abertura de áudios via ui_shell
+├── ui_desktop.cpp             # [MODIFY] Registro do tile 'Gravador' no desktop launcher
+├── ui_shell.cpp               # [MODIFY] Transições de tela do gravador com suporte a caminho de arquivo
+└── CMakeLists.txt             # [MODIFY] Registro de audio_recorder.cpp e ui_recorder.cpp
+```
+
+## 4. Especificação Visual e Layout da Interface
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  [←] Gravador                                     [✕]   │  ← Barra com voltar e fechar
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│                      02:45 / 05:00                      │  ← Contador digital MM:SS
+│                 [   ● GRAVAR / PARAR   ]                │  ← Botão principal de gravação
+│                                                         │
+├─────────────────────────────────────────────────────────┤
+│  Reproduzindo: REC_20260816_200530.wav                  │
+│  [▶] ━━━━━━━●━━━━━━━━━━━━━━━━━━━━ [01:10 / 02:45]       │  ← Player ativo com barra de progresso
+├─────────────────────────────────────────────────────────┤
+│  Gravações Salvas (/sdcard/gravacoes/):                 │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ ♫ REC_20260816_200530.wav (02:45)    [▶]   [🗑]   │  │  ← Item mais recente (topo)
+│  │ ♫ REC_20260816_191012.wav (00:54)    [▶]   [🗑]   │  │
+│  │ ♫ REC_20260816_183000.wav (04:12)    [▶]   [🗑]   │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+## 5. Fases de Execução da Funcionalidade
+
+- [ ] **Etapa 1 — Backend de Áudio e Codecs (`audio_recorder`)**: Inicialização do microfone ES7210 e speaker ES8388 via `bsp_audio_init()`, alocação de buffers DMA em PSRAM e implementação da escrita de cabeçalho WAV (RIFF, fmt, data).
+- [ ] **Etapa 2 — Mecanismo de Gravação e Limite de 5 Minutos**: Task de captura I2S com timer de 1s para o contador `MM:SS`, gravação em streaming em `/sdcard/gravacoes/` e parada automática aos 300 segundos (`05:00`).
+- [ ] **Etapa 3 — Mecanismo de Reprodução e Barra de Progresso**: Task de playback I2S alimentando o speaker ES8388 e atualizando a barra de progresso (`lv_bar`) em tempo real.
+- [ ] **Etapa 4 — Interface Gráfica e Lista de Gravações (`ui_recorder`)**: Listagem decrescente das gravações do microSD, botões contextuais de reprodução e exclusão de arquivos com modal de confirmação.
+- [ ] **Etapa 5 — Atualização de Associações (`file_assoc`) e Desktop**: Registro da extensão `.wav` no `file_assoc_init()` apontando para `ui_shell_open_recorder_with_file` e inclusão do tile "Gravador" no `ui_desktop.cpp`.
+- [ ] **Etapa 6 — Build, Validação e Teste em Hardware**: Teste físico de gravação de voz com os microfones integrados, teste do limitador de 5 minutos, reprodução no alto-falante com barra de progresso, exclusão de arquivos e abertura direta pelo app Arquivos.
+
+## 6. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Queda de frames de áudio durante escrita no microSD | Buffer em anel duplo em PSRAM de 64 KB com escrita em blocos assíncronos |
+| Concorrência de I2S entre microfone e alto-falante | Controle atômico de estado (IDLE, RECORDING, PLAYING) desabilitando o canal oposto durante a operação |
+| Gravação longa consumir todo o espaço do SD | Limite rígido de 5 minutos (~4.8 MB em 16 kHz 16-bit mono) com checagem de espaço livre antes de iniciar |
+
+## 7. Critérios de Validação & Teste em Hardware
+1. Abrir o app Gravador pelo Desktop.
+2. Iniciar uma nova gravação: verificar contador `MM:SS` avançando a cada segundo.
+3. Testar a trava automática ao atingir 5 minutos (`05:00`), conferindo o salvamento automático do arquivo `REC_YYYYMMDD_HHMMSS.wav` em `/sdcard/gravacoes/`.
+4. Verificar que a nova gravação aparece no topo da lista de gravações.
+5. Pressionar o botão Reproduzir de uma gravação: verificar emissão de som clara no alto-falante e avanço da barra de progresso.
+6. Pressionar o botão Excluir: confirmar a remoção física do arquivo do cartão SD e atualização da lista.
+7. Abrir o app **Arquivos**, navegar até `/sdcard/gravacoes/`, tocar em um arquivo `.wav` e validar a abertura imediata no **Gravador** com reprodução.
+
+## 8. Status de Conclusão: `[ ] PLANEJADO`
+- **Gravador de Voz**: Arquitetura planejada e pronta para implementação na Fase 25.

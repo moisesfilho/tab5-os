@@ -118,6 +118,10 @@ tab5-os/
 - `sw_rotate=true` is required (LVGL 9 + DSI).
 - The custom font is generated from the same `Montserrat-Medium.ttf` used by the LVGL built-ins, adding the Latin-1 supplement range (`0xA0–0xFF`).
 
+## Planning & Roadmap
+
+To check the development timeline, engineering decisions, detailed architecture, and specifications of all implemented and planned phases of the operating system, see the [Architecture & Implementation Plan (PLANO.md)](PLANO.md).
+
 ## License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.

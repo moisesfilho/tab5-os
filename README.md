@@ -118,6 +118,10 @@ tab5-os/
 - `sw_rotate=true` é obrigatório (LVGL 9 + DSI).
 - A fonte custom é gerada do mesmo `Montserrat-Medium.ttf` usado pelos fonts built-in do LVGL, adicionando o suplemento Latin-1 (`0xA0–0xFF`).
 
+## Planejamento e Roadmap
+
+Para consultar o cronograma de desenvolvimento, decisões de engenharia, arquitetura detalhada e especificações de todas as fases implementadas e planejadas do sistema operacional, consulte o [Caderno Geral de Arquitetura e Planos de Implementação (PLANO.md)](PLANO.md).
+
 ## Licença
 
 Este projeto é licenciado sob a **Licença MIT** — veja o arquivo [LICENSE](LICENSE).
