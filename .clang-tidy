@@ -15,6 +15,9 @@ Checks: >
   -readability-function-cognitive-complexity,
   -readability-math-missing-parentheses,
   -readability-use-std-min-max,
+  -readability-static-definition-in-anonymous-namespace,
+  -readability-implicit-bool-conversion,
+  -bugprone-suspicious-enum-usage,
   -clang-diagnostic-extern-c-compat,
   -clang-diagnostic-unknown-warning-option
 WarningsAsErrors: ''

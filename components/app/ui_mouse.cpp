@@ -26,7 +26,7 @@ int32_t s_cursor_y = 640;
 #define CURSOR_H 19
 
 /* clang-format off */
-static const char *CURSOR_MAP[CURSOR_H] = {
+const char *CURSOR_MAP[CURSOR_H] = {
     "X             ",
     "XX            ",
     "X.X           ",
@@ -49,9 +49,9 @@ static const char *CURSOR_MAP[CURSOR_H] = {
 };
 /* clang-format on */
 
-static uint32_t s_cursor_pixels[CURSOR_W * CURSOR_H];
+uint32_t s_cursor_pixels[CURSOR_W * CURSOR_H];
 
-static const lv_image_dsc_t s_cursor_img_dsc = {
+const lv_image_dsc_t s_cursor_img_dsc = {
     .header =
         {
             .magic = LV_IMAGE_HEADER_MAGIC,
