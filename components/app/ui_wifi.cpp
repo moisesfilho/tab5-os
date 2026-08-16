@@ -56,8 +56,9 @@ void apply_wifi_layout(void);
 void cursor_blink_cb(lv_timer_t *timer)
 {
     lv_obj_t *ta = (lv_obj_t *)lv_timer_get_user_data(timer);
-    if (ta == nullptr)
+    if (ta == nullptr) {
         return;
+    }
     lv_opa_t opa = lv_obj_get_style_bg_opa(ta, LV_PART_CURSOR);
     lv_obj_set_style_bg_opa(ta, opa == LV_OPA_TRANSP ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_CURSOR);
 }
@@ -156,12 +157,7 @@ void apply_wifi_layout(void)
     int32_t eye_w = 40;
     int32_t gap = 6;
 
-    int32_t extra_btns_w = 0;
-    if (is_connected_curr) {
-        extra_btns_w += btn_w + gap; /* Desconectar */
-    } else {
-        extra_btns_w += btn_w + gap; /* Conectar */
-    }
+    int32_t extra_btns_w = btn_w + gap; /* Conectar ou Desconectar */
     if (is_saved) {
         extra_btns_w += btn_w + gap; /* Esquecer */
     }
@@ -175,27 +171,27 @@ void apply_wifi_layout(void)
     if (password_ta != nullptr) {
         lv_obj_set_width(password_ta, ta_w);
         lv_obj_set_x(password_ta, cur_x);
-        lv_obj_set_y(password_ta, 2 * UI_BAR_HEIGHT + 52);
+        lv_obj_set_y(password_ta, (2 * UI_BAR_HEIGHT) + 52);
         cur_x += ta_w + gap;
     }
     if (show_pwd_btn != nullptr) {
         lv_obj_set_width(show_pwd_btn, eye_w);
         lv_obj_set_x(show_pwd_btn, cur_x);
-        lv_obj_set_y(show_pwd_btn, 2 * UI_BAR_HEIGHT + 52);
+        lv_obj_set_y(show_pwd_btn, (2 * UI_BAR_HEIGHT) + 52);
         cur_x += eye_w + gap;
     }
 
     if (connect_button != nullptr && !is_connected_curr) {
         lv_obj_set_width(connect_button, btn_w);
         lv_obj_set_x(connect_button, cur_x);
-        lv_obj_set_y(connect_button, 2 * UI_BAR_HEIGHT + 52);
+        lv_obj_set_y(connect_button, (2 * UI_BAR_HEIGHT) + 52);
         cur_x += btn_w + gap;
     }
 
     if (disconnect_button != nullptr && is_connected_curr) {
         lv_obj_set_width(disconnect_button, btn_w);
         lv_obj_set_x(disconnect_button, cur_x);
-        lv_obj_set_y(disconnect_button, 2 * UI_BAR_HEIGHT + 52);
+        lv_obj_set_y(disconnect_button, (2 * UI_BAR_HEIGHT) + 52);
         cur_x += btn_w + gap;
     }
 
@@ -203,7 +199,6 @@ void apply_wifi_layout(void)
         lv_obj_set_width(forget_button, btn_w);
         lv_obj_set_x(forget_button, cur_x);
         lv_obj_set_y(forget_button, (2 * UI_BAR_HEIGHT) + 52);
-        cur_x += btn_w + gap;
     }
 
     /* Linha 3: Status da conexao / selecao */

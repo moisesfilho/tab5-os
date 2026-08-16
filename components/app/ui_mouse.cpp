@@ -88,8 +88,8 @@ void init_cursor_bitmap(void)
     }
 }
 
-static bool s_click_pending = false;
-static uint8_t s_click_step = 0;
+bool s_click_pending = false;
+uint8_t s_click_step = 0;
 
 void mouse_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
@@ -155,8 +155,8 @@ void mouse_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
      * convertemos a coordenada virtual ativa (s_cursor_x, s_cursor_y) de volta
      * para a coordenada física do display para que a rotação do LVGL resulte
      * exatamente na posição correta em 100% da tela. */
-    int32_t raw_x = s_cursor_x;
-    int32_t raw_y = s_cursor_y;
+    int32_t raw_x = 0;
+    int32_t raw_y = 0;
 
     switch (rot) {
     case LV_DISPLAY_ROTATION_0:
@@ -253,7 +253,7 @@ void ui_mouse_inject_click(void)
 
 static void set_cursor_visible_async(void *user_data)
 {
-    bool visible = (bool)(uintptr_t)user_data;
+    bool visible = *(bool *)user_data;
     if (s_cursor_obj != nullptr) {
         if (visible) {
             lv_obj_remove_flag(s_cursor_obj, LV_OBJ_FLAG_HIDDEN);
@@ -262,6 +262,9 @@ static void set_cursor_visible_async(void *user_data)
         }
     }
 }
+
+static bool s_conn_true = true;
+static bool s_conn_false = false;
 
 void ui_mouse_set_connected(bool connected)
 {
@@ -276,11 +279,12 @@ void ui_mouse_set_connected(bool connected)
         s_btn_pressed = false;
         portEXIT_CRITICAL(&s_mouse_mux);
     }
+    void *arg = connected ? (void *)&s_conn_true : (void *)&s_conn_false;
     if (bsp_display_lock(pdMS_TO_TICKS(500))) {
-        set_cursor_visible_async((void *)(uintptr_t)connected);
+        set_cursor_visible_async(arg);
         bsp_display_unlock();
     } else {
-        lv_async_call(set_cursor_visible_async, (void *)(uintptr_t)connected);
+        lv_async_call(set_cursor_visible_async, arg);
     }
     ESP_LOGI(TAG, "Mouse %s (cursor %s)", connected ? "CONECTADO" : "DESCONECTADO", connected ? "VISIVEL" : "OCULTO");
 }

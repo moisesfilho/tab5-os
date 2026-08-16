@@ -41,7 +41,7 @@ lv_obj_t *save_modal_confirm_btn = nullptr;
 lv_obj_t *save_modal_confirm_lbl = nullptr;
 lv_group_t *save_modal_group = nullptr;
 
-std::string current_note_path = "";
+std::string current_note_path;
 
 void apply_notas_layout(void);
 
@@ -571,7 +571,7 @@ void ui_notas_open_file(const char *filepath)
     /* Limit razoavel de 64KB para textarea */
     size_t read_len = (sz > 65535) ? 65535 : static_cast<size_t>(sz);
     std::string content(read_len, '\0');
-    size_t bytes_read = fread(&content[0], 1, read_len, f);
+    size_t bytes_read = fread(content.data(), 1, read_len, f);
     fclose(f);
     content.resize(bytes_read);
 
