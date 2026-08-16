@@ -1,17 +1,17 @@
-name: CI
+name: Quality Gate
 
 on:
   push:
-    branches: [main]
+    branches-ignore: []   # qualquer branch
   pull_request:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: quality-gate-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build (ESP-IDF v5.5.1 / esp32p4)
+    name: Build (ESP-IDF v5.5.5 / esp32p4)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
