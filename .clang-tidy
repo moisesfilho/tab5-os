@@ -17,6 +17,8 @@ Checks: >
   -readability-use-std-min-max,
   -readability-static-definition-in-anonymous-namespace,
   -readability-implicit-bool-conversion,
+  -readability-braces-around-statements,
+  -performance-enum-size,
   -bugprone-suspicious-enum-usage,
   -clang-diagnostic-extern-c-compat,
   -clang-diagnostic-unknown-warning-option

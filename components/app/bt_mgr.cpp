@@ -702,8 +702,9 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
 
             for (int i = 0; i < 6; i++) {
                 uint8_t k = cur_keys[i];
-                if (k == 0)
+                if (k == 0) {
                     continue;
+                }
 
                 bool was_pressed = false;
                 for (int j = 0; j < 6; j++) {

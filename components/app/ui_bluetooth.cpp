@@ -138,12 +138,15 @@ void apply_bt_layout(void)
     int32_t btn_gap = 8;
     int32_t num_visible_btns = 0;
 
-    if (connect_button != nullptr && !lv_obj_has_flag(connect_button, LV_OBJ_FLAG_HIDDEN))
+    if (connect_button != nullptr && !lv_obj_has_flag(connect_button, LV_OBJ_FLAG_HIDDEN)) {
         num_visible_btns++;
-    if (disconnect_button != nullptr && !lv_obj_has_flag(disconnect_button, LV_OBJ_FLAG_HIDDEN))
+    }
+    if (disconnect_button != nullptr && !lv_obj_has_flag(disconnect_button, LV_OBJ_FLAG_HIDDEN)) {
         num_visible_btns++;
-    if (forget_button != nullptr && !lv_obj_has_flag(forget_button, LV_OBJ_FLAG_HIDDEN))
+    }
+    if (forget_button != nullptr && !lv_obj_has_flag(forget_button, LV_OBJ_FLAG_HIDDEN)) {
         num_visible_btns++;
+    }
 
     int32_t btn_w = num_visible_btns > 0 ? (usable_w - (num_visible_btns - 1) * btn_gap) / num_visible_btns : 0;
     int32_t cur_x = side;
