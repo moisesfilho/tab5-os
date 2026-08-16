@@ -52,11 +52,15 @@ jobs:
         run: |
           set +e
           clang-tidy -p build \
+            --extra-arg="-Wno-unknown-warning-option" \
             --header-filter='components/app/' \
             main/app_main.cpp \
             components/app/*.cpp 2>&1 | tee clang-tidy.log
-          if grep -qE 'error:|warning:' clang-tidy.log; then
+          # Desconsidera flags especificas do GCC RISC-V (ex: -fno-tree-switch-conversion)
+          grep -vE "error: unknown argument: '-f" clang-tidy.log > clang-tidy-clean.log
+          if grep -qE 'error:|warning:' clang-tidy-clean.log; then
             echo "::error::clang-tidy encontrou problemas — ver clang-tidy.log"
+            cat clang-tidy-clean.log
             exit 1
           fi
 

@@ -35,8 +35,6 @@ static void imu_event_handler(void *arg, esp_event_base_t base, int32_t event_id
             ESP_LOGI(TAG, "acce x=%.2f y=%.2f z=%.2f G", data->acce.x, data->acce.y, data->acce.z);
         }
         break;
-    case SENSOR_GYRO_DATA_READY:
-        break;
     default:
         break;
     }

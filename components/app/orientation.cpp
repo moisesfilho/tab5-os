@@ -26,17 +26,17 @@ void orientation_set_current(lv_disp_rotation_t rot)
  * idx: 0 = gravidade p/ +Y, 1 = +X, 2 = -Y, 3 = -X */
 static lv_disp_rotation_t gravity_to_rotation(float gx, float gy)
 {
-    float plane = sqrtf(gx * gx + gy * gy);
+    float plane = sqrtf((gx * gx) + (gy * gy));
     if (plane < ORIENT_FLAT_THRESHOLD) {
         return s_rotation; /* deitado: mantem a atual */
     }
 
-    float ang = atan2f(gx, gy) * 180.0f / M_PI; /* 0 = grav p/ +Y, +90 = grav p/ +X */
-    if (ang < 0.0f) {
-        ang += 360.0f;
+    float ang = atan2f(gx, gy) * 180.0F / (float)M_PI; /* 0 = grav p/ +Y, +90 = grav p/ +X */
+    if (ang < 0.0F) {
+        ang += 360.0F;
     }
 
-    int idx = (int)((ang + 45.0f) / 90.0f) % 4;
+    int idx = (int)(((ang + 45.0F) / 90.0F)) % 4;
     static const lv_disp_rotation_t map[4] = {
         LV_DISPLAY_ROTATION_0,   /* grav +Y  -> retrato */
         LV_DISPLAY_ROTATION_90,  /* grav +X  -> paisagem A */

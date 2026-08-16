@@ -378,7 +378,8 @@ void ui_bar_init(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(spacer, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(spacer, 0, 0);
     lv_obj_set_style_shadow_width(spacer, 0, 0);
-    lv_obj_clear_flag(spacer, (lv_obj_flag_t)(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
+    lv_obj_clear_flag(spacer, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(spacer, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Badge de orientacao integrado a barra (compacto). */
     ui_status_init(bar);

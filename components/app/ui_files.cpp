@@ -19,7 +19,7 @@
 
 namespace {
 
-enum class ViewMode {
+enum class ViewMode : uint8_t {
     ICONS,
     LIST,
 };
@@ -60,9 +60,9 @@ void format_file_size(size_t size, bool is_dir, char *buf, size_t buf_len)
     if (size < 1024) {
         std::snprintf(buf, buf_len, "%u B", (unsigned int)size);
     } else if (size < 1024 * 1024) {
-        std::snprintf(buf, buf_len, "%.1f KB", (float)size / 1024.0f);
+        std::snprintf(buf, buf_len, "%.1f KB", (float)size / 1024.0F);
     } else {
-        std::snprintf(buf, buf_len, "%.1f MB", (float)size / (1024.0f * 1024.0f));
+        std::snprintf(buf, buf_len, "%.1f MB", (float)size / (1024.0F * 1024.0F));
     }
 }
 
@@ -246,10 +246,7 @@ void apply_files_layout(void)
     int32_t height = lv_display_get_vertical_resolution(nullptr);
 
     int32_t top = 2 * UI_BAR_HEIGHT;
-    int32_t container_h = height - top;
-    if (container_h < 100) {
-        container_h = 100;
-    }
+    int32_t container_h = std::max(height - top, 100);
 
     lv_obj_set_size(files_container, width, container_h);
     lv_obj_set_pos(files_container, 0, top);
