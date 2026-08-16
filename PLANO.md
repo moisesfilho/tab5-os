@@ -1,629 +1,876 @@
-# PoC M5Stack Tab5 — Teclado Virtual + Rotação por Sensor
+# Caderno Geral de Arquitetura e Planos de Implementação — tab5-os
 
-Plano de implementação. Atualizado em 2026-08-13.
-
-## 1. Contexto técnico
-
-- **Não é Android**: o Tab5 é um ESP32-P4 (RISC-V) com firmware bare-metal em **ESP-IDF v5.5.5 (FreeRTOS)** e UI em **LVGL 9** via `esp_lvgl_port`. O "app" é o firmware inteiro, gravado via `idf.py flash` (USB-C, segurar Boot ~2s para download mode).
-- **IDF 5.5+ é obrigatório**: o componente managed `espressif/usb` (dependência do BSP, `usb ^1`) **nunca compila com IDF 5.4.x** — todas as versões 1.0.0–1.5.0 usam `usb_dwc_hal_set_fifo_config` (HAL só existe no 5.5+). Espressif removeu o suporte a 5.4 (PR esp-usb#501). Mínimo: IDF 5.5.3.
-- **Display**: 5" MIPI-DSI, painel nativo 720x1280 (retrato), UI default 1280x720 (paisagem) via rotação HW (PPA). Touch I2C: GT911 / ST7123 / ST7121.
-- **Sensor**: BMI270 (acel + giro, 6 eixos) no I2C 0x68.
-- **Sem rotação automática de UI** — o app lê o vetor de gravidade e rotaciona a tela.
-- **BSP oficial**: `espressif/m5stack_tab5` v1.2.0 no registry (variant detection do LCD: ILI9881C → ST7123 → ST7121).
-- **Referências**: `M5Tab5-UserDemo` (painel IMU) e `M5Tab5-Keyboard-UserDemo` (lv_textarea + teclado, init de display/touch).
-
-## 2. Decisões de arquitetura
-
-| # | Decisão | Escolha |
-|---|---|---|
-| D1 | Base do firmware | App standalone (main + components), sem fork do launcher |
-| D2 | Teclado | `lv_keyboard` + `lv_textarea` nativos do LVGL 9 |
-| D3 | Rotação | Task lê IMU a ~10–20 Hz, calcula ângulo pelo vetor gravidade, aplica `lv_display_set_rotation` e sincroniza touch via esp_lvgl_port |
-
-## 3. Estrutura do projeto
-
-```
-tab5-os/
-├── sdkconfig.defaults          # target esp32p4, LVGL, DPI 130
-├── CMakeLists.txt
-├── main/
-│   ├── CMakeLists.txt
-│   ├── idf_component.yml       # deps: m5stack_tab5, esp_lvgl_port, accel_gyro_bmi270
-│   └── app_main.cpp            # init BSP + LVGL + tarefas
-└── components/app/
-    ├── ui_keyboard.cpp/.h      # lv_textarea + lv_keyboard
-    ├── imu_reader.cpp/.h       # wrapper do BMI270 (raw → m/s², °/s)
-    └── orientation.cpp/.h      # vetor gravidade → orientação com histerese
-```
-
-## 4. Fases
-
-### Fase 0 — Toolchain (~0,5 d)
-- Instalar ESP-IDF v5.5.5 + dependências; `idf.py set-target esp32p4`; compilar hello + BSP; flash no Tab5.
-- Critério: boot imprime log e a tela acende.
-
-### Fase 1 — Display + Touch (LVGL) (~1 d)
-- Init BSP + `esp_lvgl_port`, LVGL 9, RGB565, full-frame buffer em PSRAM (direct_mode), DPI 130.
-- Smoke test: botão LVGL que muda de cor ao toque.
-- Critério: tocar na tela aciona o callback.
-
-### Fase 2 — Teclado virtual (~1 d)
-- `lv_textarea` (área de digitação) + `lv_keyboard` acoplado (modos ABC/número).
-- Critério: digitar na tela insere texto no textarea.
-
-### Fase 3 — Leitura do IMU (~1 d)
-- Driver `accel_gyro_bmi270`: init(bus) → enable_sensor → get_data.
-- Conversão: acc = raw/835.92/10 m/s²; gyr = raw/32.768/10 °/s.
-- Log do vetor gravidade no monitor serial.
-- Critério: girar o aparelho altera os valores no serial.
-
-### Fase 4 — Rotação dinâmica (~1–2 d, maior risco — spike cedo)
-- Mapear vetor gravidade → 4 orientações (0/90/180/270) com histerese (~45°) e debounce (N leituras estáveis antes de girar).
-- Aplicar `lv_display_set_rotation` e sincronizar touch com `esp_lvgl_port_set_touch_rotation`.
-- Spike: validar rotação em runtime com direct_mode + PPA. Fallback: reconfigurar DSI sw_rotation e/ou reduzir buffer.
-- Critério: virar para retrato gira a UI e o toque continua preciso nos novos eixos.
-
-### Fase 5 — Polimento e validação (~1 d)
-- Dark mode, feedback visual nas teclas, layout da área de digitação.
-- Checklist manual no device: 4 orientações, touch mapping, sem crash em giro rápido.
-
-## 5. Riscos e mitigações
-
-| Risco | Mitigação |
-|---|---|
-| Rotação em runtime com direct_mode + PPA pode não funcionar de primeira | Spike isolado na Fase 4; fallback sw_rotation + buffer menor |
-| Mapping do touch após rotação | Sincronizar via esp_lvgl_port; testar eixo a eixo |
-| Variante de HW do LCD | BSP v1.2.0 (variant detection); fallback `m5_tab5_component` |
-| Silício do P4 (rev v1.3) | IDF 5.5.5 compila p/ rev >= 3.0 por padrão — setar `CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y` + `CONFIG_ESP32P4_REV_MIN_100=y` no sdkconfig.defaults (verificado no flash) |
-| Tela preta do painel | BSP v1.2.0 tem tabela de init errada (0x71 0x23) p/ painel ST7121 (touch FW=1). Substituir por tabela ST7121 do esp-iot-solution (0x71 0x21, +0x78/0x79/0xA5, SLPOUT 120ms). Patch em managed_components — tornar durável copiando o componente p/ components/. Cold boot (unplug USB) obrigatório |
-| `lv_keyboard` nativo visualmente simples | Aceitável para PoC; custom depois |
-| Primeiro build do ESP-IDF é pesado | Uma vez preparado, builds incrementais são rápidos |
-
-## 6. Estimativa
-
-~5–7 dias com o hardware em mãos (F0 0,5 · F1 1 · F2 1 · F3 1 · F4 1–2 · F5 1).
+Documento mestre de planejamento técnico, decisões de engenharia, arquitetura de software e roadmap evolutivo do sistema operacional **tab5-os** para o dispositivo **M5Stack Tab5 (ESP32-P4 + ESP32-C6 companion)**.
 
 ---
 
-# Plano — Teclado PT-BR (acentos + cedilha)
+## Sumário Executivo de Fases e Módulos
 
-Atualizado em 2026-08-14. Proposta para habilitar escrita em português do Brasil (ç, vogais acentuadas etc.). Ainda **não implementado**.
-
-## 1. Verificação prévia (já feita)
-
-- **Fontes OK — nenhuma mudança necessária**: `lv_font_montserrat_14_latin1` cobre Latin-1 (0xA0–0xFF), ou seja, já possui glifos para `ç ã õ á é í ó ú â ê ô à` e maiúsculas (`Ç Ã Õ Á É Í Ó Ú Â Ê Ô À`). Teclas e textarea usam essa fonte.
-- **Teclado atual**: usa os mapas padrão do LVGL (só ASCII). O modo `SPECIAL` ("1#") hoje mostra números/símbolos genéricos. O LVGL suporta mapas custom por modo via `lv_keyboard_set_map(kb, mode, map[], ctrl_map[])` (confirmado em `lv_keyboard.c/h`), com 4 modos de usuário livres (`USER_1..4`) além dos padrão.
-- **Limitação do mecanismo nativo**: a troca de modo é feita por texto exato de botão ("abc"/"ABC"/"1#"). Criar uma tecla custom de acesso ("áç") exigiria interceptar o handler padrão (static, não removível) — inviável sem hack.
-
-## 2. Abordagem recomendada
-
-**Página de acentos no modo `SPECIAL`** (via `lv_keyboard_set_map`) — aproveita o mecanismo nativo, a tecla "1#" já existente abre a página, sem código custom de troca de modo.
-
-Layout da página de acentos (5 linhas):
-```
-1  2  3  4  5  6  7  8  9  0        ⌫
-à  á  â  ã  ç  é  ê  í  ó  ô  õ  ú
-À  Á  Â  Ã  Ç  É  Ê  Í  Ó  Ô  Õ  Ú
-,  .  ;  :  !  ?  -  _  +  =  /  @  #
-[⌨] [abc] ◀  espaço  ▶  [OK]
-```
-
-- Números + símbolos essenciais permanecem na página (datas, pontuação).
-- "abc"/⌨ voltam para letras; ⌫/◀/▶/OK mantêm comportamento atual.
-
-**Alternativas descartadas (para PoC)**:
-- **B)** Trocar teclas do QWERTY por acentos → cobre menos caracteres e polui o layout.
-- **C)** Long-press/popover por tecla → não é nativo no LVGL 9; exige handler custom frágil.
-
-## 3. Implementação (em `components/app/ui_keyboard.cpp`)
-
-1. Definir `pt_br_map_spec[]` (array de strings com `"\n"` separando linhas) e `pt_br_ctrl_spec[]` (array de controles: `LV_KEYBOARD_CTRL_BUTTON_FLAGS` para ⌫/"abc"/⌨/◀/▶/OK; `LV_KB_BTN(n)` para larguras relativas das letras/números) — espelhando o padrão de `default_kb_map_spec` (lv_keyboard.c:156-175).
-2. Em `ui_keyboard_create`, após `lv_keyboard_create`: `lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_SPECIAL, pt_br_map_spec, pt_br_ctrl_spec)`.
-3. `is_action_key()`/`accent_action_keys()` continuam válidos (⌫, OK, ◀, ▶, "abc", "1#" já são reconhecidos).
-4. `apply_keyboard_layout` **sem mudança** (5 linhas cabem nos 35%/52% atuais) — validar visualmente; só ajustar se as teclas ficarem baixas.
-5. **Polish opcional**: incluir `LV_SYMBOL_NEW_LINE` (Enter) no `is_action_key()` — hoje o Enter do QWERTY não recebe destaque.
-
-## 4. Verificação (hardware)
-
-1. Build + flash + cold boot.
-2. Notas → tocar no textarea → teclar **"1#"** → página de acentos.
-3. Digitar **todos** os acentos (minúsculas e maiúsculas) + números → conferir renderização e inserção corretas no textarea.
-4. Testar **retrato e paisagem** (teclas legíveis) e **temas claro/escuro**.
-5. Voltar com "abc" ou ⌨; ⌫ e OK funcionando.
-
-## 5. Riscos / pontos de atenção
-
-- **5 linhas** deixam teclas da página de acentos mais baixas que as do QWERTY (altura do teclado é fixa em % da tela). Mitigação: aumentar o percentual de altura ou reduzir uma linha se ficar ruim.
-- **Rótulo da tecla de acesso continua "1#"** (limitação do mecanismo nativo). Melhoria futura: botão custom "áç" com handler próprio.
+| Fase / Módulo | Título | Categoria | Status | Principais Entregáveis |
+|---|---|---|---|---|
+| **Fase 0–5** | PoC Base: Display, Touch, IMU e Teclado | Core / BSP | **CONCLUÍDO (100%)** | Init BSP, LVGL 9, rotação dinâmica via BMI270, teclado QWERTY |
+| **Fase 6** | Teclado Virtual PT-BR | UI / Input | **CONCLUÍDO (100%)** | Modo Especial com acentos (`ç`, vogais com til, agudo, circunflexo, crase) |
+| **Fases 8–12** | Stack Wi-Fi e Configuração | Conectividade | **CONCLUÍDO (100%)** | Rádio SDIO C6, scan, persistência SD, auto-conexão, app `ui_wifi` |
+| **Fase 16** | Gerenciador de Arquivos ("Arquivos") | Aplicativo | **CONCLUÍDO (100%)** | Navegação `/sdcard`, modos Grade e Lista detalhada, ciclo de vida shell |
+| **Fase 17** | Persistência de Notas e Associações | Sistema / App | **CONCLUÍDO (100%)** | Módulo `file_assoc`, I/O em `/sdcard/notas/`, abertura direta pelo Arquivos |
+| **Fase 18** | Gerenciamento de Múltiplas Redes Wi-Fi | Conectividade | **CONCLUÍDO (100%)** | Badges Conectado/Salva/Sinal, botões Conectar, Desconectar e Esquecer |
+| **Fase 19** | Gerenciador Bluetooth e Teclado Físico | Conectividade / Input | **CONCLUÍDO (100%)** | BLE NimBLE, pareamento, persistência SD, supressão de teclado virtual |
+| **Fase 19.1** | Controles de Rádio no Menu de Configurações | Sistema / Config | **CONCLUÍDO (100%)** | Switches Wi-Fi/Bluetooth na barra, NVS, bloqueio/reconexão automática |
+| **Fase 19.2** | Suporte a Mouse/Touchpad BLE HID | Input / Periféricos | **CONCLUÍDO (100%)** | Cursor visual ARGB8888 em `lv_layer_sys`, rotação 4 eixos, cliques/gestos |
+| **Fase 20** | Aplicativo Terminal Interativo | Aplicativo / Shell | **CONCLUÍDO (100%)** | Mini-shell C++, comandos POSIX em `/sdcard`, buffer circular 8 KB |
+| **Fase 21** | Cliente SSH Remoto no Terminal | Conectividade / CLI | **PLANEJADO** | Task FreeRTOS, `david-cermak/libssh`, PTY xterm, auth por senha/chave |
 
 ---
 
-# Plano — WiFi (conexão + configuração + persistência em SD)
+# Fase 0–5: PoC Base — Display, Touch, Rotação por Sensor e Teclado Virtual
 
-Atualizado em 2026-08-15. Proposta para conectar o Tab5 a uma rede WiFi, com tela de configuração (scan/lista/senha), persistência em cartão SD e ícone de status na barra. Ainda **não implementado**.
-
-## 1. Contexto técnico (verificado 2026-08-15)
-
-- **P4 não tem WiFi nativo**: o Tab5 usa um **ESP32-C6-MINI-1U como companion chip** conectado ao P4 via **SDIO2** (`D0=G11, D1=G10, D2=G9, D3=G8, CMD=G13, CK=G12, RESET=G15, IO2=G14`). A alimentação do rádio é `WLAN_PWR_EN` (PI4IOE5V6408-2, pino P0) — o **BSP local já expõe** `bsp_feature_enable(BSP_FEATURE_WIFI, true)` (m5stack_tab5.h:573-591), então o power-on do chip é resolvido pelo BSP.
-- **Solução oficial Espressif para P4**: **ESP-Hosted-MCU + componente `esp_wifi_remote`**. A API `esp_wifi_*` é espelhada do host (P4) para o slave (C6) via RPC sobre SDIO (backend `esp_hosted`, até ~50 Mbps TCP). Guia oficial: `docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32p4/api-guides/wifi-expansion.html` · repos `espressif/esp-wifi-remote` e `espressif/esp-hosted-mcu` (docs/esp32_p4_function_ev_board.md).
-- **C6 de fábrica**: já vem com firmware ESP-Hosted (companion) — sem flash extra no C6.
-- **Cartão SD**: BSP SDMMC slot 0 (`D0=G39, D1=G40, D2=G41, D3=G42, CMD=G44, CLK=G43`), `bsp_sdcard_mount()` → mount point `/sdcard` (`CONFIG_BSP_SD_MOUNT_POINT`), FATFS via `esp_vfs_fat`. API completa no BSP: `bsp_sdcard_sdmmc_mount()`, `bsp_sdcard_unmount()` (bsp_storage.c).
-- **NVS já inicializado** em `app_main.cpp:19-24` (padrão Fase 5: `imu_reader` usa `nvs_get_u8/nvs_set_u8` com `NVS_KEY_ROT_ENABLED`).
-- **UI existente**: `ui_shell` gerencia telas via `lv_disp_load_scr` (desktop ↔ notas); `ui_bar` é flex row (`gear | spacer | status_badge | relógio`) — o **ícone WiFi entra antes do relógio**; `ui_keyboard` expõe `ui_keyboard_attach(ta)` reutilizável para o campo de senha.
-
-## 2. Decisões de arquitetura
-
-| # | Decisão | Escolha |
-|---|---|---|
-| D1 | Rádio | ESP-Hosted + `esp_wifi_remote` (companion C6 via SDIO2), API `esp_wifi` padrão; power via `bsp_feature_enable(BSP_FEATURE_WIFI, true)` |
-| D2 | Persistência | Arquivo de config no SD (`/sdcard/tab5_os/wifi.cfg`: ssid + senha em linhas); lido no boot para conexão automática |
-| D3 | Estado/eventos | Event loop IDF (`WIFI_EVENT` / `IP_EVENT`); módulo `wifi_mgr` centraliza estado (IDLE/SCANNING/CONNECTING/CONNECTED) e notifica a UI |
-| D4 | UI de config | Telas novas no padrão do `ui_shell` (wifi_settings + wifi_info); campo de senha com `ui_keyboard_attach` |
-| D5 | Ícone na barra | Label na `ui_bar` antes do relógio; cores por estado (text/text_muted/accent); click → tela de config (desconectado) ou info (conectado) |
-
-## 3. Estrutura do projeto
-
-```
-components/app/
-    ├── wifi_mgr.cpp/.h        # init esp_wifi_remote, scan, connect, eventos, estado
-    ├── wifi_storage.cpp/.h    # mount SD + ler/gravar /sdcard/tab5_os/wifi.cfg
-    ├── ui_wifi.cpp/.h         # telas de config (scan/lista/senha) e info da conexão
-    └── ui_bar.cpp             # ícone WiFi antes do relógio + handlers de clique
-```
-
-Deps a adicionar em `main/idf_component.yml`: `espressif/esp_hosted` + `espressif/esp_wifi_remote` (versões compatíveis com IDF 5.5.5, conforme guia Wi-Fi Expansion).
-
-## 4. Fases
-
-### Fase 8 — Alimentação + stack WiFi (~1 d, maior risco — spike cedo)
-- `bsp_feature_enable(BSP_FEATURE_WIFI, true)` no boot; add deps `esp_hosted`/`esp_wifi_remote`; `esp_netif_init` + event loop + `esp_wifi_init`/`esp_wifi_start`.
-- Spike: scan de redes no log (`esp_wifi_scan_start` + `WIFI_EVENT_SCAN_DONE`) com o aparelho próximo a um AP.
-- Critério: log lista SSIDs encontrados.
-
-### Fase 9 — SD: mount + persistência de config (~0,5 d)
-- `bsp_sdcard_mount()`; `wifi_storage` lê/grava `/sdcard/tab5_os/wifi.cfg` (cria dir se preciso; senha em texto plano — PoC).
-- Critério: gravar config, desligar, religar e reler com os mesmos valores (serial log).
-
-### Fase 10 — Conexão automática + reconexão (~0,5–1 d)
-- No boot: se config existe → `esp_wifi_set_config` + `esp_wifi_connect`; tratar `WIFI_EVENT_STA_DISCONNECTED` com retry com backoff; sucesso = `IP_EVENT_STA_GOT_IP` (log do IP).
-- Critério: boot conecta sozinho na rede salva; desligar o AP → reconecta quando voltar.
-
-### Fase 11 — UI de configuração (~1–1,5 d, design via @designer)
-- Tela `wifi_settings`: botão "Escanear", lista de SSIDs (scroll), seleção abre campo de senha (texto com `ui_keyboard_attach`), botão "Conectar" → salva config + conecta.
-- Critério: fluxo completo descobrir → senha → conectar → status conectado.
-
-### Fase 12 — Ícone de status + tela de info (~0,5–1 d, design via @designer)
-- Ícone WiFi na `ui_bar` antes do relógio (estados: apagado/muted = desconectado, accent = conectado, ânimo de scan opcional).
-- Click desconectado → abre `wifi_settings`; click conectado → `wifi_info` (SSID, IP, status) + botão "Reconfigurar WiFi" → `wifi_settings`.
-- Critério: ícone reflete estado; cliques navegam corretamente.
-
-## 5. Riscos e mitigações
-
-| Risco | Mitigação |
-|---|---|
-| ESP-Hosted/`esp_wifi_remote` em IDF 5.5.5 pode exigir versões específicas | Spike na Fase 8 com o guia oficial Wi-Fi Expansion; versões pinadas no idf_component.yml |
-| SD e WiFi compartilham periféricos/tensão | SDMMC (G39-44) e SDIO2 do C6 (G8-15) são barramentos distintos — sem conflito de pinos; validar power budget (SD 3.3V + rádio) |
-| C6 precisa do firmware ESP-Hosted de fábrica | Verificar na Fase 8 (erro de transporte SDIO indica FW ausente/errado; flashar `esp_hosted` slave se necessário) |
-| Scan/connect assíncrono + UI (thread-safety LVGL) | Todos os callbacks de evento publicam estado; UI reage via `lv_timer` na task LVGL (padrão já usado na rotação) |
-| Senha em texto plano no SD | Aceitável para PoC; nota no README |
-| C6 é 2.4 GHz apenas | Lista apenas redes 2.4 GHz; ignorar 5 GHz no scan |
-
-## 6. Verificação (hardware)
-
-1. Build + flash + cold boot (unplug USB) + monitor `--no-reset`.
-2. Fase 8: scan lista SSIDs 2.4 GHz no serial.
-3. Fase 9: `wifi.cfg` criado no SD; re-leitura após reboot com mesmos valores.
-4. Fase 10: boot conecta na rede salva (GOT_IP no serial); AP desligado → retry; AP de volta → reconecta.
-5. Fase 11: fluxo completo pela tela (escanear → selecionar → senha com teclado → conectar), em retrato e paisagem, temas claro/escuro.
-6. Fase 12: ícone correto por estado; clique desconectado abre config; clique conectado abre info com "Reconfigurar WiFi" voltando à config.
-
----
-
-# Planejamento: Aplicação "Arquivos" (Fase 16)
-
-## 1. Contexto & Objetivo
-- Criação do aplicativo **"Arquivos"** (File Manager do `tab5-os`), permitindo navegar e visualizar diretórios e arquivos armazenados no cartão SD (`/sdcard`).
-- Dois modos de exibição dinâmicos com alternador na barra de ferramentas:
-  1. **Modo Ícones (Grade/Grid)**: Pastas e arquivos dispostos em blocos com ícone (`LV_SYMBOL_DIRECTORY` / `LV_SYMBOL_FILE`) e nome.
-  2. **Modo Lista (Detalhes)**: Tabela/lista com nome, tamanho formatado (Bytes, KB, MB ou `<DIR>`) e data/hora da última modificação (`DD/MM/AAAA HH:MM`).
-- Navegação interativa: toque em diretórios para abrir subpastas e botão de retorno para subir de nível até a raiz `/sdcard`.
+## 1. Contexto & Objetivos
+- **Hardware**: O M5Stack Tab5 é baseado no SoC **ESP32-P4 (RISC-V)** com firmware bare-metal desenvolvido sobre **ESP-IDF v5.5.5 (FreeRTOS)** e interface gráfica **LVGL 9** via `esp_lvgl_port`.
+- **Compilação e Requisitos**: O componente managed `espressif/usb` (dependência do BSP `usb ^1`) exige HAL `usb_dwc_hal_set_fifo_config`, tornando o ESP-IDF 5.5+ obrigatório (mínimo 5.5.3).
+- **Display & Touch**: Painel MIPI-DSI nativo 720x1280 (retrato) e 1280x720 (paisagem) via rotação por hardware PPA. Controladores de toque suportados: GT911 / ST7123 / ST7121.
+- **Sensor de Orientação**: IMU Bosch BMI270 (acelerômetro + giroscópio de 6 eixos) no barramento I2C (endereço `0x68`). A rotação de tela é processada em software a partir do vetor de gravidade.
 
 ## 2. Decisões de Arquitetura
 
-| # | Decisão | Escolha |
-|---|---|---|
-| D1 | Launcher/Desktop | Adição de tile "Arquivos" no `ui_desktop.cpp` ao lado de Notas e WiFi |
-| D2 | Leitura de Arquivos | APIs POSIX padrão (`opendir`, `readdir`, `stat`) sobre o VFS do FATFS (`/sdcard`) |
-| D3 | Modos de Exibição | Estado interno com alternador: `VIEW_MODE_GRID` e `VIEW_MODE_LIST`, re-renderizando a área de visualização |
-| D4 | UI e Janela | Padrão `ui_shell` com barra própria (`surface_alt`), botão voltar (`LV_SYMBOL_PREV`), caminho atual, alternador de visualização e botão fechar |
-| D5 | Redimensionamento | Integração com `ui_shell_notify_keyboard_layout()` e rotação dinâmica de tela |
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Base do firmware | App standalone (`main` + `components`) | Independência completa e arquitetura modular |
+| D2 | Teclado inicial | `lv_keyboard` + `lv_textarea` nativos do LVGL 9 | Simplicidade e desacoplamento para a prova de conceito |
+| D3 | Rotação dinâmica | Task periódica lendo BMI270 a ~10–20 Hz | Cálculo do vetor gravidade com histerese, `lv_display_set_rotation` e sincronização de toque via `esp_lvgl_port` |
 
-## 3. Estrutura de Arquivos
+## 3. Estrutura de Arquivos & Componentes
 
 ```
-components/app/
-├── include/
-│   ├── ui_files.h         # Declarações do ciclo de vida e visualização do app Arquivos
-├── ui_files.cpp           # Leitura do SD, alternância de modos (ícones/lista) e navegação
-├── ui_desktop.cpp         # Novo tile 'Arquivos' no desktop
-├── ui_shell.cpp           # Integração com ui_shell_open_files / close_files
-└── CMakeLists.txt         # Registro de ui_files.cpp
+tab5-os/
+├── sdkconfig.defaults          # Target esp32p4, LVGL 9, DPI 130
+├── CMakeLists.txt
+├── main/
+│   ├── CMakeLists.txt
+│   ├── idf_component.yml       # Dependências: m5stack_tab5, esp_lvgl_port, accel_gyro_bmi270
+│   └── app_main.cpp            # Inicialização BSP + LVGL + tarefas do sistema
+└── components/app/
+    ├── ui_keyboard.cpp/.h      # Criação e layout de lv_textarea + lv_keyboard
+    ├── imu_reader.cpp/.h       # Wrapper do sensor BMI270 (raw → m/s², °/s)
+    └── orientation.cpp/.h      # Cálculo de vetor de gravidade e filtro de orientação
 ```
 
 ## 4. Fases de Execução da Funcionalidade
 
-### Etapa 1 — Backend de Listagem de Arquivos
-- Mapeamento e paginação/leitura de diretórios via `stat` e `readdir`.
-- Formatação de tamanho (`B`, `KB`, `MB`) e data (`localtime_r`).
-- Tratamento para SD ausente ou pastas vazias.
+### Fase 0 — Toolchain e Ambiente Base (~0,5 d)
+- Configuração do ESP-IDF v5.5.5; `idf.py set-target esp32p4`; validação de compilação do BSP e gravação USB-C.
+- **Critério**: Boot imprime log serial sem panics e a tela MIPI-DSI acende.
 
-### Etapa 2 — Criação da Interface `ui_files`
-- Janela com barra de navegação superior (título/caminho, botão subir nível `..`, alternador Ícones/Lista, fechar).
-- Renderização em modo Grade (`LV_FLEX_FLOW_ROW_WRAP`).
-- Renderização em modo Lista (`LV_FLEX_FLOW_COLUMN`).
+### Fase 1 — Display e Touch no LVGL 9 (~1 d)
+- Inicialização do BSP com `esp_lvgl_port`, LVGL 9, RGB565, direct mode com full-frame buffer em PSRAM, DPI 130.
+- **Critério**: Botão LVGL de teste responde ao toque com feedback visual.
 
-### Etapa 3 — Integração com o Desktop e Shell
-- Registro do tile no launcher desktop.
-- Transições de tela no `ui_shell`.
-- Suporte a temas claro/escuro e rotação de tela.
+### Fase 2 — Teclado Virtual Inicial (~1 d)
+- Integração de `lv_textarea` com `lv_keyboard` acoplado nos modos padrão (letras e números).
+- **Critério**: Toque nas teclas insere caracteres corretamente na área de digitação.
 
-### Etapa 4 — Validação e Gravação
-- Execução de `pre-commit run --all-files`.
-- Teste em hardware navegando pelas pastas e arquivos criados pelo sistema (`/sdcard/tab5_os/`).
+### Fase 3 — Driver e Leitura do IMU BMI270 (~1 d)
+- Driver `accel_gyro_bmi270`: inicialização do barramento I2C, leitura de registradores e conversão física (`acc = raw / 835.92 / 10 m/s²`, `gyr = raw / 32.768 / 10 °/s`).
+- **Critério**: Rotação física do Tab5 reflete mudanças instantâneas nos logs do monitor serial.
+
+### Fase 4 — Rotação Dinâmica de Interface (~1–2 d)
+- Algoritmo de mapeamento do vetor gravidade para 4 orientações (0°, 90°, 180°, 270°) com histerese angular (~45°) e filtro de debounce.
+- Aplicação em tempo real de `lv_display_set_rotation()` e ajuste de matriz de toque via `esp_lvgl_port_set_touch_rotation()`.
+- **Critério**: Virar o dispositivo rotaciona a interface e mantém o alinhamento das coordenadas de toque.
+
+### Fase 5 — Polimento e Temas (~1 d)
+- Implementação de tema claro/escuro, ajuste de proporções da área de digitação e mitigação de flickering.
+- **Critério**: Funcionamento estável nas 4 orientações sem crashes em rotação contínua.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Rotação em runtime com direct mode + PPA | Validado na Fase 4; suporte a sw_rotation como fallback caso necessário |
+| Variante de hardware do LCD (ST7121) | BSP v1.2.0 corrigido com tabela de inicialização do ST7121 (`0x71 0x21`, `SLPOUT 120ms`) |
+| Silício ESP32-P4 rev v1.3 | Configurado `CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y` e `CONFIG_ESP32P4_REV_MIN_100=y` no `sdkconfig.defaults` |
+| Dessincronização de eixos do touch | Sincronização direta via esp_lvgl_port em cada evento de rotação |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Build, gravação via `idf.py flash` e boot limpo sem reinicializações.
+2. Digitação fluida no teclado virtual com resposta tátil visual.
+3. Rotação suave entre modos retrato e paisagem com coordenadas de toque calibradas.
+4. Persistência de tema e layout responsivo.
+
+## 7. Status de Conclusão: CONCLUÍDO (100%)
+- **Firmware Base e BSP**: Integrado com sucesso no ESP-IDF 5.5.5 e LVGL 9.
+- **Orientação e Toque**: Rotação automática por gravidade calibrada em 4 quadrantes.
 
 ---
 
-# Planejamento: Persistência de Notas e Registro de Associações de Arquivo (Fase 17)
+# Fase 6: Teclado Virtual PT-BR (Acentos e Cedilha)
 
-## 1. Contexto & Objetivo
-- **Salvar Notas em `/sdcard/notas/`**:
-  - A aplicação **Notas** salvará e carregará notas como arquivos `.txt`.
-  - A pasta `/sdcard/notas` será criada automaticamente se não existir.
-  - O app Notas terá botões de ação na barra superior: **Salvar** (`LV_SYMBOL_SAVE`), **Novo** (`LV_SYMBOL_PLUS`) e indicador do arquivo em edição.
-  - Ao salvar uma nova nota, gera nome automático com timestamp ou sequencia numerica (ex: `nota_YYYYMMDD_HHMM.txt`), ou atualiza o arquivo aberto.
-- **Tabela / Registro de Associações de Tipos de Arquivo (File Associations)**:
-  - Criação de um módulo central no SO (`file_assoc`) que mapeia extensões de arquivo para seus respectivos manipuladores de abertura.
-  - Registro de extensão `.txt` mapeado para abrir o app Notas com o caminho do arquivo.
-- **Abertura de Arquivos a partir do app "Arquivos"**:
-  - No aplicativo **Arquivos**, ao clicar em um item de arquivo (ex: `documento.txt`), o sistema consulta a tabela de associações.
-  - Se houver um app associado para a extensão `.txt`, o arquivo é aberto diretamente no aplicativo **Notas**, carregando o seu conteúdo para leitura e edição.
+## 1. Contexto & Objetivos
+- Suporte nativo à escrita em língua portuguesa no teclado virtual do `tab5-os`, incluindo cedilha (`ç`/`Ç`), vogais acentuadas (`á`, `é`, `í`, `ó`, `ú`, `ã`, `õ`, `â`, `ê`, `ô`, `à` e maiúsculas correspondentes).
+- **Tipografia**: A fonte `lv_font_montserrat_14_latin1` já possui cobertura completa para a faixa Latin-1 (0xA0–0xFF), dispensando geração de fontes customizadas pesadas.
+- **Mecanismo LVGL**: Aproveitamento da API `lv_keyboard_set_map(kb, mode, map[], ctrl_map[])` customizando o modo `LV_KEYBOARD_MODE_SPECIAL` (tecla "1#").
 
 ## 2. Decisões de Arquitetura
 
-| # | Decisão | Escolha |
-|---|---|---|
-| D1 | Registro de Extensões | Módulo `file_assoc.h` / `file_assoc.cpp` com tabela `ext -> handler_fn(const char *path)` |
-| D2 | Diretório Padrão de Notas | `/sdcard/notas/` (criado automaticamente com `mkdir`) |
-| D3 | Ações no App Notas | Botão **Salvar** (`LV_SYMBOL_SAVE`), **Novo** (`LV_SYMBOL_PLUS`) e exibição do nome do arquivo |
-| D4 | Integração no App Arquivos | `item_click_cb`: se `S_ISDIR`, entra na pasta; se for arquivo, consulta `file_assoc_open()` |
-| D5 | Abertura com Argumento | `ui_shell_open_notas_file(const char *filepath)` carrega o conteúdo via I/O no `notas_ta` |
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Acesso à página de acentos | Modo `SPECIAL` nativo do LVGL ("1#") | Evita interceptação invasiva de handlers internos e mantém compatibilidade |
+| D2 | Grade do teclado | Matriz de 5 linhas com números, acentos e pontuação | Acomoda caracteres minúsculos, maiúsculos e símbolos essenciais |
+| D3 | Ações de controle | Manter botões de navegação, Backspace, Enter e troca de modo | Preserva o fluxo ergonômico padrão do usuário |
 
-## 3. Estrutura de Arquivos
+## 3. Estrutura de Arquivos & Componentes
 
 ```
 components/app/
 ├── include/
-│   ├── file_assoc.h       # [NEW] Registro de extensões do sistema (.txt -> Notas)
-│   ├── ui_notas.h         # [MODIFY] Exporta ui_notas_open_file e ui_notas_save_current
-│   └── ui_files.h         # [MODIFY] Mantém interface do navegador de arquivos
-├── file_assoc.cpp         # [NEW] Implementação do dispatcher de extensões
-├── ui_notas.cpp           # [MODIFY] Botões Salvar/Novo, lógica de I/O em /sdcard/notas/
-├── ui_files.cpp           # [MODIFY] Acionamento de file_assoc_open_file() no clique de arquivo
-├── ui_shell.cpp           # [MODIFY] Roteamento de abertura de notas com caminho de arquivo
-└── CMakeLists.txt         # [MODIFY] Registro de file_assoc.cpp
+│   └── ui_keyboard.h          # [MODIFY] Declarações e rotinas de layout do teclado
+└── ui_keyboard.cpp            # [MODIFY] Definição de pt_br_map_spec e pt_br_ctrl_spec
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+### Etapa 1 — Mapeamento de Teclas e Controles
+- Definição do array `pt_br_map_spec[]` com as 5 linhas estruturadas:
+  - Linha 1: Números de `1` a `0` e botão `⌫` (Backspace).
+  - Linha 2: Vogais minúsculas acentuadas e `ç` (`à á â ã ç é ê í ó ô õ ú`).
+  - Linha 3: Vogais maiúsculas acentuadas e `Ç` (`À Á Â Ã Ç É Ê Í Ó Ô Õ Ú`).
+  - Linha 4: Pontuação e símbolos (` , . ; : ! ? - _ + = / @ # `).
+  - Linha 5: Teclas de modo `[⌨] [abc]`, setas direcionais `◀ ▶`, `espaço` e `[OK]`.
+- Configuração do array `pt_br_ctrl_spec[]` com flags de largura e controle de botões (`LV_KEYBOARD_CTRL_BUTTON_FLAGS`, `LV_KB_BTN(n)`).
+
+### Etapa 2 — Registro e Integração no Teclado
+- Aplicação de `lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_SPECIAL, pt_br_map_spec, pt_br_ctrl_spec)` durante `ui_keyboard_create()`.
+- Atualização dos métodos `is_action_key()` e `accent_action_keys()` para estilização coerente de teclas de ação e Enter (`LV_SYMBOL_NEW_LINE`).
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Altura reduzida das teclas com 5 linhas | Ajuste proporcional do percentual de ocupação em tela (35% paisagem, 52% retrato) |
+| Rótulo da tecla de acesso mantido como "1#" | Solução padrão que preserva a troca de modo sem complexidade adicional |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Abertura do app Notas e clique no campo de texto.
+2. Toque na tecla "1#" para abrir a página de caracteres em português.
+3. Teste de digitação de todas as vogais acentuadas minúsculas e maiúsculas.
+4. Validação do retorno ao modo QWERTY através da tecla "abc".
+
+## 7. Status de Conclusão: CONCLUÍDO (100%)
+- **Mapeamento PT-BR**: Teclado virtual 100% habilitado com suporte completo a acentuação e cedilha.
+
+---
+
+# Fases 8–12: Wi-Fi — Conexão, Configuração e Persistência em SD
+
+## 1. Contexto & Objetivos
+- **Arquitetura do Rádio**: O SoC ESP32-P4 não possui rádio Wi-Fi integrado. O Tab5 utiliza um coprocessador **ESP32-C6-MINI-1U** conectado via interface **SDIO2** (`D0=G11, D1=G10, D2=G9, D3=G8, CMD=G13, CK=G12, RESET=G15, IO2=G14`).
+- **Alimentação e Stack**: A alimentação do rádio é controlada via expansor I/O (`WLAN_PWR_EN` / `bsp_feature_enable(BSP_FEATURE_WIFI, true)`). A comunicação host-slave é gerenciada pelo protocolo oficial **ESP-Hosted-MCU** e camada de abstração `esp_wifi_remote`.
+- **Armazenamento**: Persistência de credenciais em cartão microSD (`/sdcard/tab5_os/wifi.cfg`) montado via SDMMC slot 0 sobre VFS FATFS.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Stack Wi-Fi | `espressif/esp_hosted` + `esp_wifi_remote` | Padrão oficial da Espressif para expansão de rádio no P4 |
+| D2 | Persistência | Arquivo `/sdcard/tab5_os/wifi.cfg` | Facilidade de inspeção, portabilidade e leitura no boot |
+| D3 | Gerenciamento | Módulo centralizado `wifi_mgr` | Isola o event loop do FreeRTOS e despacha notificações para a UI |
+| D4 | Telas de Usuário | `ui_wifi.cpp` integrado ao `ui_shell` | Configuração (scan/senha) e detalhes da conexão (IP/SSID) |
+| D5 | Barra de Status | Ícone dinâmico na `ui_bar` | Feedback em tempo real com estados: desconectado, buscando e conectado |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── wifi_mgr.h             # [NEW] Controle do rádio, scan e eventos
+│   ├── wifi_storage.h         # [NEW] I/O de credenciais no microSD
+│   ├── ui_wifi.h              # [NEW] Janelas de configuração e detalhes
+│   └── ui_bar.h               # [MODIFY] Ícone Wi-Fi na barra superior
+├── wifi_mgr.cpp               # [NEW] Backend ESP-Hosted e esp_wifi_remote
+├── wifi_storage.cpp           # [NEW] Leitura e escrita de /sdcard/tab5_os/wifi.cfg
+├── ui_wifi.cpp                # [NEW] Interface gráfica do aplicativo Wi-Fi
+└── ui_bar.cpp                 # [MODIFY] Indicador de status de rede
+main/
+└── idf_component.yml          # [MODIFY] Inclusão de esp_hosted e esp_wifi_remote
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+### Fase 8 — Alimentação e Inicialização do Rádio (~1 d)
+- Acionamento de energia com `bsp_feature_enable(BSP_FEATURE_WIFI, true)` e handshake SDIO2 com o ESP32-C6.
+- Inicialização de `esp_netif` e event loop do IDF.
+- **Critério**: Scan de redes registra APs detectados no monitor serial.
+
+### Fase 9 — Armazenamento no Cartão SD (~0,5 d)
+- Montagem do FATFS via `bsp_sdcard_mount()`. Implementação de rotinas de leitura/escrita em `wifi_storage`.
+- **Critério**: Criação de `/sdcard/tab5_os/wifi.cfg` persistindo entre reinicializações.
+
+### Fase 10 — Auto-Conexão e Reconexão (~1 d)
+- Conexão automática na inicialização se houver rede salva.
+- Tratamento de `WIFI_EVENT_STA_DISCONNECTED` com retry exponencial e captura de IP via `IP_EVENT_STA_GOT_IP`.
+- **Critério**: Obtenção de endereço IP dinâmico no boot.
+
+### Fase 11 — Interface de Configuração (~1,5 d)
+- Tela com lista rolável de redes, indicador de intensidade (RSSI), modal de senha com teclado virtual e botão conectar.
+- **Critério**: Fluxo completo na interface: busca → seleção → digitação de senha → conexão.
+
+### Fase 12 — Indicadores na Barra Superior (~0,5 d)
+- Ícone Wi-Fi antes do relógio com transição de cores (`text_muted` / `accent`).
+- Toque abre diretamente o painel de redes ou tela de status de conexão.
+- **Critério**: Sincronização visual em tempo real com eventos do rádio.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Barramento compartilhado SDMMC vs SDIO2 | Pinos isolados (SDMMC em G39-44; SDIO2 em G8-15) sem concorrência de hardware |
+| Thread-safety da UI durante eventos assíncronos | Atualizações da UI despachadas exclusivamente sob mutex `bsp_display_lock()` |
+| Redes de 5 GHz | Rádio ESP32-C6 opera em 2.4 GHz; redes de 5 GHz são filtradas transparentemente |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Inicialização do sistema com alimentação correta do C6.
+2. Scan de redes exibindo SSIDs no log serial e na interface gráfica.
+3. Conexão bem-sucedida com roteador Wi-Fi e obtenção de IP por DHCP.
+4. Persistência de arquivo `wifi.cfg` após reboot físico do Tab5.
+
+## 7. Status de Conclusão: CONCLUÍDO (100%)
+- **Stack Wi-Fi**: Conexão, persistência e interface gráfica operando com estabilidade.
+
+---
+
+# Fase 16: Aplicativo "Arquivos" (File Manager)
+
+## 1. Contexto & Objetivos
+- Criação do aplicativo nativo **"Arquivos"** para navegação e gerenciamento dos diretórios e arquivos armazenados no cartão microSD (`/sdcard`).
+- **Modos de Exibição Dinâmicos**:
+  1. **Modo Grade (Ícones)**: Disposição em blocos com ícones (`LV_SYMBOL_DIRECTORY` / `LV_SYMBOL_FILE`) e nomes legíveis.
+  2. **Modo Lista (Detalhes)**: Tabela contendo nome, tamanho formatado (`B`, `KB`, `MB` ou `<DIR>`) e data/hora da última modificação (`DD/MM/AAAA HH:MM`).
+- **Navegação**: Suporte a abrir subpastas, botão de retorno para subir de nível (`..`) até a raiz `/sdcard` e tratamento de erros de leitura.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Acesso a dados | APIs POSIX (`opendir`, `readdir`, `stat`) | Padrão robusto suportado nativamente pelo VFS FATFS |
+| D2 | Modos de visualização | `VIEW_MODE_GRID` e `VIEW_MODE_LIST` | Flexibilidade ergonômica para visualização rápida ou detalhada |
+| D3 | Interface gráfica | Padrão de janelas `ui_shell` com barra de ferramentas | Uniformidade visual e suporte a temas claro/escuro |
+| D4 | Integração no Desktop | Tile dedicado no lançador `ui_desktop` | Acesso rápido a partir da tela inicial |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   └── ui_files.h             # [NEW] Declarações de interface e ciclo de vida do app Arquivos
+├── ui_files.cpp               # [NEW] Leitura POSIX do SD, renderização em lista/grade e navegação
+├── ui_desktop.cpp             # [MODIFY] Tile 'Arquivos' no launcher
+├── ui_shell.cpp               # [MODIFY] Rotinas ui_shell_open_files / close_files
+└── CMakeLists.txt             # [MODIFY] Registro de ui_files.cpp
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+### Etapa 1 — Backend de Listagem de Diretórios
+- Implementação da leitura de diretórios com ordenação e formatação de metadados (`stat`, `localtime_r`).
+- Tratamento para estado sem cartão SD ou diretórios vazios.
+
+### Etapa 2 — Interface Gráfica e Modos de Exibição
+- Construção da barra superior com caminho ativo, botão subir nível, alternador Grade/Lista e fechar.
+- Renderização em modo Grade (`LV_FLEX_FLOW_ROW_WRAP`) e Lista (`LV_FLEX_FLOW_COLUMN`).
+
+### Etapa 3 — Integração com Shell e Desktop
+- Registro do ícone no launcher principal e ciclo de vida de janelas no `ui_shell`.
+- Suporte a rotação de tela (0°, 90°, 180°, 270°) e temas claro/escuro.
+
+### Etapa 4 — Validação e Testes
+- Verificação com `pre-commit` e teste de navegação em pastas reais criadas no cartão SD.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Diretórios com centenas de itens consumindo memória | Limite de paginação e desalocação limpa de nós ao navegar entre diretórios |
+| Remoção inesperada do cartão SD | Verificação prévia de montagem e exibição de aviso visual amigável |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Abertura do app Arquivos pelo ícone do Desktop.
+2. Navegação pelas pastas do sistema (`/sdcard/tab5_os/`, `/sdcard/notas/`).
+3. Alternância instantânea entre modo Grade e modo Lista com preservação de estado.
+4. Subida e descida de níveis de diretório sem vazamentos de memória.
+
+## 7. Status de Conclusão: CONCLUÍDO (100%)
+- **File Manager**: Navegação em árvore de diretórios e alternância de modos operacionais.
+
+---
+
+# Fase 17: Persistência de Notas e Registro de Associações de Arquivos
+
+## 1. Contexto & Objetivos
+- **Persistência do App Notas**: Salvar e carregar notas como arquivos `.txt` no diretório `/sdcard/notas/`, com criação automática de pasta, geração de nomes sequenciais/timestamps e botões **Salvar** (`LV_SYMBOL_SAVE`) e **Novo** (`LV_SYMBOL_PLUS`).
+- **Sistema de Associações de Arquivo (`file_assoc`)**: Módulo central no SO que mapeia extensões de arquivo para seus respectivos manipuladores de abertura.
+- **Abertura Integrada a partir do Arquivos**: Ao clicar em um arquivo `.txt` no aplicativo Arquivos, o sistema consulta a tabela `file_assoc` e dispara automaticamente a abertura no Notas com o conteúdo carregado.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Despacho de extensões | Módulo `file_assoc` com tabela `ext -> handler_fn` | Arquitetura desacoplada e facilmente extensível para novos tipos de arquivo |
+| D2 | Diretório padrão | `/sdcard/notas/` | Organização limpa e isolamento de documentos de texto |
+| D3 | Ações no Notas | Botões Salvar e Novo + label do arquivo ativo | Feedback direto ao usuário sobre o estado de edição |
+| D4 | Integração cruzada | Disparo via `file_assoc_open(filepath)` | Desacopla o gerenciador de arquivos dos apps específicos |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── file_assoc.h           # [NEW] Tabela e despacho de associações (.txt -> Notas)
+│   ├── ui_notas.h             # [MODIFY] Exporta ui_notas_open_file e ui_notas_save_current
+│   └── ui_files.h             # [MODIFY] Disparo de associações no clique de item
+├── file_assoc.cpp             # [NEW] Implementação do dispatcher de extensões
+├── ui_notas.cpp               # [MODIFY] Ações de I/O em /sdcard/notas/ e botões de barra
+├── ui_files.cpp               # [MODIFY] Integração com file_assoc_open()
+├── ui_shell.cpp               # [MODIFY] Roteamento de abertura de notas com caminho de arquivo
+└── CMakeLists.txt             # [MODIFY] Registro de file_assoc.cpp
 ```
 
 ## 4. Fases de Execução da Funcionalidade
 
 ### Etapa 1 — Módulo `file_assoc`
-- Tabela associativa de extensões de arquivo para callbacks de abertura do sistema.
-- Função `file_assoc_open(const char *filepath)` para despacho automático.
+- Tabela associativa estática de extensões para ponteiros de função de abertura.
+- Função `file_assoc_open(const char *filepath)` que extrai a extensão e despacha a ação.
 
-### Etapa 2 — Aprimoramento do App "Notas"
-- Botões Salvar (`💾`) e Novo (`+`) na barra do aplicativo.
-- I/O com `/sdcard/notas/` (gravação e leitura de arquivos `.txt`).
+### Etapa 2 — Aprimoramento do Aplicativo Notas
+- Adição dos botões Salvar (`💾`) e Novo (`+`) na barra interna de ferramentas.
+- Lógica de leitura e gravação de arquivos de texto com salvamento seguro.
 - Indicador do nome do arquivo ativo na barra superior.
 
-### Etapa 3 — Integração no App "Arquivos"
-- Ao tocar em um arquivo `.txt` na grade ou na lista, dispara a abertura automática no app Notas.
+### Etapa 3 — Integração no Aplicativo Arquivos
+- Ajuste no callback de clique de item: se for diretório, entra na pasta; se for arquivo, consulta `file_assoc_open()`.
 
 ### Etapa 4 — Validação e Gravação
-- Executar `pre-commit run --all-files`.
-- Compilação e gravação no dispositivo.
-- Teste prático de criação, salvamento e reabertura via gerenciador de arquivos.
+- Execução de testes de pre-commit e validação cruzada entre criação de notas e reabertura via Arquivos.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Arquivo muito extenso no Notas | Limite seguro de leitura com buffer alocado dinamicamente |
+| Caracteres inválidos em nomes de arquivos | Sanitização de strings antes da chamada `fopen()` |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Criação de nova nota, digitação e salvamento com nome automático.
+2. Abertura do app Arquivos, navegação até `/sdcard/notas/` e toque no arquivo `.txt`.
+3. Abertura automática do Notas com o texto original carregado perfeitamente.
+
+## 7. Status de Conclusão: CONCLUÍDO (100%)
+- **Notas & File Associations**: Persistência completa e integração de ponta a ponta com o File Manager.
 
 ---
 
-# Planejamento: Múltiplas Redes WiFi, Status Conectado/Salvo, Desconectar e Esquecer (Fase 18)
+# Fase 18: Múltiplas Redes Wi-Fi, Status e Controle Avançado
 
-## 1. Contexto & Objetivo
-- Suporte a múltiplas redes salvas no arquivo `/sdcard/tab5_os/wifi.cfg`.
-- Identificação visual na lista de scan do app WiFi:
+## 1. Contexto & Objetivos
+- Expandir o gerenciamento de Wi-Fi para suportar múltiplas redes conhecidas salvas no arquivo `/sdcard/tab5_os/wifi.cfg`.
+- **Identificação Visual na Lista**:
   - Indicação de rede atualmente **Conectada** (`LV_SYMBOL_OK` / `(Conectado)`).
   - Indicação de redes **Salvas** (`LV_SYMBOL_SAVE` / `(Salva)`).
-- Ações contextuais de rede:
+  - Indicador dinâmico de intensidade de sinal RSSI.
+- **Ações Contextuais de Rede**:
   - Botão **Desconectar** para a rede ativa.
-  - Botão **Esquecer** para apagar as credenciais salvas de uma rede.
-  - Botão **Conectar** usando a senha salva ou inserindo nova senha.
+  - Botão **Esquecer** para remover credenciais de rede previamente salvas.
+  - Botão **Conectar** com conexão imediata ou solicitação de senha.
 
 ## 2. Decisões de Arquitetura
 
-| # | Decisão | Escolha |
-|---|---|---|
-| D1 | Formato do `wifi.cfg` | Múltiplas seções `[rede]` ou linhas `ssid=...` e `password=...`, mantendo compatibilidade retroativa |
-| D2 | API de Armazenamento | `wifi_storage_load_all()`, `wifi_storage_add_or_update()`, `wifi_storage_remove()`, `wifi_storage_find()` |
-| D3 | Controle de Conexão | `wifi_mgr_disconnect()`, `wifi_mgr_forget()` e seleção de melhor rede conhecida no boot |
-| D4 | UI Contextual | Botões Conectar / Desconectar / Esquecer dinâmicos conforme o estado da rede selecionada |
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Formato de arquivo | Linhas `ssid=...` e `password=...` em blocos | Compatibilidade retroativa com configurações anteriores |
+| D2 | API de armazenamento | CRUD completo em `wifi_storage` (`load_all`, `add_or_update`, `remove`, `find`) | Manipulação segura e padronizada da lista de redes |
+| D3 | Controle de conexão | Métodos dedicados em `wifi_mgr` (`disconnect`, `forget`) | Controle explícito de estado do rádio e reconexão inteligente |
+| D4 | UI Contextual | Painel com botões que se adaptam ao estado da rede selecionada | Interface limpa sem sobrecarga de elementos visuais |
 
-## 3. Fases de Execução
-
-### Etapa 1 — Backend `wifi_storage`
-- Implementar parsing e serialização de múltiplas redes em `wifi.cfg`.
-- Operações de busca, adição, atualização e remoção de rede.
-
-### Etapa 2 — Controle `wifi_mgr`
-- Implementar métodos de desconexão e esquecimento de rede no FreeRTOS/ESP-WiFi.
-
-### Etapa 3 — Interface de Usuário `ui_wifi`
-- Renderização de badges/ícones na listagem (Conectado / Salva / Sinal).
-- Controles de ação: Conectar, Desconectar, Esquecer e campo de senha contextual.
-
-### Etapa 4 — Validação e Gravação
-- `pre-commit run --all-files` 100% aprovado.
-- Gravação no Tab5 e validação em hardware.
-
----
-
-# Planejamento: Gerenciador de Conexão Bluetooth, Periféricos e Supressão de Teclado Virtual (Fase 19)
-
-## 1. Contexto & Objetivo
-- Criação do aplicativo **"Bluetooth"** (Gerenciador de Conexões Bluetooth do `tab5-os`) e infraestrutura para periféricos sem fio (teclados, mouses e fones de ouvido).
-- **Aplicativo Próprio (`ui_bluetooth`)**: Tela com interface de busca, listagem de dispositivos com ícones por categoria (`LV_SYMBOL_KEYBOARD`, `LV_SYMBOL_AUDIO`, `LV_SYMBOL_SETTINGS`), badges de status (Conectado / Pareado / RSSI) e ações contextuais (Conectar, Desconectar, Parear, Esquecer).
-- **Ícone na Barra de Status (`ui_status` / `ui_bar`)**: Indicador `LV_SYMBOL_BLUETOOTH` ao lado do Wi-Fi, com cor atenuada (`text_muted`) quando desconectado e cor de destaque (`accent`) quando conectado a pelo menos um dispositivo. Toque no ícone abre o app Bluetooth.
-- **Launcher / Desktop (`ui_desktop`)**: Tile 76x76 estilizado com `LV_SYMBOL_BLUETOOTH` e rótulo "Bluetooth".
-- **Supressão Inteligente do Teclado Virtual**:
-  - Quando um teclado Bluetooth físico estiver conectado, o teclado virtual (`ui_keyboard`) **permanece oculto** ao focar campos de texto (`lv_textarea`), permitindo que a aplicação ativa aproveite 100% da altura da tela.
-  - Ao desconectar o teclado físico, o teclado virtual volta a ser exibido automaticamente sob toque na tela.
-- **Gerenciador e Persistência (`bt_mgr` & `bt_storage`)**: Controle assíncrono do rádio Bluetooth (via ESP-Hosted / ESP32-C6 companion) e salvamento de dispositivos pareados em `/sdcard/tab5_os/bt.cfg` para reconexão automática no boot.
-- **Entrada e Áudio**: Drivers `lv_indev_t` para injeção de teclas de teclado e ponteiro de mouse no LVGL, e roteamento de áudio para fones pareados.
-
-## 2. Decisões de Arquitetura
-
-| # | Decisão | Escolha |
-|---|---|---|
-| D1 | Rádio & Host Stack | ESP-Hosted Bluetooth HCI (ESP32-C6 companion via SDIO2) + Host Stack no ESP32-P4 |
-| D2 | Janela do App | `ui_bluetooth.cpp` integrado ao `ui_shell` (`ui_shell_open_bluetooth` / `ui_shell_close_bluetooth`) |
-| D3 | Status Bar | Ícone `LV_SYMBOL_BLUETOOTH` em `ui_status.cpp` interativo com navegação |
-| D4 | Persistência | `/sdcard/tab5_os/bt.cfg` através de `bt_storage.cpp` |
-| D5 | Categorização | Ícones dedicados por tipo: `LV_SYMBOL_KEYBOARD` (teclados), `LV_SYMBOL_AUDIO` (fones), `LV_SYMBOL_SETTINGS` (mouses) |
-| D6 | Supressão de Teclado | Interceptação em `ui_keyboard_attach()` consultando `bt_mgr_is_keyboard_connected()` |
-| D7 | Dispositivos de Entrada | Registro de `lv_indev_t` virtual para teclado e mouse no LVGL 9 |
-
-## 3. Estrutura de Arquivos
+## 3. Estrutura de Arquivos & Componentes
 
 ```
 components/app/
 ├── include/
-│   ├── bt_mgr.h           # [NEW] API e eventos do gerenciador Bluetooth
-│   ├── bt_storage.h       # [NEW] Persistência em /sdcard/tab5_os/bt.cfg
-│   ├── ui_bluetooth.h     # [NEW] Interface do aplicativo Bluetooth
-│   ├── ui_keyboard.h      # [MODIFY] Suporte à supressão do teclado virtual
-│   ├── ui_status.h        # [MODIFY] Ícone de status Bluetooth
-│   └── ui_shell.h         # [MODIFY] Transições de tela do Bluetooth
-├── bt_mgr.cpp             # [NEW] Implementação do backend Bluetooth
-├── bt_storage.cpp         # [NEW] I/O do arquivo bt.cfg
-├── ui_bluetooth.cpp       # [NEW] Interface gráfica do app Bluetooth
-├── ui_keyboard.cpp        # [MODIFY] Lógica condicional de visibilidade
-├── ui_desktop.cpp         # [MODIFY] Tile 'Bluetooth' no launcher
-├── ui_status.cpp          # [MODIFY] Indicador Bluetooth na barra superior
-├── ui_shell.cpp           # [MODIFY] Ciclo de vida da tela bluetooth_scr
-└── CMakeLists.txt         # [MODIFY] Registro dos novos módulos e deps
+│   ├── wifi_storage.h         # [MODIFY] Estruturas de múltiplas redes e CRUD de configs
+│   ├── wifi_mgr.h             # [MODIFY] Métodos de desconectar, esquecer e auto-seleção
+│   └── ui_wifi.h              # [MODIFY] Renderização de badges e ações contextuais
+├── wifi_storage.cpp           # [MODIFY] Parsing e serialização de lista de credenciais
+├── wifi_mgr.cpp               # [MODIFY] Desconexão manual e supressão de auto-reconexão
+└── ui_wifi.cpp                # [MODIFY] Badges visuais e botões dinâmicos de controle
 ```
 
 ## 4. Fases de Execução da Funcionalidade
 
-### Etapa 1 — Backend de Armazenamento e Configuração (`bt_storage`)
-- Definição do formato e parsing do arquivo `/sdcard/tab5_os/bt.cfg`.
-- Métodos para carregar, adicionar, atualizar e remover dispositivos pareados.
+### Etapa 1 — Backend de Armazenamento (`wifi_storage`)
+- Parser e serializador de múltiplas redes preservando segurança e integridade do arquivo.
+- Métodos de busca, inclusão, atualização e deleção de credenciais.
 
-### Etapa 2 — Gerenciador Bluetooth e Detecção de Dispositivos (`bt_mgr`)
-- Inicialização do rádio e ciclo de scan assíncrono.
-- Classificação por perfil (Teclado, Mouse, Fone de ouvido).
-- Funções de conexão, pareamento, desconexão e checagem de dispositivos conectados.
+### Etapa 2 — Controle de Rádio no `wifi_mgr`
+- Implementação de `wifi_mgr_disconnect()` e `wifi_mgr_forget_network()`.
+- Algoritmo de escolha da melhor rede salva disponível durante o boot.
 
-### Etapa 3 — Supressão Inteligente do Teclado Virtual (`ui_keyboard`)
-- Modificação de `ui_keyboard_attach` para checar `bt_mgr_is_keyboard_connected()`.
-- Ocultação do teclado virtual e liberação da altura total para os aplicativos.
-- Transição em tempo real ao conectar/desconectar teclado físico.
+### Etapa 3 — Interface de Usuário no `ui_wifi`
+- Renderização de badges (Conectado / Salva / Sinal) em cada item da listagem.
+- Painel de ação contextual exibindo dinamicamente: Conectar, Desconectar, Esquecer e input de senha.
 
-### Etapa 4 — Interface do Aplicativo (`ui_bluetooth`)
-- Janela do app com barra superior, botão fechar, botão de busca e lista dinâmica de dispositivos.
-- Painel de ações contextuais (Conectar / Desconectar / Esquecer / Parear).
-- Suporte a temas claro/escuro e rotação retrato/paisagem.
+### Etapa 4 — Validação em Hardware
+- Validação de pre-commit, gravação no dispositivo e teste com múltiplos roteadores Wi-Fi.
 
-### Etapa 5 — Integração com o Sistema (Desktop, Barra de Status e Shell)
-- Adição do tile "Bluetooth" no desktop launcher.
-- Adição do ícone interativo de conexão na barra de status.
-- Roteamento e transições no `ui_shell`.
-- Inicialização em `main/app_main.cpp`.
+## 5. Riscos & Mitigações
 
-### Etapa 6 — Mapeamento de Drivers HID e Áudio
-- Registro de drivers de entrada LVGL para teclado e mouse.
-- Roteamento de áudio para fones conectados.
+| Risco | Impacto / Mitigação |
+|---|---|
+| Corrupção de arquivo de configuração em gravação | Escrita atômica com arquivo temporário antes de substituir o arquivo principal |
+| Conexão concorrente durante troca rápida de rede | Cancelamento prévio de tentativas pendentes antes de iniciar nova associação |
 
-### Etapa 7 — Validação e Gravação
-- Executar `pre-commit run --all-files`.
-- Compilação do firmware e validação em hardware.
+## 6. Critérios de Validação & Teste em Hardware
+1. Salvar duas redes Wi-Fi distintas no cartão SD.
+2. Desconectar manualmente de uma rede ativa através do botão Desconectar.
+3. Esquecer uma rede salva e validar a remoção do registro no `wifi.cfg`.
+4. Reboot e validação da auto-conexão na rede remanescente.
 
-## 5. Status de Conclusão: CONCLUÍDO (100%)
-- **Backend BLE NimBLE (HCI via ESP-Hosted / SDIO)**: 100% operacional.
-- **Descoberta de Serviços e Descritores 0x2902 (CCCD)**: Pipeline sequencial ativado com sucesso.
-- **Entrada de Teclado Físico no Notas**: Mapeamento completo de caracteres e teclas especiais no LVGL 9.
-- **Reconexão Automática e Auto-Conexão no Boot**: 100% testado e validado em hardware com o teclado físico sem fio.
+## 7. Status de Conclusão: CONCLUÍDO (100%)
+- **Múltiplas Redes**: Suporte robusto a múltiplos APs, esquecimento e controle contextual.
 
 ---
 
-# Fase 7: Controles de Liga/Desliga para Wi-Fi e Bluetooth no Menu de Configurações
+# Fase 19: Gerenciador de Conexão Bluetooth, Periféricos e Supressão de Teclado Virtual
 
-## 1. Visão Geral
-Adicionar opções independentes no Menu de Configurações (painel da engrenagem) para habilitar e desabilitar o **Wi-Fi** e o **Bluetooth**, com controle efetivo dos rádios, persistência em NVS, bloqueio de buscas/conexões manuais quando inativos, e restauração imediata da auto-reconexão inteligente com redes e dispositivos pareados quando reativados.
-
-## 2. Escopo e Entregáveis
-1. **Menu de Configurações (`ui_bar.cpp`)**:
-   - Linhas com switches para **Wi-Fi** e **Bluetooth** abaixo de "Rotação".
-2. **Gerenciador de Wi-Fi (`wifi_mgr.h`, `wifi_mgr.cpp`)**:
-   - APIs `wifi_mgr_set_enabled(bool)` e `wifi_mgr_is_enabled()`.
-   - Persistência de estado em NVS (`radios` / `wifi_en`).
-   - Bloqueio de conexões e buscas quando desativado; auto-reconexão imediata a redes salvas ao reativar.
-3. **Gerenciador de Bluetooth (`bt_mgr.h`, `bt_mgr.cpp`)**:
-   - APIs `bt_mgr_set_enabled(bool)` e `bt_mgr_is_enabled()`.
-   - Persistência de estado em NVS (`radios` / `bt_en`).
-   - Desconexão geral, cancelamento de conexões/scans e restauração do teclado virtual quando desativado.
-   - Auto-reconexão imediata e transparente a dispositivos pareados ao reativar.
-4. **Indicadores na Barra Superior (`ui_status.cpp`)**:
-   - Atualização visual dos ícones de status refletindo os estados ligado/desligado/conectado.
-5. **Aplicativos de Rede (`ui_wifi.cpp` e `ui_bluetooth.cpp`)**:
-   - Bloqueio e feedback quando o respectivo rádio estiver desligado.
-
-## 3. Status de Conclusão: CONCLUÍDO (100%)
-- **Switches de Wi-Fi e Bluetooth no Menu**: Integrados ao painel popover e compatíveis com temas claro/escuro.
-- **Persistência em NVS**: Salvo na partição NVS (`radios`) e restaurado em cada boot.
-- **Controle Efetivo de Rádio**: Desconexão e bloqueio de buscas quando desativado; auto-reconexão imediata e inteligente a redes (`wifi.cfg`) e dispositivos Bluetooth (`bt.cfg`) quando reativado.
-- **Sincronização Visual**: Barra de status e aplicativos de rede refletem em tempo real o estado de cada rádio.
-
----
-
-# Fase 8: Suporte a Mouse/Touchpad BLE HID e Cursor Visual
-
-## 1. Visão Geral
-Adicionar suporte completo a periféricos de apontamento Bluetooth Low Energy (HOGP) como Touchpads integrados a teclados físicos e mouses sem fio, com cursor visual renderizado na tela do LVGL 9, movimentação com adaptação automática à rotação do display (0°, 90°, 180°, 270°) e detecção dinâmica de conexão/desconexão.
-
-## 2. Escopo e Entregáveis
-1. **Driver de Ponteiro LVGL 9 (`ui_mouse.h`, `ui_mouse.cpp`)**:
-   - Registro de dispositivo de entrada `LV_INDEV_TYPE_POINTER` no LVGL 9 via `lv_indev_create()`.
-   - Cursor visual nítido criado na camada de sistema (`lv_layer_sys()`) com desenho de alta visibilidade em temas claro e escuro.
-   - Rastreamento absoluto `(s_cursor_x, s_cursor_y)` com clamp nos limites da resolução ativa.
-   - Ajuste angular dos eixos `(dx, dy)` conforme a rotação de tela do IMU.
-   - Suporte a cliques esquerdo/toque (`LV_INDEV_STATE_PRESSED` / `LV_INDEV_STATE_RELEASED`).
-2. **Integração com o Gerenciador Bluetooth (`bt_mgr.cpp`)**:
-   - Extração de pacotes HID de Mouse (Report ID `0x02` ou relatórios curtos de 3 a 5 bytes com botões, `dx`, `dy`, `wheel`).
-   - Despacho imediato para `ui_mouse_inject_motion()`.
-   - Exibição do cursor ao conectar / mover e ocultação imediata ao desconectar ou desligar o Bluetooth.
-3. **Inicialização do Sistema (`app_main.cpp` e `CMakeLists.txt`)**:
-   - Adição de `ui_mouse.cpp` ao build do componente `app`.
-   - Chamada `ui_mouse_init()` na inicialização do sistema.
-
-## 3. Status de Conclusão: CONCLUÍDO (100%)
-- **Driver de Mouse no LVGL 9**: Ponteiro registrado como `LV_INDEV_TYPE_POINTER` com cursor em bitmap ARGB8888 no `lv_layer_sys()`.
-- **Navegação em Todas as Rotações**: Mapeamento e transformação inversa cobrindo 100% da resolução ativa em modo retrato (0°, 180°) e modo paisagem (90°, 270°).
-- **Detecção de Gestos e Toque**: Suporte completo a tap-to-click e cliques físicos com liberação atômica no LVGL.
-- **Integração BLE**: Desconexão automática e restauração transparente em reconexões.
-
----
-
-# Planejamento: Aplicativo Terminal (Fase 20)
-
-Atualizado em 2026-08-16.
-
-## 1. Contexto & Objetivo
-
-Criar o aplicativo **Terminal** integrado ao `tab5-os`, funcionando como um shell interativo estilo Linux. O Terminal exibe output em uma área de texto com rolagem e aceita entrada via o teclado virtual já existente no sistema.
-
-Como o ESP-IDF roda sobre FreeRTOS (sem suporte a `fork()`/`exec()`), todos os comandos são implementados como funções C++ internas — não há execução de binários externos.
+## 1. Contexto & Objetivos
+- Criação do aplicativo nativo **"Bluetooth"** (`ui_bluetooth`) para gerenciamento de dispositivos BLE, periféricos de entrada (teclados, mouses) e áudio.
+- **Aplicativo Próprio**: Interface de busca de dispositivos, listagem com ícones por categoria (`LV_SYMBOL_KEYBOARD`, `LV_SYMBOL_AUDIO`, `LV_SYMBOL_SETTINGS`), badges de status (Conectado / Pareado / RSSI) e ações contextuais (Conectar, Desconectar, Parear, Esquecer).
+- **Ícone na Barra de Status (`ui_status`)**: Indicador `LV_SYMBOL_BLUETOOTH` ao lado do Wi-Fi, com cor atenuada (`text_muted`) quando desconectado e cor de destaque (`accent`) quando conectado.
+- **Supressão Inteligente do Teclado Virtual**:
+  - Quando um teclado físico Bluetooth estiver conectado, o teclado virtual (`ui_keyboard`) **permanece oculto** ao focar campos de texto (`lv_textarea`), permitindo que os apps aproveitem 100% da altura da tela.
+  - Ao desconectar o teclado físico, o teclado virtual volta a ser exibido automaticamente.
+- **Persistência de Dispositivos**: Salvamento de dispositivos pareados em `/sdcard/tab5_os/bt.cfg` para reconexão automática e transparente no boot.
 
 ## 2. Decisões de Arquitetura
 
-| # | Decisão | Escolha |
-|---|---|---|
-| D1 | Motor de Comandos | Mini-shell embutido em C++ (`terminal_cmd.cpp`); sem `fork`/`exec` (FreeRTOS) |
-| D2 | Diretório raiz | Terminal inicia em `/sdcard`; navegação bloqueada fora do ponto de montagem |
-| D3 | Output | `lv_textarea` somente-leitura com rolagem automática; buffer circular de ~8 KB |
-| D4 | Entrada | `lv_textarea` de linha única com `ui_keyboard_attach`, submetido no `LV_EVENT_READY` (Enter) |
-| D5 | Fonte | `lv_font_montserrat_14_latin1` existente (fonte monospace real = iteração futura) |
-| D6 | Integração | Padrão `ui_shell` (`ui_shell_open_terminal` / `ui_shell_close_terminal`) + tile no desktop |
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Stack Bluetooth | ESP-Hosted HCI (SDIO2) + NimBLE Host no ESP32-P4 | Desempenho e compatibilidade com BLE HOGP no FreeRTOS |
+| D2 | Janela do App | `ui_bluetooth.cpp` integrado ao `ui_shell` | Ciclo de vida consistente e compatível com temas |
+| D3 | Status Bar | Ícone `LV_SYMBOL_BLUETOOTH` interativo | Acesso rápido e feedback visual permanente |
+| D4 | Persistência | `/sdcard/tab5_os/bt.cfg` via `bt_storage.cpp` | Armazenamento de endereços MAC, nomes e chaves de pareamento |
+| D5 | Supressão de Teclado | Interceptação em `ui_keyboard_attach()` com `bt_mgr_is_keyboard_connected()` | Maximização do espaço útil de tela durante uso de periféricos |
+| D6 | Dispositivos de Entrada | Driver virtual `lv_indev_t` no LVGL 9 | Injeção nativa de eventos de teclado físico no foco ativo |
 
-## 3. Estrutura de Arquivos
+## 3. Estrutura de Arquivos & Componentes
 
 ```
 components/app/
 ├── include/
-│   ├── terminal_cmd.h     # [NEW] API do motor de execução de comandos
-│   └── ui_terminal.h      # [NEW] Interface do aplicativo Terminal
-├── terminal_cmd.cpp       # [NEW] Parser/dispatcher de comandos shell
-├── ui_terminal.cpp        # [NEW] UI LVGL: output + entrada + barra interna
-├── ui_desktop.cpp         # [MODIFY] Tile 'Terminal' no launcher
-├── ui_shell.cpp           # [MODIFY] Ciclo de vida da tela terminal_scr
-├── ui_shell.h             # [MODIFY] ui_shell_open_terminal / close_terminal
-└── CMakeLists.txt         # [MODIFY] Registro de terminal_cmd.cpp e ui_terminal.cpp
+│   ├── bt_mgr.h               # [NEW] API e eventos do gerenciador Bluetooth / NimBLE
+│   ├── bt_storage.h           # [NEW] Persistência em /sdcard/tab5_os/bt.cfg
+│   ├── ui_bluetooth.h         # [NEW] Interface do aplicativo Bluetooth
+│   ├── ui_keyboard.h          # [MODIFY] Suporte à supressão do teclado virtual
+│   ├── ui_status.h            # [MODIFY] Ícone de status Bluetooth
+│   └── ui_shell.h             # [MODIFY] Transições de tela do Bluetooth
+├── bt_mgr.cpp                 # [NEW] Backend BLE NimBLE, descoberta GATT e CCCD
+├── bt_storage.cpp             # [NEW] I/O do arquivo bt.cfg
+├── ui_bluetooth.cpp           # [NEW] Interface gráfica do app Bluetooth
+├── ui_keyboard.cpp            # [MODIFY] Lógica condicional de visibilidade
+├── ui_desktop.cpp             # [MODIFY] Tile 'Bluetooth' no launcher
+├── ui_status.cpp              # [MODIFY] Indicador Bluetooth na barra superior
+├── ui_shell.cpp               # [MODIFY] Ciclo de vida da tela bluetooth_scr
+└── CMakeLists.txt             # [MODIFY] Registro dos novos módulos
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+### Etapa 1 — Backend de Armazenamento (`bt_storage`)
+- Formato e parsing do arquivo `/sdcard/tab5_os/bt.cfg`.
+- Métodos para carregar, adicionar, atualizar e remover dispositivos conhecidos.
+
+### Etapa 2 — Gerenciador Bluetooth e Detecção (`bt_mgr`)
+- Inicialização da stack NimBLE sobre transporte HCI SDIO.
+- Scan assíncrono, descoberta de serviços GATT HID, características e descritores CCCD (0x2902).
+- Gestão de conexão e auto-reconexão no boot.
+
+### Etapa 3 — Supressão Inteligente do Teclado Virtual
+- Interceptação de anexação em `ui_keyboard_attach()`.
+- Liberação da altura total dos aplicativos quando o teclado físico está presente.
+
+### Etapa 4 — Interface do Aplicativo (`ui_bluetooth`)
+- Tela de gerenciamento com listagem, botões de ação e estados de busca.
+
+### Etapa 5 — Integração com o Sistema
+- Registro do tile no launcher, ícone na barra superior e transições no `ui_shell`.
+
+### Etapa 6 — Mapeamento de Teclas HID
+- Conversão de relatórios de entrada BLE HID (usage tables) em códigos de tecla do LVGL 9.
+
+### Etapa 7 — Validação e Gravação
+- Validação completa com `pre-commit` e testes em hardware com teclado BLE físico.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Timeout na subscrição de CCCD (0x2902) | Pipeline sequencial de descoberta com confirmação assíncrona antes de habilitar notificações |
+| Conexão instável em ambientes com ruído de rádio | Lógica de reconexão automática com backoff |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Descoberta e pareamento de teclado Bluetooth sem fio.
+2. Injeção de caracteres digitados diretamente no app Notas.
+3. Supressão do teclado virtual ao tocar em campos de texto enquanto o teclado físico estiver conectado.
+4. Auto-reconexão no boot do Tab5.
+
+## 7. Status de Conclusão: CONCLUÍDO (100%)
+- **Bluetooth & Periféricos**: NimBLE, descoberta GATT/CCCD, supressão de teclado virtual e auto-conexão 100% operacionais.
+
+---
+
+# Fase 19.1: Controles de Liga/Desliga para Wi-Fi e Bluetooth no Menu de Configurações
+
+## 1. Contexto & Objetivos
+- Adicionar switches independentes no **Menu de Configurações** (painel popover da engrenagem) para ligar e desligar os rádios de **Wi-Fi** e **Bluetooth**.
+- **Controle Efetivo de Rádio**: Desligamento real das operações de rádio, economia de energia e bloqueio de novas conexões/scans quando inativos.
+- **Persistência em NVS**: Armazenamento do estado dos rádios na partição NVS (`radios/wifi_en` e `radios/bt_en`) com restauração em cada boot.
+- **Reconexão Inteligente**: Ao religar um rádio, disparar imediatamente a reconexão automática com redes e periféricos salvos.
+- **Sincronização Visual**: Ícones da barra superior e janelas dos aplicativos refletem instantaneamente o estado de cada rádio.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Localização dos controles | Popover de configurações (`ui_bar.cpp`) abaixo de "Rotação" | Acesso centralizado e rápido a todas as opções do sistema |
+| D2 | Persistência | NVS (Namespace `radios`, chaves `wifi_en` e `bt_en`) | Rápido, seguro e independente do cartão microSD |
+| D3 | Tratamento nos Apps | Bloqueio de interface com aviso explicativo quando o rádio estiver desativado | Previne ações inválidas e orienta o usuário |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── wifi_mgr.h             # [MODIFY] APIs wifi_mgr_set_enabled / wifi_mgr_is_enabled
+│   ├── bt_mgr.h               # [MODIFY] APIs bt_mgr_set_enabled / bt_mgr_is_enabled
+│   └── ui_bar.h               # [MODIFY] Declarações do painel de configurações
+├── wifi_mgr.cpp               # [MODIFY] Lógica de enable/disable e persistência NVS
+├── bt_mgr.cpp                 # [MODIFY] Desconexão de periféricos e parada de rádio
+├── ui_bar.cpp                 # [MODIFY] Switches visuais no painel de configurações
+├── ui_status.cpp              # [MODIFY] Atualização de ícones de status para modo desligado
+├── ui_wifi.cpp                # [MODIFY] Tela bloqueada com mensagem quando desativado
+└── ui_bluetooth.cpp           # [MODIFY] Tela bloqueada com mensagem quando desativado
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+### Etapa 1 — Switches no Painel de Configurações
+- Inclusão dos componentes switch para Wi-Fi e Bluetooth na janela popover da engrenagem.
+- Adaptação estética aos temas claro e escuro.
+
+### Etapa 2 — Controle e Persistência no `wifi_mgr`
+- Implementação de `wifi_mgr_set_enabled(bool)` e leitura/escrita em NVS.
+- Desconexão imediata ao desativar e acionamento de auto-reconexão ao reativar.
+
+### Etapa 3 — Controle e Persistência no `bt_mgr`
+- Implementação de `bt_mgr_set_enabled(bool)` e persistência em NVS.
+- Desconexão de teclados/mouses, restauração do teclado virtual e religamento com busca automática.
+
+### Etapa 4 — Sincronização nos Aplicativos e Barra Superior
+- Ícones de Wi-Fi e Bluetooth na barra superior atualizados em tempo real.
+- Bloqueio de ações manuais nos apps `ui_wifi` e `ui_bluetooth` quando os rádios estiverem desligados.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Desligamento abrupto com transmissão ativa | Finalização graciosa de conexões antes do encerramento do rádio |
+| Concorrência de escrita na NVS | Operações protegidas com commit seguro |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Desligar o Wi-Fi pelo menu: validar desconexão imediata e ícone apagado na barra.
+2. Desligar o Bluetooth: validar desconexão do teclado físico e restauração do teclado virtual.
+3. Reiniciar o Tab5: verificar se os estados dos rádios foram restaurados via NVS.
+4. Religar os rádios: verificar reconexão automática com a rede Wi-Fi e periféricos Bluetooth.
+
+## 7. Status de Conclusão: CONCLUÍDO (100%)
+- **Controles de Rádio**: Switches no menu, persistência NVS e reconexão automática 100% validados.
+
+---
+
+# Fase 19.2: Suporte a Mouse/Touchpad BLE HID e Cursor Visual
+
+## 1. Contexto & Objetivos
+- Suporte a periféricos de apontamento Bluetooth Low Energy (HOGP) — como Touchpads integrados a teclados físicos e mouses sem fio.
+- **Cursor Visual Renderizado**: Renderização de cursor de alta visibilidade na camada de sistema do LVGL (`lv_layer_sys()`) usando bitmap ARGB8888.
+- **Transformação de Coordenadas e Rotação**: Adaptação dinâmica dos eixos de movimento (`dx`, `dy`) e rastreamento absoluto `(s_cursor_x, s_cursor_y)` com clamp automático de acordo com a rotação ativa da tela (0°, 90°, 180°, 270°).
+- **Interação**: Suporte a cliques esquerdo/direito, tap-to-click e liberação atômica no motor de eventos do LVGL 9.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Dispositivo de Entrada | `LV_INDEV_TYPE_POINTER` registrado no LVGL 9 | Integração padrão com os componentes interativos do LVGL |
+| D2 | Camada de renderização | `lv_layer_sys()` | Cursor permanece visível sobre qualquer aplicativo, modal ou barra |
+| D3 | Transformação angular | Inversão e rotação de `(dx, dy)` sincronizada com o IMU | Movimento natural do cursor independente da orientação do dispositivo |
+| D4 | Extração de relatórios | Parser HID de Report ID `0x02` no `bt_mgr.cpp` | Compatibilidade com relatórios curtos padrão de mouse BLE |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   └── ui_mouse.h             # [NEW] Driver de ponteiro, injeção de movimento e cursor
+├── ui_mouse.cpp               # [NEW] Implementação de coordenadas, desenho e rotação
+├── bt_mgr.cpp                 # [MODIFY] Extração de pacotes HID de mouse e despacho para ui_mouse
+├── CMakeLists.txt             # [MODIFY] Registro de ui_mouse.cpp
+main/
+└── app_main.cpp               # [MODIFY] Inicialização via ui_mouse_init()
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+### Etapa 1 — Driver de Ponteiro e Cursor (`ui_mouse`)
+- Criação e registro de `lv_indev_t` do tipo ponteiro via `lv_indev_create()`.
+- Desenho do cursor gráfico em bitmap ARGB8888 posicionado em `lv_layer_sys()`.
+- Rastreamento de coordenadas absolutas com clamp nos limites da resolução ativa.
+
+### Etapa 2 — Transformação de Eixos por Rotação
+- Aplicação das fórmulas de rotação para deltas `(dx, dy)`:
+  - 0° (Retrato): `x += dx, y += dy`
+  - 90° (Paisagem): `x += dy, y -= dx`
+  - 180° (Retrato invertido): `x -= dx, y -= dy`
+  - 270° (Paisagem invertida): `x -= dy, y += dx`
+
+### Etapa 3 — Integração com o Backend Bluetooth
+- Captura de relatórios HID de mouse no `bt_mgr.cpp` e despacho imediato para `ui_mouse_inject_motion()`.
+- Exibição do cursor ao mover/conectar e ocultação imediata ao desconectar ou desligar o Bluetooth.
+
+### Etapa 4 — Validação e Testes
+- Compilação, gravação e teste em hardware com touchpad e mouse sem fio.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Cursor ultrapassar as bordas da tela | Aplicação de clamp absoluto `[0, width - 1]` e `[0, height - 1]` |
+| Cliques fantasmas ou botões presos | Envio explícito de evento `LV_INDEV_STATE_RELEASED` após liberação |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Conectar mouse/touchpad BLE e verificar surgimento do cursor visual.
+2. Movimentar o ponteiro por toda a tela nas 4 orientações (0°, 90°, 180°, 270°).
+3. Testar cliques em botões, tiles do launcher e campos de texto.
+4. Desconectar o mouse e validar a ocultação automática do cursor.
+
+## 7. Status de Conclusão: CONCLUÍDO (100%)
+- **Mouse & Cursor Visual**: Driver de ponteiro, rotação de 4 quadrantes e cliques 100% integrados.
+
+---
+
+# Fase 20: Aplicativo Terminal Interativo
+
+## 1. Contexto & Objetivos
+- Criação do aplicativo **Terminal** integrado ao `tab5-os`, funcionando como um shell interativo estilo Linux para exploração do sistema e execução de comandos utilitários.
+- **Ambiente de Execução**: Como o ESP-IDF roda sobre FreeRTOS (sem suporte a `fork()`/`exec()`), todos os comandos são implementados como funções C++ internas no motor `terminal_cmd`.
+- **Console Unificado**: Interface com tela cheia, prompt dinâmico (`/sdcard $`), buffer circular de ~8 KB para histórico, proteção contra deleção de saída e rolagem automática.
+- **Entrada**: Compatível com o teclado virtual do sistema e teclados físicos Bluetooth.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Motor de comandos | Mini-shell em C++ (`terminal_cmd.cpp`) | Execução rápida e determinística sem overhead de subprocessos |
+| D2 | Diretório de trabalho | Início em `/sdcard` com bloqueio fora do ponto de montagem | Protege o sistema contra acessos a sistemas de arquivos inexistentes |
+| D3 | Área de exibição | `lv_textarea` com buffer circular de ~8 KB | Descarte automático de linhas antigas sem estourar o heap da PSRAM |
+| D4 | Integração no Shell | Padrão `ui_shell` (`ui_shell_open_terminal` / `close_terminal`) | Transições fluidas e compatibilidade com o launcher |
+| D5 | Tipografia | Fonte padrão `lv_font_montserrat_14_latin1` | Legibilidade e suporte completo a acentos |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── terminal_cmd.h         # [NEW] API e protótipos do motor de comandos
+│   └── ui_terminal.h          # [NEW] Interface gráfica do Terminal
+├── terminal_cmd.cpp           # [NEW] Parser de linha de comando e execução de comandos POSIX
+├── ui_terminal.cpp            # [NEW] Console interativo, gerenciamento de buffer e eventos
+├── ui_desktop.cpp             # [MODIFY] Tile 'Terminal' no launcher
+├── ui_shell.cpp               # [MODIFY] Ciclo de vida da tela terminal_scr
+├── ui_shell.h                 # [MODIFY] Métodos de abertura e fechamento
+└── CMakeLists.txt             # [MODIFY] Registro de terminal_cmd.cpp e ui_terminal.cpp
 ```
 
 ## 4. Comandos Implementados
 
-| Comando | Comportamento |
-|---------|--------------|
-| `ls [path]` | Lista arquivos e diretórios do path (ou CWD); exibe `<DIR>` para pastas |
-| `cd <path>` | Muda o diretório de trabalho; suporta caminho absoluto, relativo e `..` |
-| `pwd` | Imprime o diretório de trabalho atual |
-| `mkdir <dir>` | Cria diretório via `mkdir()` POSIX |
-| `rm <path>` | Remove arquivo (`unlink()`) ou diretório vazio (`rmdir()`) |
-| `rmdir <dir>` | Remove diretório vazio |
-| `touch <file>` | Cria arquivo vazio ou atualiza timestamp |
-| `cat <file>` | Exibe conteúdo de arquivo de texto (limite: 4 KB) |
-| `echo <texto>` | Imprime o texto fornecido no output |
-| `clear` | Limpa o buffer de output da tela |
-| `help` | Lista os comandos disponíveis |
-| `whoami` | Retorna `root@tab5` |
-| `uname` | Retorna versão do sistema |
-
-## 5. Layout da Interface
-
-```
-┌─────────────────────────────────────────┐
-│  [←] Terminal                    [✕]   │  ← barra interna (UI_BAR_HEIGHT)
-├─────────────────────────────────────────┤
-│ /sdcard $                               │
-│ > ls                                    │
-│ notas/  wifi.cfg                        │
-│ /sdcard $                               │
-│ > cd notas                              │
-│ /sdcard/notas $                         │
-│ > _                                     │  ← lv_textarea somente-leitura (scroll)
-├─────────────────────────────────────────┤
-│ /sdcard $ [_________________________]  │  ← entrada + teclado virtual
-└─────────────────────────────────────────┘
-```
-
-## 6. Fases de Execução
-
-### Etapa 1 — Backend `terminal_cmd`
-- Definição do header `terminal_cmd.h` com `terminal_exec(line, cwd)` retornando `std::string`.
-- Implementação do parser de linha e dispatcher para cada comando.
-- Tratamento de erros POSIX (permissão negada, arquivo inexistente, etc.).
-
-### Etapa 2 — Interface `ui_terminal`
-- Tela com barra interna, `lv_textarea` de output (read-only, scroll) e `lv_textarea` de entrada.
-- Buffer circular de ~8 KB: descarta linhas mais antigas ao ultrapassar o limite.
-- Rolagem automática para o final após cada output.
-- Integração com `ui_keyboard_attach` e `LV_EVENT_READY` para submissão de comandos.
-- Suporte a temas claro/escuro e rotação retrato/paisagem.
-
-### Etapa 3 — Integração com o Shell e Desktop
-- `ui_shell_open_terminal` / `ui_shell_close_terminal` em `ui_shell.cpp/.h`.
-- Adição de `terminal_scr` na `ui_shell_init()`.
-- `ui_terminal_refresh_theme()` em `ui_shell_refresh_theme()`.
-- `ui_terminal_apply_layout()` em `ui_shell_notify_keyboard_layout()`.
-- Tile "Terminal" no `ui_desktop.cpp` (ícone `>_`).
-
-### Etapa 4 — Build e Validação
-- Atualização do `CMakeLists.txt` com os dois novos arquivos.
-- `idf.py build` sem erros.
-- Validação em hardware: navegação de diretórios, criação/remoção de arquivos, `cat`, `clear`.
-
-## 7. Riscos e Mitigações
-
-| Risco | Mitigação |
+| Comando | Descrição e Comportamento |
 |---|---|
-| `lv_textarea` com muitas linhas pode consumir heap excessivo | Buffer circular de ~8 KB: descarta as linhas mais antigas ao ultrapassar o limite |
-| Comandos lentos (ex.: `cat` de arquivo grande) podem travar a task LVGL | Limite de 4 KB no `cat`; leitura síncrona dentro do lock LVGL é aceitável para arquivos pequenos |
-| Fonte proporcional dificulta leitura de listagens tabulares | Aceitável para fase inicial; geração de fonte monospace pode ser feita em iteração futura |
-| `cd` fora de `/sdcard` (ex.: `/`) pode acessar FS não montados | Bloqueio com mensagem de erro quando o prefixo não for `/sdcard` |
+| `ls [path]` | Lista arquivos e pastas do diretório alvo (ou CWD), identificando `<DIR>` |
+| `cd <path>` | Altera o diretório de trabalho atual (suporta caminhos relativos, absolutos e `..`) |
+| `pwd` | Imprime o caminho completo do diretório de trabalho ativo |
+| `mkdir <dir>` | Cria um novo diretório no sistema de arquivos |
+| `rm <path>` | Remove um arquivo (`unlink`) ou pasta vazia (`rmdir`) |
+| `rmdir <dir>` | Remove um diretório vazio |
+| `touch <file>` | Cria um arquivo vazio ou atualiza a data/hora de modificação |
+| `cat <file>` | Exibe o conteúdo de arquivos de texto (com limite de segurança de 4 KB) |
+| `echo <texto>` | Imprime a mensagem de texto fornecida no console |
+| `clear` | Limpa o buffer de exibição da tela |
+| `help` | Exibe a lista completa de comandos disponíveis |
+| `whoami` | Retorna o identificador do usuário ativo (`root@tab5`) |
+| `uname` | Imprime informações de versão do sistema operacional e kernel |
+
+## 5. Especificação Visual e Layout da Interface
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  [←] Terminal                                    [✕]   │  ← Barra superior do app (UI_BAR_HEIGHT)
+├─────────────────────────────────────────────────────────┤
+│ /sdcard $                                               │
+│ > ls                                                    │
+│ notas/  tab5_os/                                        │
+│ /sdcard $                                               │
+│ > cd notas                                              │
+│ /sdcard/notas $                                         │
+│ > _                                                     │  ← Console unificado com rolagem automática
+├─────────────────────────────────────────────────────────┤
+│ [ Teclado Virtual ou Físico Bluetooth ]                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+## 6. Fases de Execução da Funcionalidade
+
+### Etapa 1 — Motor de Comandos Shell (`terminal_cmd`)
+- Parser de argumentos e despacho para rotinas POSIX com tratamento de códigos de erro.
+- Proteção de escopo para manter a navegação contida sob `/sdcard`.
+
+### Etapa 2 — Interface do Console (`ui_terminal`)
+- Criação da área de texto unificada com controle de prompt e proteção de cursor.
+- Implementação de buffer circular de 8 KB com poda de linhas antigas.
+- Integração com teclado virtual (`ui_keyboard_attach`) e evento `LV_EVENT_READY`.
+
+### Etapa 3 — Integração com o Desktop e Shell
+- Registro do tile "Terminal" no lançador desktop e gerenciamento no `ui_shell`.
+- Suporte a temas claro/escuro e rotação de tela.
+
+### Etapa 4 — Validação em Hardware
+- Teste prático de execução de todos os comandos e verificação de estabilidade de memória.
+
+## 7. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Consumo excessivo de memória no buffer | Buffer circular limitado a ~8 KB com descarte de linhas antigas |
+| Execução de `cat` em arquivos gigantes | Limite de leitura de 4 KB com aviso de truncamento |
+| Tentativa de `cd` para raiz não montada | Validação e bloqueio de caminhos fora de `/sdcard` |
+
+## 8. Critérios de Validação & Teste em Hardware
+1. Abertura do app Terminal a partir do Desktop.
+2. Criação de pastas e arquivos via `mkdir` e `touch`.
+3. Navegação com `cd` e listagem com `ls`.
+4. Leitura de arquivos com `cat` e limpeza da tela com `clear`.
+
+## 9. Status de Conclusão: CONCLUÍDO (100%)
+- **Aplicativo Terminal**: Mini-shell, comandos POSIX e console unificado 100% implementados e validados.
+
+---
+
+# Fase 21: Cliente SSH Remoto no Terminal
+
+## 1. Contexto & Objetivos
+- Implementar o cliente **SSH (Secure Shell)** integrado ao aplicativo **Terminal** do `tab5-os`, permitindo conexão remota e sessão interativa com servidores e dispositivos na rede (ex: Raspberry Pi, servidores Linux, roteadores, etc.).
+- **Arquitetura Assíncrona**: Como as operações de criptografia SSH e I/O de sockets são bloqueantes e consomem processamento, o cliente roda em uma **Task FreeRTOS dedicada** (`ssh_client_task`, stack ~16 KB em PSRAM) com buffers em PSRAM e I/O não bloqueante integrado ao console do Terminal.
+- **Modos de Operação**:
+  - `LOCAL_SHELL`: Modo padrão local com prompt `/sdcard $`.
+  - `SSH_PASSWORD_PROMPT`: Modo de entrada de senha com eco oculto.
+  - `SSH_SESSION`: Sessão interativa remota encaminhando I/O bruto para o canal SSH.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Biblioteca SSH | Componente oficial `david-cermak/libssh` do ESP Component Registry | Port oficial de libssh para ESP-IDF v5+ |
+| D2 | Execução do Protocolo | Task assíncrona dedicada FreeRTOS (`ssh_client_task`) | Isola a criptografia e rede sem bloquear a thread gráfica do LVGL |
+| D3 | Modos do Terminal | Estados `LOCAL_SHELL`, `SSH_PASSWORD_PROMPT` e `SSH_SESSION` | Separação clara entre comandos locais e sessão remota |
+| D4 | Autenticação | Suporte inicial a **Senha** e futuro a chaves privadas (`/sdcard/.ssh/`) | Flexibilidade de acesso a servidores remotos |
+| D5 | Emulação de Terminal | PTY interativo `vt100` / `xterm` com filtragem ANSI básica | Formatação limpa de saídas e retornos de carro (`\r\n`) |
+| D6 | Validação de Rede | Checagem prévia com `wifi_mgr_is_connected()` | Evita tentativas inúteis de handshake sem conectividade |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── ssh_client.h           # [NEW] API e callbacks da sessão SSH assíncrona
+│   ├── terminal_cmd.h         # [MODIFY] Adição do comando 'ssh' no parser
+│   └── ui_terminal.h          # [MODIFY] Suporte ao modo de sessão SSH e injeção de I/O
+├── ssh_client.cpp             # [NEW] Task FreeRTOS, handshake libssh, PTY e canais
+├── terminal_cmd.cpp           # [MODIFY] Validação sintática e despacho do comando ssh
+├── ui_terminal.cpp            # [MODIFY] Modo interativo: envio de teclas brutas e recepção de stdout
+├── CMakeLists.txt             # [MODIFY] Registro de ssh_client.cpp
+main/
+└── idf_component.yml          # [MODIFY] Adição da dependência david-cermak/libssh
+```
+
+## 4. Especificação de Sintaxe e Fluxo do Comando
+
+### Sintaxe
+```bash
+ssh [user@]host [-p porta]
+```
+Exemplos:
+- `ssh 192.168.1.50` (usuário padrão: `root`, porta padrão: 22)
+- `ssh pi@raspberrypi.local`
+- `ssh admin@10.0.0.1 -p 2222`
+
+### Fluxo de Execução
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  Comando     │     │  Validação   │     │  Handshake   │     │  Sessão      │
+│  "ssh host"  │ ──> │  Wi-Fi Ativo │ ──> │  Task Free   │ ──> │  Interativa  │
+│  no Terminal │     │  & Parâmetros│     │  RTOS / Auth │     │  PTY Remota  │
+└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
+```
+1. O usuário digita o comando `ssh` no Terminal e pressiona Enter.
+2. O `terminal_cmd` valida os argumentos e verifica se o Wi-Fi está conectado. Se desconectado, exibe erro imediatamente.
+3. O `ssh_client` inicia a task FreeRTOS e estabelece a conexão TCP/SSH.
+4. Se o servidor requisitar autenticação por senha, o Terminal entra temporariamente em modo `SSH_PASSWORD_PROMPT` exibindo `Password: ` e oculta o texto digitado.
+5. Ao autenticar com sucesso, o Terminal entra em modo `SSH_SESSION`.
+6. A partir desse momento, qualquer tecla digitada (virtual ou física Bluetooth) é despachada diretamente para o canal SSH remoto.
+7. Respostas e saídas do servidor são impressas em tempo real no console.
+8. Ao digitar `exit` no servidor ou cair a conexão, o cliente fecha a sessão e o Terminal restaura automaticamente o prompt local `/sdcard $ `.
+
+## 5. Fases de Execução da Funcionalidade
+
+### Etapa 1 — Dependência e Backend `ssh_client`
+- Adicionar `david-cermak/libssh` ao `main/idf_component.yml`.
+- Criar `ssh_client.h` e `ssh_client.cpp` com criação de sessão, conexão, PTY `xterm`, autenticação por senha e leitura/escrita não bloqueante.
+- Garantir alocação da stack da task em PSRAM externa.
+
+### Etapa 2 — Comando `ssh` no `terminal_cmd`
+- Adicionar parsing de `user`, `host`, `port` no `terminal_cmd.cpp`.
+- Adicionar validação de conectividade Wi-Fi antes de iniciar.
+- Retornar mensagem de status ou iniciar despacho para a UI.
+
+### Etapa 3 — Integração com `ui_terminal`
+- Suporte aos estados `LOCAL_SHELL`, `SSH_PASSWORD_PROMPT` e `SSH_SESSION`.
+- Manipulação de callbacks `rx_cb` e `state_cb` de forma thread-safe usando `bsp_display_lock()`.
+- Ocultação de eco durante a digitação de senha.
+- Tratamento de encerramento da sessão restaurando o prompt local.
+
+### Etapa 4 — Build, Validação e Gravação
+- Atualizar `CMakeLists.txt`.
+- Executar `pre-commit run --all-files` e compilação com `idf.py build`.
+- Gravação no Tab5 e teste conectando a uma máquina Linux / Raspberry Pi na rede local.
+
+## 6. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Alto consumo de memória durante o handshake criptográfico (DH, RSA, AES) | Alocação da task e buffers da sessão SSH na PSRAM externa de 32 MB do Tab5 |
+| I/O bloqueante travar a interface gráfica LVGL | Todas as operações de rede e libssh rodam exclusivamente na task FreeRTOS dedicada; a UI só recebe callbacks protegidos por mutex |
+| Perda de conexão Wi-Fi durante sessão SSH ativa | Detecção de erro no socket/canal SSH e timeout automático com retorno seguro ao prompt local |
+| Caracteres de controle ANSI complexos desformatarem o textarea | Tratamento e filtragem de caracteres de controle e quebras de linha (`\r\n`) para exibição limpa no LVGL |
+
+## 7. Critérios de Validação & Teste em Hardware
+1. Conexão via `ssh user@host` em um servidor Linux ou Raspberry Pi na mesma rede Wi-Fi.
+2. Entrada de senha sem eco visual de caracteres sensíveis.
+3. Execução de comandos remotos interativos (`top`, `uptime`, `ls -la`).
+4. Saída limpa via comando `exit` retornando ao prompt `/sdcard $`.
+
+## 8. Status de Conclusão: PLANEJADO
+- **Cliente SSH**: Arquitetura planejada e pronta para implementação na Fase 21.
