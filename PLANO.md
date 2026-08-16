@@ -27,6 +27,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 19.2** | Suporte a Mouse/Touchpad BLE HID | Input / Periféricos | Cursor visual ARGB8888 em `lv_layer_sys`, rotação 4 eixos, cliques/gestos |
 | `[x]` | **Fase 20** | Aplicativo Terminal Interativo | Aplicativo / Shell | Mini-shell C++, comandos POSIX em `/sdcard`, buffer circular 8 KB |
 | `[ ]` | **Fase 21** | Cliente SSH Remoto no Terminal | Conectividade / CLI | Task FreeRTOS, `david-cermak/libssh`, PTY xterm, auth por senha/chave |
+| `[ ]` | **Fase 22** | Protetor de Tela Anti-Burn-in com Data e Hora | Sistema / Display | Screensaver fundo preto, relógio grande, reposicionamento 30s, wake no toque |
 
 ---
 
@@ -738,3 +739,92 @@ Exemplos:
 
 ## 8. Status de Conclusão: `[ ] PLANEJADO`
 - **Cliente SSH**: Arquitetura planejada e pronta para implementação na Fase 21.
+
+---
+
+# [ ] Fase 22: Protetor de Tela Anti-Burn-in com Data e Hora `⏳ PLANEJADO`
+
+## 1. Contexto & Objetivos
+- Criar o mecanismo de **Protetor de Tela (Screensaver)** do `tab5-os` para preservação do painel MIPI-DSI, prevenindo retenção de imagem (*burn-in* / *image sticking*) durante períodos de inatividade.
+- **Elementos Visuais e Estética**:
+  - Fundo completamente preto (`#000000`) cobrindo 100% da área útil da tela.
+  - Tipografia clara em alto contraste: branco puro (`#FFFFFF`) ou cinza suave (`#D0D0D0`).
+  - **Em destaque principal**: **Hora atual** (tamanho grande/bold, formato `HH:MM:SS` ou `HH:MM`) e **Data completa** (ex: `Segunda, 16 de Agosto de 2026`).
+  - Nome do sistema operacional e versão em texto secundário discreto (ex: `tab5-os v0.1.0`).
+- **Mecanismo Anti-Burn-in (Relocação a cada 30 segundos)**:
+  - Timer periódico de 30 segundos (`lv_timer_t`) que sorteia novas coordenadas `(x, y)` para o bloco de texto.
+  - **Cálculo de Bounding Box Seguro**: As coordenadas sorteadas respeitam estritamente os limites da resolução ativa (`x_max = screen_w - block_w - margin`, `y_max = screen_h - block_h - margin`), garantindo que **nenhuma informação seja cortada** nas bordas da tela.
+  - Compatibilidade com as 4 orientações de tela (0°, 90°, 180°, 270°).
+- **Ativação e Despertar (Wake-up)**:
+  - Ativação automática após tempo de inatividade configurável (ex: 1, 2, 5 minutos sem interação).
+  - Despertar imediato ao detectar qualquer evento de entrada (toque na tela, clique/movimento de mouse BLE ou pressionamento de tecla em teclado físico/virtual).
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Camada de Exibição | Tela dedicada gerenciada pelo `ui_shell` (`screensaver_scr`) | Isolamento completo da aplicação ativa sem destruir o estado anterior |
+| D2 | Detecção de Inatividade | `lv_display_get_inactive_time()` ou monitor global de `lv_indev_t` | API nativa e eficiente do LVGL 9 sem overhead de polling manual |
+| D3 | Prevenção de Burn-in | Timer LVGL de 30s com relocação aleatória inteligente | Movimenta os pixels acesos continuamente pelo painel sem degradar o display |
+| D4 | Atualização do Relógio | Timer de 1s para sincronização em tempo real de data e hora | Exibição precisa e viva do relógio sem drift temporal |
+| D5 | Despertar Instantâneo | Eventos globais de input restauram `prev_scr` sem lag | Experiência de uso fluida e retorno imediato ao trabalho ativo |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── ui_screensaver.h       # [NEW] API de controle, ativação e timer anti-burn-in
+│   ├── ui_shell.h             # [MODIFY] Integração do screensaver no loop de inatividade
+│   └── ui_bar.h               # [MODIFY] Opção de tempo limite no menu de configurações
+├── ui_screensaver.cpp         # [NEW] Janela, container seguro, relógio e lógica de sorteio
+├── ui_shell.cpp               # [MODIFY] Monitoramento de inatividade e transição de tela
+└── CMakeLists.txt             # [MODIFY] Registro de ui_screensaver.cpp
+```
+
+## 4. Layout e Especificação de Relocação
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│        ┌─────────────────────────────┐                  │
+│        │  tab5-os v0.1.0             │                  │
+│        │  19:45:30                   │  ← Posição (x1, y1)
+│        │  Domingo, 16 de Agosto      │     no tempo T = 0s
+│        └─────────────────────────────┘                  │
+│                                                         │
+│                                                         │
+│                      ┌─────────────────────────────┐    │
+│                      │  tab5-os v0.1.0             │    │
+│                      │  19:46:00                   │    │ ← Nova posição (x2, y2)
+│                      │  Domingo, 16 de Agosto      │    │    no tempo T = 30s
+│                      └─────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
+```
+
+## 5. Fases de Execução da Funcionalidade
+
+- [ ] **Etapa 1 — Módulo `ui_screensaver` e Layout Visual**: Criação do container escuro (`#000000`), label do relógio em destaque com fonte grande, data formatada e label de versão do SO.
+- [ ] **Etapa 2 — Algoritmo de Relocação Anti-Burn-in (30s)**: Timer de 30 segundos calculando novas coordenadas `(x, y)` aleatórias baseadas na largura/altura medidas do container com margem de segurança de 16 px.
+- [ ] **Etapa 3 — Detecção de Inatividade e Loop de Ativação**: Monitoramento de inatividade no `ui_shell` e disparo automático ao atingir o timeout definido.
+- [ ] **Etapa 4 — Despertar Imediato e Restauração de Estado**: Interceptação de eventos de toque, mouse e teclado para fechamento instantâneo do protetor e retorno à tela de trabalho.
+- [ ] **Etapa 5 — Configuração no Menu e Persistência**: Adição de switch e seletor de tempo de inatividade (1 min, 2 min, 5 min, Nunca) no menu popover de configurações persistido em NVS.
+- [ ] **Etapa 6 — Build, Validação e Teste em Hardware**: Teste de transição por inatividade, validação de que nenhum texto corta nas 4 rotações (0°, 90°, 180°, 270°) e despertar responsivo.
+
+## 6. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Texto cortar nas bordas ao mudar de orientação | Medição real com `lv_obj_get_width/height` recalculada após rotação do display |
+| Sincronização de data/hora sem conexão NTP | Leitura do relógio RTC interno com fallback para hora salva no boot |
+| Retardo perceptível ao tocar na tela | Despertar direto sem animação pesada ou desalocação complexa |
+
+## 7. Critérios de Validação & Teste em Hardware
+1. Aguardar o tempo de inatividade configurado e verificar entrada automática no screensaver.
+2. Confirmar fundo preto `#000000` com relógio grande, data e versão do SO legíveis.
+3. Observar a relocação aleatória a cada 30 segundos, validando que o bloco permanece 100% visível sem cortar nas margens.
+4. Testar em modo retrato (0°, 180°) e paisagem (90°, 270°).
+5. Tocar no display ou teclar em periférico físico e verificar despertar instantâneo para a tela anterior.
+
+## 8. Status de Conclusão: `[ ] PLANEJADO`
+- **Protetor de Tela**: Arquitetura e especificação anti-burn-in planejadas e prontas para implementação na Fase 22.
