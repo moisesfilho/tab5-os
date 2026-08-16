@@ -14,7 +14,8 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 
 ## Features
 
-- **Bluetooth Manager & Physical Keyboard (BLE HID)** — connection, pairing, and automatic reconnection with Bluetooth Low Energy peripherals (HOGP) like physical keyboards and combo touchpad/mice, direct keystroke injection into apps (e.g., Notes), dynamic virtual keyboard hiding, and top-bar connection indicator
+- **Terminal App (Interactive Shell)** — Linux-style console shell integrated into the OS, with interactive prompt (`/sdcard $`), instant Enter-key command execution, command history, and support for core commands (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`)
+- **Bluetooth Manager & Physical Keyboard (BLE HID)** — connection, pairing, and automatic reconnection with Bluetooth Low Energy peripherals (HOGP) like physical keyboards and combo touchpad/mice, direct keystroke injection into apps (e.g., Notes and Terminal), dynamic virtual keyboard hiding, and top-bar connection indicator
 - **Mouse & Touchpad BLE HID with Visual Pointer** — automatic detection of BLE mice and touchpads, high-visibility visual cursor on LVGL 9, navigation and clicks adapted to all screen orientations (0°, 90°, 180°, 270°), and tap-to-click gesture recognition
 - **File Manager ("Arquivos")** — SD card directory and file browser supporting interactive folder navigation, two view modes (Grid icons or Detailed list), and automatic opening of associated file types
 - **Notes App & File Associations** — integrated text editor with note creation, save modal with name suggestion/editing, and native opening/editing of `.txt` and `.cfg` files
@@ -91,8 +92,10 @@ tab5-os/
 ├── main/
 │   └── app_main.cpp          # Boot: display, RTC, IMU, UI
 ├── components/
-│   ├── app/                  # UI + IMU
+│   ├── app/                  # UI + IMU + Terminal + WiFi/BT
 │   │   ├── ui_bar.cpp        # Top bar, settings menu, clock
+│   │   ├── ui_terminal.cpp   # Terminal app (interactive console)
+│   │   ├── terminal_cmd.cpp  # Shell command execution engine
 │   │   ├── ui_keyboard.cpp   # Virtual keyboard + PT-BR accents page
 │   │   ├── ui_status.cpp     # Orientation badge
 │   │   ├── ui_theme.cpp      # Light/dark palettes

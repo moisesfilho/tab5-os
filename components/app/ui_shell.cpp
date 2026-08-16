@@ -6,6 +6,7 @@
 #include "ui_wifi.h"
 #include "ui_files.h"
 #include "ui_bluetooth.h"
+#include "ui_terminal.h"
 #include "ui_theme.h"
 #include "ui_font.h"
 #include "file_assoc.h"
@@ -18,6 +19,7 @@ lv_obj_t *notas_caller_scr = nullptr;
 lv_obj_t *wifi_scr = nullptr;
 lv_obj_t *files_scr = nullptr;
 lv_obj_t *bt_scr = nullptr;
+lv_obj_t *terminal_scr = nullptr;
 lv_obj_t *splash = nullptr;
 lv_obj_t *splash_label = nullptr;
 
@@ -69,6 +71,7 @@ void ui_shell_init(void)
     wifi_scr = ui_wifi_create();
     files_scr = ui_files_create();
     bt_scr = ui_bluetooth_create();
+    terminal_scr = ui_terminal_create();
 
     splash_start();
 }
@@ -137,6 +140,19 @@ void ui_shell_close_bluetooth(void)
     lv_disp_load_scr(desktop_scr);
 }
 
+void ui_shell_open_terminal(void)
+{
+    ui_keyboard_hide();
+    lv_disp_load_scr(terminal_scr);
+    ui_terminal_apply_layout();
+}
+
+void ui_shell_close_terminal(void)
+{
+    ui_keyboard_hide();
+    lv_disp_load_scr(desktop_scr);
+}
+
 void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
@@ -144,6 +160,7 @@ void ui_shell_refresh_theme(void)
     ui_wifi_refresh_theme();
     ui_files_refresh_theme();
     ui_bluetooth_refresh_theme();
+    ui_terminal_refresh_theme();
 
     if (splash != nullptr) {
         lv_obj_set_style_bg_color(splash, lv_color_hex(ui_theme_get()->background), 0);
@@ -162,5 +179,7 @@ void ui_shell_notify_keyboard_layout(void)
         ui_files_apply_layout();
     } else if (act == bt_scr) {
         ui_bluetooth_apply_layout();
+    } else if (act == terminal_scr) {
+        ui_terminal_apply_layout();
     }
 }

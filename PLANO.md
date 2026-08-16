@@ -518,3 +518,112 @@ Adicionar suporte completo a periféricos de apontamento Bluetooth Low Energy (H
 - **Navegação em Todas as Rotações**: Mapeamento e transformação inversa cobrindo 100% da resolução ativa em modo retrato (0°, 180°) e modo paisagem (90°, 270°).
 - **Detecção de Gestos e Toque**: Suporte completo a tap-to-click e cliques físicos com liberação atômica no LVGL.
 - **Integração BLE**: Desconexão automática e restauração transparente em reconexões.
+
+---
+
+# Planejamento: Aplicativo Terminal (Fase 20)
+
+Atualizado em 2026-08-16.
+
+## 1. Contexto & Objetivo
+
+Criar o aplicativo **Terminal** integrado ao `tab5-os`, funcionando como um shell interativo estilo Linux. O Terminal exibe output em uma área de texto com rolagem e aceita entrada via o teclado virtual já existente no sistema.
+
+Como o ESP-IDF roda sobre FreeRTOS (sem suporte a `fork()`/`exec()`), todos os comandos são implementados como funções C++ internas — não há execução de binários externos.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha |
+|---|---|---|
+| D1 | Motor de Comandos | Mini-shell embutido em C++ (`terminal_cmd.cpp`); sem `fork`/`exec` (FreeRTOS) |
+| D2 | Diretório raiz | Terminal inicia em `/sdcard`; navegação bloqueada fora do ponto de montagem |
+| D3 | Output | `lv_textarea` somente-leitura com rolagem automática; buffer circular de ~8 KB |
+| D4 | Entrada | `lv_textarea` de linha única com `ui_keyboard_attach`, submetido no `LV_EVENT_READY` (Enter) |
+| D5 | Fonte | `lv_font_montserrat_14_latin1` existente (fonte monospace real = iteração futura) |
+| D6 | Integração | Padrão `ui_shell` (`ui_shell_open_terminal` / `ui_shell_close_terminal`) + tile no desktop |
+
+## 3. Estrutura de Arquivos
+
+```
+components/app/
+├── include/
+│   ├── terminal_cmd.h     # [NEW] API do motor de execução de comandos
+│   └── ui_terminal.h      # [NEW] Interface do aplicativo Terminal
+├── terminal_cmd.cpp       # [NEW] Parser/dispatcher de comandos shell
+├── ui_terminal.cpp        # [NEW] UI LVGL: output + entrada + barra interna
+├── ui_desktop.cpp         # [MODIFY] Tile 'Terminal' no launcher
+├── ui_shell.cpp           # [MODIFY] Ciclo de vida da tela terminal_scr
+├── ui_shell.h             # [MODIFY] ui_shell_open_terminal / close_terminal
+└── CMakeLists.txt         # [MODIFY] Registro de terminal_cmd.cpp e ui_terminal.cpp
+```
+
+## 4. Comandos Implementados
+
+| Comando | Comportamento |
+|---------|--------------|
+| `ls [path]` | Lista arquivos e diretórios do path (ou CWD); exibe `<DIR>` para pastas |
+| `cd <path>` | Muda o diretório de trabalho; suporta caminho absoluto, relativo e `..` |
+| `pwd` | Imprime o diretório de trabalho atual |
+| `mkdir <dir>` | Cria diretório via `mkdir()` POSIX |
+| `rm <path>` | Remove arquivo (`unlink()`) ou diretório vazio (`rmdir()`) |
+| `rmdir <dir>` | Remove diretório vazio |
+| `touch <file>` | Cria arquivo vazio ou atualiza timestamp |
+| `cat <file>` | Exibe conteúdo de arquivo de texto (limite: 4 KB) |
+| `echo <texto>` | Imprime o texto fornecido no output |
+| `clear` | Limpa o buffer de output da tela |
+| `help` | Lista os comandos disponíveis |
+| `whoami` | Retorna `root@tab5` |
+| `uname` | Retorna versão do sistema |
+
+## 5. Layout da Interface
+
+```
+┌─────────────────────────────────────────┐
+│  [←] Terminal                    [✕]   │  ← barra interna (UI_BAR_HEIGHT)
+├─────────────────────────────────────────┤
+│ /sdcard $                               │
+│ > ls                                    │
+│ notas/  wifi.cfg                        │
+│ /sdcard $                               │
+│ > cd notas                              │
+│ /sdcard/notas $                         │
+│ > _                                     │  ← lv_textarea somente-leitura (scroll)
+├─────────────────────────────────────────┤
+│ /sdcard $ [_________________________]  │  ← entrada + teclado virtual
+└─────────────────────────────────────────┘
+```
+
+## 6. Fases de Execução
+
+### Etapa 1 — Backend `terminal_cmd`
+- Definição do header `terminal_cmd.h` com `terminal_exec(line, cwd)` retornando `std::string`.
+- Implementação do parser de linha e dispatcher para cada comando.
+- Tratamento de erros POSIX (permissão negada, arquivo inexistente, etc.).
+
+### Etapa 2 — Interface `ui_terminal`
+- Tela com barra interna, `lv_textarea` de output (read-only, scroll) e `lv_textarea` de entrada.
+- Buffer circular de ~8 KB: descarta linhas mais antigas ao ultrapassar o limite.
+- Rolagem automática para o final após cada output.
+- Integração com `ui_keyboard_attach` e `LV_EVENT_READY` para submissão de comandos.
+- Suporte a temas claro/escuro e rotação retrato/paisagem.
+
+### Etapa 3 — Integração com o Shell e Desktop
+- `ui_shell_open_terminal` / `ui_shell_close_terminal` em `ui_shell.cpp/.h`.
+- Adição de `terminal_scr` na `ui_shell_init()`.
+- `ui_terminal_refresh_theme()` em `ui_shell_refresh_theme()`.
+- `ui_terminal_apply_layout()` em `ui_shell_notify_keyboard_layout()`.
+- Tile "Terminal" no `ui_desktop.cpp` (ícone `>_`).
+
+### Etapa 4 — Build e Validação
+- Atualização do `CMakeLists.txt` com os dois novos arquivos.
+- `idf.py build` sem erros.
+- Validação em hardware: navegação de diretórios, criação/remoção de arquivos, `cat`, `clear`.
+
+## 7. Riscos e Mitigações
+
+| Risco | Mitigação |
+|---|---|
+| `lv_textarea` com muitas linhas pode consumir heap excessivo | Buffer circular de ~8 KB: descarta as linhas mais antigas ao ultrapassar o limite |
+| Comandos lentos (ex.: `cat` de arquivo grande) podem travar a task LVGL | Limite de 4 KB no `cat`; leitura síncrona dentro do lock LVGL é aceitável para arquivos pequenos |
+| Fonte proporcional dificulta leitura de listagens tabulares | Aceitável para fase inicial; geração de fonte monospace pode ser feita em iteração futura |
+| `cd` fora de `/sdcard` (ex.: `/`) pode acessar FS não montados | Bloqueio com mensagem de erro quando o prefixo não for `/sdcard` |

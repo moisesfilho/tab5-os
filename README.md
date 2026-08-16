@@ -14,7 +14,8 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 
 ## Funcionalidades
 
-- **Gerenciador de Bluetooth & Teclado Físico (BLE HID)** — suporte a conexão, pareamento e auto-reconexão com periféricos Bluetooth Low Energy (HOGP), como teclados físicos e mouses/touchpads integrados, com injeção direta de digitação nos aplicativos (ex: Notas), ocultação dinâmica do teclado virtual e indicador de conexão na barra superior
+- **Aplicativo Terminal (Shell Interativo)** — shell de console estilo Linux integrado ao sistema, com prompt interativo (`/sdcard $`), execução direta com tecla Enter, histórico de comandos e suporte aos comandos essenciais (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`)
+- **Gerenciador de Bluetooth & Teclado Físico (BLE HID)** — suporte a conexão, pareamento e auto-reconexão com periféricos Bluetooth Low Energy (HOGP), como teclados físicos e mouses/touchpads integrados, com injeção direta de digitação nos aplicativos (ex: Notas e Terminal), ocultação dinâmica do teclado virtual e indicador de conexão na barra superior
 - **Suporte a Mouse & Touchpad BLE HID com Cursor Visual** — identificação automática de mouses e touchpads BLE, cursor visual de alta visibilidade no LVGL 9, navegação e clique com adaptação completa a todas as rotações da tela (0°, 90°, 180°, 270°) e detecção de gestos de toque rápido (tap-to-click)
 - **Gerenciador de Arquivos ("Arquivos")** — navegador de arquivos e pastas do cartão SD com suporte a navegação por diretórios, dois modos de visualização (Ícones em grade ou Lista detalhada) e abertura automática de arquivos associados
 - **Aplicativo Notas e Associações de Arquivos** — editor de texto integrado com criação de notas, salvamento modal com sugestão/edição de nome e suporte nativo a abertura e edição de arquivos `.txt` e `.cfg`
@@ -91,8 +92,10 @@ tab5-os/
 ├── main/
 │   └── app_main.cpp          # Boot: display, RTC, IMU, UI
 ├── components/
-│   ├── app/                  # UI + IMU
+│   ├── app/                  # UI + IMU + Terminal + WiFi/BT
 │   │   ├── ui_bar.cpp        # Barra superior, menu de configurações, relógio
+│   │   ├── ui_terminal.cpp   # Aplicativo Terminal (console interativo)
+│   │   ├── terminal_cmd.cpp  # Motor de execução de comandos shell
 │   │   ├── ui_keyboard.cpp   # Teclado virtual + página de acentos PT-BR
 │   │   ├── ui_status.cpp     # Badge de orientação
 │   │   ├── ui_theme.cpp      # Paletas claro/escuro

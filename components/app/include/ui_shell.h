@@ -12,5 +12,7 @@ void ui_shell_open_files(void);
 void ui_shell_close_files(void);
 void ui_shell_open_bluetooth(void);
 void ui_shell_close_bluetooth(void);
+void ui_shell_open_terminal(void);
+void ui_shell_close_terminal(void);
 void ui_shell_refresh_theme(void);
 void ui_shell_notify_keyboard_layout(void);
