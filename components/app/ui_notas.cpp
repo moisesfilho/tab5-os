@@ -514,6 +514,18 @@ lv_obj_t *ui_notas_create(void)
     return notas_scr;
 }
 
+void ui_notas_on_open(void)
+{
+    if (notas_ta != nullptr) {
+        lv_obj_set_style_bg_opa(notas_ta, LV_OPA_COVER, LV_PART_CURSOR);
+        if (notas_cursor_timer != nullptr) {
+            lv_timer_resume(notas_cursor_timer);
+        }
+        lv_group_focus_obj(notas_ta);
+        ui_keyboard_attach(notas_ta);
+    }
+}
+
 void ui_notas_refresh_theme(void)
 {
     apply_notas_theme();

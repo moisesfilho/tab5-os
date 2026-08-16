@@ -14,13 +14,14 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 
 ## Features
 
+- **Bluetooth Manager & Physical Keyboard (BLE HID)** — connection, pairing, and automatic reconnection with Bluetooth Low Energy peripherals (HOGP) like physical keyboards and combo touchpad/mice, direct keystroke injection into apps (e.g., Notes), dynamic virtual keyboard hiding, and top-bar connection indicator
 - **File Manager ("Arquivos")** — SD card directory and file browser supporting interactive folder navigation, two view modes (Grid icons or Detailed list), and automatic opening of associated file types
 - **Notes App & File Associations** — integrated text editor with note creation, save modal with name suggestion/editing, and native opening/editing of `.txt` and `.cfg` files
 - **Advanced Wi-Fi Manager** — multi-network saved profiles in SD (`wifi.cfg`), intelligent mesh BSSID deduplication (keeping the highest RSSI), connected and saved visual badges, and connect/disconnect/forget network actions
 - **PT-BR virtual keyboard** — LVGL native keyboard + textarea, works in portrait and landscape, with symbols (`*`, `@`, `#`, etc.) and an accents page (ç, accented lowercase and uppercase vowels) reachable through the "1#" key
 - **Reactive window resizing** — application windows and modals automatically adapt their height and position when the virtual keyboard opens and closes
 - **Orientation Persistence** — display rotation is automatically saved to the SD card and restored upon boot
-- **OS-style top bar** — gear button, Wi-Fi status indicator with connection feedback, and live clock
+- **OS-style top bar** — gear button, Wi-Fi status indicator, Bluetooth connection indicator, and live clock
 - **Auto-rotation by IMU** — BMI270 gravity vector drives `lv_display_set_rotation` (0/90/180/270) with debounce
 - **Settings menu** — Configuração → Tema (light/dark) with active item highlight
 - **RTC clock** — RX8130CE seeds the system clock at boot (`settimeofday`)

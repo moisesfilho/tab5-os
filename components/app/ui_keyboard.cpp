@@ -2,6 +2,8 @@
 #include "ui_theme.h"
 #include "ui_font.h"
 #include "ui_shell.h"
+#include "bt_mgr.h"
+#include "bsp/esp-bsp.h"
 #include <string.h>
 
 /* Macros privados do LVGL, definidos apenas em lv_keyboard.c e usados nos
@@ -238,10 +240,29 @@ void ui_keyboard_attach(lv_obj_t *ta)
 {
     kb_target = ta;
     lv_keyboard_set_textarea(keyboard, ta);
-    lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_state(ta, LV_STATE_FOCUSED);
-    apply_keyboard_layout();
+
+    /* Se houver teclado fisico Bluetooth conectado, nao exibe o teclado virtual na tela */
+    if (bt_mgr_is_keyboard_connected()) {
+        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        apply_keyboard_layout();
+    }
     ui_shell_notify_keyboard_layout();
+}
+
+void ui_keyboard_notify_hardware_change(void)
+{
+    if (kb_target != nullptr) {
+        if (bt_mgr_is_keyboard_connected()) {
+            lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+            apply_keyboard_layout();
+        }
+        ui_shell_notify_keyboard_layout();
+    }
 }
 
 void ui_keyboard_hide(void)
@@ -280,4 +301,87 @@ int32_t ui_keyboard_get_height(void)
         return h * 35 / 100;
     }
     return h * 52 / 100;
+}
+
+static lv_obj_t *find_textarea_recursive(lv_obj_t *parent)
+{
+    if (parent == nullptr) {
+        return nullptr;
+    }
+    if (lv_obj_check_type(parent, &lv_textarea_class)) {
+        return parent;
+    }
+    uint32_t cnt = lv_obj_get_child_count(parent);
+    for (uint32_t i = 0; i < cnt; i++) {
+        lv_obj_t *res = find_textarea_recursive(lv_obj_get_child(parent, i));
+        if (res != nullptr) {
+            return res;
+        }
+    }
+    return nullptr;
+}
+
+void ui_keyboard_inject_char(char c)
+{
+    if (bsp_display_lock(pdMS_TO_TICKS(50))) {
+        lv_obj_t *target = kb_target;
+        if (target == nullptr || !lv_obj_is_valid(target)) {
+            target = find_textarea_recursive(lv_screen_active());
+            if (target != nullptr) {
+                kb_target = target;
+            }
+        }
+
+        if (target != nullptr && lv_obj_is_valid(target)) {
+            ESP_LOGI("ui_kb", "ui_keyboard_inject_char: '%c' (0x%02X) no target=%p", c, (uint8_t)c, target);
+            if (c == '\b') {
+                lv_textarea_delete_char(target);
+            } else if (c == '\n') {
+                char str[2] = {'\n', '\0'};
+                lv_textarea_add_text(target, str);
+            } else if (c != 0) {
+                char str[2] = {c, '\0'};
+                lv_textarea_add_text(target, str);
+            }
+            lv_obj_send_event(target, LV_EVENT_VALUE_CHANGED, nullptr);
+            lv_obj_invalidate(target);
+        } else {
+            ESP_LOGW("ui_kb", "ui_keyboard_inject_char: NENHUM target textarea encontrado!");
+        }
+        bsp_display_unlock();
+    }
+}
+
+void ui_keyboard_inject_key(uint32_t key)
+{
+    if (bsp_display_lock(pdMS_TO_TICKS(50))) {
+        lv_obj_t *target = kb_target;
+        if (target == nullptr || !lv_obj_is_valid(target)) {
+            target = find_textarea_recursive(lv_screen_active());
+            if (target != nullptr) {
+                kb_target = target;
+            }
+        }
+
+        if (target != nullptr && lv_obj_is_valid(target)) {
+            ESP_LOGI("ui_kb", "ui_keyboard_inject_key: 0x%lX no target=%p", (unsigned long)key, target);
+            if (key == LV_KEY_BACKSPACE) {
+                lv_textarea_delete_char(target);
+            } else if (key == LV_KEY_DEL) {
+                lv_textarea_delete_char_forward(target);
+            } else if (key == LV_KEY_LEFT) {
+                lv_textarea_cursor_left(target);
+            } else if (key == LV_KEY_RIGHT) {
+                lv_textarea_cursor_right(target);
+            } else if (key == LV_KEY_ENTER) {
+                char str[2] = {'\n', '\0'};
+                lv_textarea_add_text(target, str);
+            }
+            lv_obj_send_event(target, LV_EVENT_VALUE_CHANGED, nullptr);
+            lv_obj_invalidate(target);
+        } else {
+            ESP_LOGW("ui_kb", "ui_keyboard_inject_key: NENHUM target textarea encontrado!");
+        }
+        bsp_display_unlock();
+    }
 }

@@ -10,6 +10,7 @@
 #include "imu_reader.h"
 #include "wifi_mgr.h"
 #include "wifi_storage.h"
+#include "bt_mgr.h"
 #include "rtc_rx8130.h"
 
 static const char *TAG = "tab5_poc";
@@ -47,6 +48,9 @@ extern "C" void app_main(void)
 
     /* Liga o radio WiFi (ESP32-C6 companion via SDIO) e inicia o STA + scan */
     wifi_mgr_start();
+
+    /* Inicia o subsistema Bluetooth */
+    bt_mgr_start();
 
     bsp_display_lock(0);
 

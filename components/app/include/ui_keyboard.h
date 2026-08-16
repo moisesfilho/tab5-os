@@ -8,3 +8,6 @@ void ui_keyboard_hide(void);
 void ui_keyboard_refresh_theme(void);
 bool ui_keyboard_is_visible(void);
 int32_t ui_keyboard_get_height(void);
+void ui_keyboard_notify_hardware_change(void);
+void ui_keyboard_inject_char(char c);
+void ui_keyboard_inject_key(uint32_t key);

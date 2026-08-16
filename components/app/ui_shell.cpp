@@ -5,6 +5,7 @@
 #include "ui_notas.h"
 #include "ui_wifi.h"
 #include "ui_files.h"
+#include "ui_bluetooth.h"
 #include "ui_theme.h"
 #include "ui_font.h"
 #include "file_assoc.h"
@@ -16,6 +17,7 @@ lv_obj_t *notas_scr = nullptr;
 lv_obj_t *notas_caller_scr = nullptr;
 lv_obj_t *wifi_scr = nullptr;
 lv_obj_t *files_scr = nullptr;
+lv_obj_t *bt_scr = nullptr;
 lv_obj_t *splash = nullptr;
 lv_obj_t *splash_label = nullptr;
 
@@ -66,6 +68,7 @@ void ui_shell_init(void)
     notas_scr = ui_notas_create();
     wifi_scr = ui_wifi_create();
     files_scr = ui_files_create();
+    bt_scr = ui_bluetooth_create();
 
     splash_start();
 }
@@ -75,6 +78,7 @@ void ui_shell_open_notas(void)
     ui_keyboard_hide();
     notas_caller_scr = desktop_scr;
     lv_disp_load_scr(notas_scr);
+    ui_notas_on_open();
 }
 
 void ui_shell_open_notas_with_file(const char *filepath)
@@ -85,6 +89,7 @@ void ui_shell_open_notas_with_file(const char *filepath)
     notas_caller_scr = (act != nullptr && act != notas_scr) ? act : desktop_scr;
     ui_notas_open_file(filepath);
     lv_disp_load_scr(notas_scr);
+    ui_notas_on_open();
 }
 
 void ui_shell_close_notas(void)
@@ -120,12 +125,25 @@ void ui_shell_close_files(void)
     lv_disp_load_scr(desktop_scr);
 }
 
+void ui_shell_open_bluetooth(void)
+{
+    ui_keyboard_hide();
+    lv_disp_load_scr(bt_scr);
+}
+
+void ui_shell_close_bluetooth(void)
+{
+    ui_keyboard_hide();
+    lv_disp_load_scr(desktop_scr);
+}
+
 void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
     ui_notas_refresh_theme();
     ui_wifi_refresh_theme();
     ui_files_refresh_theme();
+    ui_bluetooth_refresh_theme();
 
     if (splash != nullptr) {
         lv_obj_set_style_bg_color(splash, lv_color_hex(ui_theme_get()->background), 0);
@@ -142,5 +160,7 @@ void ui_shell_notify_keyboard_layout(void)
         ui_wifi_apply_layout();
     } else if (act == files_scr) {
         ui_files_apply_layout();
+    } else if (act == bt_scr) {
+        ui_bluetooth_apply_layout();
     }
 }

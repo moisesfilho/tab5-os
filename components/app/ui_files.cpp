@@ -246,7 +246,7 @@ void apply_files_layout(void)
     int32_t height = lv_display_get_vertical_resolution(nullptr);
 
     int32_t top = 2 * UI_BAR_HEIGHT;
-    int32_t container_h = std::max(height - top, 100);
+    int32_t container_h = std::max<int32_t>(height - top, 100);
 
     lv_obj_set_size(files_container, width, container_h);
     lv_obj_set_pos(files_container, 0, top);

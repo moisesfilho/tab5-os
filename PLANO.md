@@ -371,3 +371,92 @@ components/app/
 ### Etapa 4 — Validação e Gravação
 - `pre-commit run --all-files` 100% aprovado.
 - Gravação no Tab5 e validação em hardware.
+
+---
+
+# Planejamento: Gerenciador de Conexão Bluetooth, Periféricos e Supressão de Teclado Virtual (Fase 19)
+
+## 1. Contexto & Objetivo
+- Criação do aplicativo **"Bluetooth"** (Gerenciador de Conexões Bluetooth do `tab5-os`) e infraestrutura para periféricos sem fio (teclados, mouses e fones de ouvido).
+- **Aplicativo Próprio (`ui_bluetooth`)**: Tela com interface de busca, listagem de dispositivos com ícones por categoria (`LV_SYMBOL_KEYBOARD`, `LV_SYMBOL_AUDIO`, `LV_SYMBOL_SETTINGS`), badges de status (Conectado / Pareado / RSSI) e ações contextuais (Conectar, Desconectar, Parear, Esquecer).
+- **Ícone na Barra de Status (`ui_status` / `ui_bar`)**: Indicador `LV_SYMBOL_BLUETOOTH` ao lado do Wi-Fi, com cor atenuada (`text_muted`) quando desconectado e cor de destaque (`accent`) quando conectado a pelo menos um dispositivo. Toque no ícone abre o app Bluetooth.
+- **Launcher / Desktop (`ui_desktop`)**: Tile 76x76 estilizado com `LV_SYMBOL_BLUETOOTH` e rótulo "Bluetooth".
+- **Supressão Inteligente do Teclado Virtual**:
+  - Quando um teclado Bluetooth físico estiver conectado, o teclado virtual (`ui_keyboard`) **permanece oculto** ao focar campos de texto (`lv_textarea`), permitindo que a aplicação ativa aproveite 100% da altura da tela.
+  - Ao desconectar o teclado físico, o teclado virtual volta a ser exibido automaticamente sob toque na tela.
+- **Gerenciador e Persistência (`bt_mgr` & `bt_storage`)**: Controle assíncrono do rádio Bluetooth (via ESP-Hosted / ESP32-C6 companion) e salvamento de dispositivos pareados em `/sdcard/tab5_os/bt.cfg` para reconexão automática no boot.
+- **Entrada e Áudio**: Drivers `lv_indev_t` para injeção de teclas de teclado e ponteiro de mouse no LVGL, e roteamento de áudio para fones pareados.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha |
+|---|---|---|
+| D1 | Rádio & Host Stack | ESP-Hosted Bluetooth HCI (ESP32-C6 companion via SDIO2) + Host Stack no ESP32-P4 |
+| D2 | Janela do App | `ui_bluetooth.cpp` integrado ao `ui_shell` (`ui_shell_open_bluetooth` / `ui_shell_close_bluetooth`) |
+| D3 | Status Bar | Ícone `LV_SYMBOL_BLUETOOTH` em `ui_status.cpp` interativo com navegação |
+| D4 | Persistência | `/sdcard/tab5_os/bt.cfg` através de `bt_storage.cpp` |
+| D5 | Categorização | Ícones dedicados por tipo: `LV_SYMBOL_KEYBOARD` (teclados), `LV_SYMBOL_AUDIO` (fones), `LV_SYMBOL_SETTINGS` (mouses) |
+| D6 | Supressão de Teclado | Interceptação em `ui_keyboard_attach()` consultando `bt_mgr_is_keyboard_connected()` |
+| D7 | Dispositivos de Entrada | Registro de `lv_indev_t` virtual para teclado e mouse no LVGL 9 |
+
+## 3. Estrutura de Arquivos
+
+```
+components/app/
+├── include/
+│   ├── bt_mgr.h           # [NEW] API e eventos do gerenciador Bluetooth
+│   ├── bt_storage.h       # [NEW] Persistência em /sdcard/tab5_os/bt.cfg
+│   ├── ui_bluetooth.h     # [NEW] Interface do aplicativo Bluetooth
+│   ├── ui_keyboard.h      # [MODIFY] Suporte à supressão do teclado virtual
+│   ├── ui_status.h        # [MODIFY] Ícone de status Bluetooth
+│   └── ui_shell.h         # [MODIFY] Transições de tela do Bluetooth
+├── bt_mgr.cpp             # [NEW] Implementação do backend Bluetooth
+├── bt_storage.cpp         # [NEW] I/O do arquivo bt.cfg
+├── ui_bluetooth.cpp       # [NEW] Interface gráfica do app Bluetooth
+├── ui_keyboard.cpp        # [MODIFY] Lógica condicional de visibilidade
+├── ui_desktop.cpp         # [MODIFY] Tile 'Bluetooth' no launcher
+├── ui_status.cpp          # [MODIFY] Indicador Bluetooth na barra superior
+├── ui_shell.cpp           # [MODIFY] Ciclo de vida da tela bluetooth_scr
+└── CMakeLists.txt         # [MODIFY] Registro dos novos módulos e deps
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+### Etapa 1 — Backend de Armazenamento e Configuração (`bt_storage`)
+- Definição do formato e parsing do arquivo `/sdcard/tab5_os/bt.cfg`.
+- Métodos para carregar, adicionar, atualizar e remover dispositivos pareados.
+
+### Etapa 2 — Gerenciador Bluetooth e Detecção de Dispositivos (`bt_mgr`)
+- Inicialização do rádio e ciclo de scan assíncrono.
+- Classificação por perfil (Teclado, Mouse, Fone de ouvido).
+- Funções de conexão, pareamento, desconexão e checagem de dispositivos conectados.
+
+### Etapa 3 — Supressão Inteligente do Teclado Virtual (`ui_keyboard`)
+- Modificação de `ui_keyboard_attach` para checar `bt_mgr_is_keyboard_connected()`.
+- Ocultação do teclado virtual e liberação da altura total para os aplicativos.
+- Transição em tempo real ao conectar/desconectar teclado físico.
+
+### Etapa 4 — Interface do Aplicativo (`ui_bluetooth`)
+- Janela do app com barra superior, botão fechar, botão de busca e lista dinâmica de dispositivos.
+- Painel de ações contextuais (Conectar / Desconectar / Esquecer / Parear).
+- Suporte a temas claro/escuro e rotação retrato/paisagem.
+
+### Etapa 5 — Integração com o Sistema (Desktop, Barra de Status e Shell)
+- Adição do tile "Bluetooth" no desktop launcher.
+- Adição do ícone interativo de conexão na barra de status.
+- Roteamento e transições no `ui_shell`.
+- Inicialização em `main/app_main.cpp`.
+
+### Etapa 6 — Mapeamento de Drivers HID e Áudio
+- Registro de drivers de entrada LVGL para teclado e mouse.
+- Roteamento de áudio para fones conectados.
+
+### Etapa 7 — Validação e Gravação
+- Executar `pre-commit run --all-files`.
+- Compilação do firmware e validação em hardware.
+
+## 5. Status de Conclusão: CONCLUÍDO (100%)
+- **Backend BLE NimBLE (HCI via ESP-Hosted / SDIO)**: 100% operacional.
+- **Descoberta de Serviços e Descritores 0x2902 (CCCD)**: Pipeline sequencial ativado com sucesso.
+- **Entrada de Teclado Físico no Notas**: Mapeamento completo de caracteres e teclas especiais no LVGL 9.
+- **Reconexão Automática e Auto-Conexão no Boot**: 100% testado e validado em hardware com o teclado físico sem fio.
