@@ -44,6 +44,26 @@ jobs:
           zip -r ../tab5_os_firmware.zip ./*
           cd ..
 
+      - name: Generate Release Summary
+        if: always()
+        run: |
+          echo "## 📦 Release Firmware Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Binário / Artefato | Tamanho | Descrição |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          if [ -f build/tab5_os.bin ]; then
+            APP_SZ=$(ls -lh build/tab5_os.bin | awk '{print $5}')
+            BOOT_SZ=$(ls -lh build/bootloader/bootloader.bin | awk '{print $5}')
+            PART_SZ=$(ls -lh build/partition_table/partition-table.bin | awk '{print $5}')
+            ZIP_SZ=$(ls -lh tab5_os_firmware.zip 2>/dev/null | awk '{print $5}' || echo "N/A")
+            echo "| \`tab5_os.bin\` | $APP_SZ | Aplicação principal Tab5 OS |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`bootloader.bin\` | $BOOT_SZ | Bootloader ESP-IDF (2nd stage) |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`partition-table.bin\` | $PART_SZ | Tabela de partições Flash |" >> $GITHUB_STEP_SUMMARY
+            echo "| \`tab5_os_firmware.zip\` | $ZIP_SZ | Pacote consolidado para gravação |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🚀 **Tag de Lançamento:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "✨ **Status do Release:** ${{ job.status == 'success' && '✅ Publicado no GitHub Releases' || '❌ Falha' }}" >> $GITHUB_STEP_SUMMARY
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

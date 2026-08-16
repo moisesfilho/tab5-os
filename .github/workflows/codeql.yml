@@ -49,3 +49,16 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: /language:cpp
+
+      - name: Generate CodeQL Summary
+        if: always()
+        run: |
+          echo "## 🛡️ CodeQL Security Analysis Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Métrica | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Linguagem** | C / C++ |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Query Suite** | security-and-quality |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Alvo** | ESP32-P4 (ESP-IDF v5.5.5) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | ${{ job.status == 'success' && '✅ Análise concluída com sucesso' || '❌ Falha' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> ℹ️ *Acesse a aba **Security → Code scanning** do repositório para visualizar relatórios e alertas detalhados.*" >> $GITHUB_STEP_SUMMARY
