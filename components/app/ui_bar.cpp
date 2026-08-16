@@ -4,6 +4,8 @@
 #include "ui_font.h"
 #include "ui_shell.h"
 #include "imu_reader.h"
+#include "wifi_mgr.h"
+#include "bt_mgr.h"
 #include <time.h>
 
 namespace {
@@ -28,6 +30,10 @@ lv_obj_t *menu_row_back = nullptr;
 lv_obj_t *menu_row_back_label = nullptr;
 lv_obj_t *menu_row_rotation_label = nullptr;
 lv_obj_t *menu_row_rotation_switch = nullptr;
+lv_obj_t *menu_row_wifi_label = nullptr;
+lv_obj_t *menu_row_wifi_switch = nullptr;
+lv_obj_t *menu_row_bt_label = nullptr;
+lv_obj_t *menu_row_bt_switch = nullptr;
 
 void close_menu(void);
 
@@ -60,6 +66,10 @@ void close_menu(void)
     menu_row_back_label = nullptr;
     menu_row_rotation_label = nullptr;
     menu_row_rotation_switch = nullptr;
+    menu_row_wifi_label = nullptr;
+    menu_row_wifi_switch = nullptr;
+    menu_row_bt_label = nullptr;
+    menu_row_bt_switch = nullptr;
 }
 
 void menu_header_create(const char *text)
@@ -160,6 +170,24 @@ void apply_menu_theme(void)
         lv_obj_set_style_bg_color(menu_row_rotation_switch, lv_color_hex(pal->accent), LV_PART_INDICATOR);
         lv_obj_set_style_bg_color(menu_row_rotation_switch, lv_color_hex(pal->text), LV_PART_KNOB);
     }
+    if (menu_row_wifi_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_wifi_label, lv_color_hex(pal->text), 0);
+    }
+    if (menu_row_wifi_switch != nullptr) {
+        lv_obj_set_style_bg_color(menu_row_wifi_switch, lv_color_hex(pal->surface), 0);
+        lv_obj_set_style_border_color(menu_row_wifi_switch, lv_color_hex(pal->border), 0);
+        lv_obj_set_style_bg_color(menu_row_wifi_switch, lv_color_hex(pal->accent), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(menu_row_wifi_switch, lv_color_hex(pal->text), LV_PART_KNOB);
+    }
+    if (menu_row_bt_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_bt_label, lv_color_hex(pal->text), 0);
+    }
+    if (menu_row_bt_switch != nullptr) {
+        lv_obj_set_style_bg_color(menu_row_bt_switch, lv_color_hex(pal->surface), 0);
+        lv_obj_set_style_border_color(menu_row_bt_switch, lv_color_hex(pal->border), 0);
+        lv_obj_set_style_bg_color(menu_row_bt_switch, lv_color_hex(pal->accent), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(menu_row_bt_switch, lv_color_hex(pal->text), LV_PART_KNOB);
+    }
 }
 
 void open_menu(bool theme_page);
@@ -197,6 +225,20 @@ void rotation_switch_cb(lv_event_t *event)
     imu_reader_set_rotation_enabled(lv_obj_has_state(sw, LV_STATE_CHECKED));
 }
 
+/* Repassa o estado do switch de Wi-Fi para o modulo wifi_mgr. */
+void wifi_switch_cb(lv_event_t *event)
+{
+    lv_obj_t *sw = (lv_obj_t *)lv_event_get_target(event);
+    wifi_mgr_set_enabled(lv_obj_has_state(sw, LV_STATE_CHECKED));
+}
+
+/* Repassa o estado do switch de Bluetooth para o modulo bt_mgr. */
+void bt_switch_cb(lv_event_t *event)
+{
+    lv_obj_t *sw = (lv_obj_t *)lv_event_get_target(event);
+    bt_mgr_set_enabled(lv_obj_has_state(sw, LV_STATE_CHECKED));
+}
+
 /* Row "Rotação" com switch de liga/desliga no estilo SO. */
 void menu_rotation_row_create(void)
 {
@@ -228,6 +270,74 @@ void menu_rotation_row_create(void)
 
     if (imu_reader_is_rotation_enabled()) {
         lv_obj_add_state(menu_row_rotation_switch, LV_STATE_CHECKED);
+    }
+}
+
+/* Row "Wi-Fi" com switch de liga/desliga no estilo SO. */
+void menu_wifi_row_create(void)
+{
+    lv_obj_t *row = lv_obj_create(menu_panel);
+    lv_obj_set_width(row, lv_pct(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_shadow_width(row, 0, 0);
+    lv_obj_set_style_radius(row, 8, 0);
+    lv_obj_set_style_pad_left(row, 14, 0);
+    lv_obj_set_style_pad_right(row, 14, 0);
+    lv_obj_set_style_pad_top(row, 10, 0);
+    lv_obj_set_style_pad_bottom(row, 10, 0);
+
+    menu_row_wifi_label = lv_label_create(row);
+    lv_label_set_text(menu_row_wifi_label, "Wi-Fi");
+    lv_obj_set_style_text_font(menu_row_wifi_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_align(menu_row_wifi_label, LV_ALIGN_LEFT_MID, 14, 0);
+
+    menu_row_wifi_switch = lv_switch_create(row);
+    lv_obj_set_size(menu_row_wifi_switch, 44, 24);
+    lv_obj_align(menu_row_wifi_switch, LV_ALIGN_RIGHT_MID, -14, 0);
+    lv_obj_set_style_radius(menu_row_wifi_switch, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_radius(menu_row_wifi_switch, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(menu_row_wifi_switch, LV_RADIUS_CIRCLE, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(menu_row_wifi_switch, 2, LV_PART_KNOB);
+    lv_obj_add_event_cb(menu_row_wifi_switch, wifi_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    if (wifi_mgr_is_enabled()) {
+        lv_obj_add_state(menu_row_wifi_switch, LV_STATE_CHECKED);
+    }
+}
+
+/* Row "Bluetooth" com switch de liga/desliga no estilo SO. */
+void menu_bluetooth_row_create(void)
+{
+    lv_obj_t *row = lv_obj_create(menu_panel);
+    lv_obj_set_width(row, lv_pct(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_shadow_width(row, 0, 0);
+    lv_obj_set_style_radius(row, 8, 0);
+    lv_obj_set_style_pad_left(row, 14, 0);
+    lv_obj_set_style_pad_right(row, 14, 0);
+    lv_obj_set_style_pad_top(row, 10, 0);
+    lv_obj_set_style_pad_bottom(row, 10, 0);
+
+    menu_row_bt_label = lv_label_create(row);
+    lv_label_set_text(menu_row_bt_label, "Bluetooth");
+    lv_obj_set_style_text_font(menu_row_bt_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_align(menu_row_bt_label, LV_ALIGN_LEFT_MID, 14, 0);
+
+    menu_row_bt_switch = lv_switch_create(row);
+    lv_obj_set_size(menu_row_bt_switch, 44, 24);
+    lv_obj_align(menu_row_bt_switch, LV_ALIGN_RIGHT_MID, -14, 0);
+    lv_obj_set_style_radius(menu_row_bt_switch, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_radius(menu_row_bt_switch, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(menu_row_bt_switch, LV_RADIUS_CIRCLE, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(menu_row_bt_switch, 2, LV_PART_KNOB);
+    lv_obj_add_event_cb(menu_row_bt_switch, bt_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    if (bt_mgr_is_enabled()) {
+        lv_obj_add_state(menu_row_bt_switch, LV_STATE_CHECKED);
     }
 }
 
@@ -273,6 +383,8 @@ void open_menu(bool theme_page)
         menu_header_create("Configuração");
         menu_row_create("Tema", menu_theme_cb, &menu_row_theme, &menu_row_theme_label, true);
         menu_rotation_row_create();
+        menu_wifi_row_create();
+        menu_bluetooth_row_create();
     } else {
         menu_header_create("Tema");
         menu_row_create("Claro", menu_light_cb, &menu_row_light, &menu_row_light_label, false);

@@ -10,6 +10,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "bsp/esp-bsp.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 
 static const char *TAG = "tab5_wifi";
 
@@ -22,10 +24,33 @@ static TimerHandle_t s_retry_timer = NULL;
 static wifi_cfg_t s_cfg;
 static bool s_has_cfg = false;
 static bool s_connected = false;
+static bool s_wifi_enabled = true;
 static int s_retry_delay_ms = CONNECT_RETRY_BASE_MS;
 static wifi_scan_cb_t s_scan_cb = NULL;
 static void *s_scan_cb_ctx = NULL;
 static char s_connected_ssid[33] = "";
+
+static void load_nvs_wifi_enabled(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("radios", NVS_READONLY, &h) == ESP_OK) {
+        uint8_t val = 1;
+        if (nvs_get_u8(h, "wifi_en", &val) == ESP_OK) {
+            s_wifi_enabled = (val != 0);
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_nvs_wifi_enabled(bool en)
+{
+    nvs_handle_t h;
+    if (nvs_open("radios", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "wifi_en", en ? 1 : 0);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
 
 static void log_scan_results(void)
 {
@@ -110,10 +135,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_i
     switch (event_id) {
     case WIFI_EVENT_STA_START:
         ESP_LOGI(TAG, "STA iniciado");
-        if (s_has_cfg) {
-            try_connect();
-        } else {
-            esp_wifi_scan_start(NULL, false);
+        if (s_wifi_enabled) {
+            if (s_has_cfg) {
+                try_connect();
+            } else {
+                esp_wifi_scan_start(NULL, false);
+            }
         }
         break;
     case WIFI_EVENT_SCAN_DONE:
@@ -134,7 +161,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_i
         s_connected = false;
         s_connected_ssid[0] = '\0';
         ESP_LOGW(TAG, "desconectado do AP");
-        schedule_retry();
+        if (s_wifi_enabled) {
+            schedule_retry();
+        }
         break;
     default:
         break;
@@ -143,13 +172,54 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_i
 
 static void scan_timer_cb(TimerHandle_t timer)
 {
-    if (!s_has_cfg && !s_connected) {
+    if (s_wifi_enabled && !s_has_cfg && !s_connected) {
         esp_wifi_scan_start(NULL, false);
     }
 }
 
+bool wifi_mgr_is_enabled(void)
+{
+    return s_wifi_enabled;
+}
+
+esp_err_t wifi_mgr_set_enabled(bool enabled)
+{
+    if (s_wifi_enabled == enabled) {
+        return ESP_OK;
+    }
+    s_wifi_enabled = enabled;
+    save_nvs_wifi_enabled(enabled);
+    ESP_LOGI(TAG, "Wi-Fi %s pelo usuario", enabled ? "HABILITADO" : "DESABILITADO");
+
+    if (!enabled) {
+        xTimerStop(s_retry_timer, 0);
+        if (s_scan_timer != NULL) {
+            xTimerStop(s_scan_timer, 0);
+        }
+        s_connected = false;
+        s_connected_ssid[0] = '\0';
+        esp_wifi_disconnect();
+    } else {
+        if (s_scan_timer != NULL) {
+            xTimerStart(s_scan_timer, 0);
+        }
+        if (wifi_storage_mount() == ESP_OK && wifi_storage_load(&s_cfg) == ESP_OK) {
+            s_has_cfg = s_cfg.ssid[0] != '\0';
+            if (s_has_cfg) {
+                ESP_LOGI(TAG, "Auto-reconectando a rede salva: ssid=\"%s\"", s_cfg.ssid);
+                try_connect();
+            }
+        }
+    }
+    return ESP_OK;
+}
+
 esp_err_t wifi_mgr_connect(const char *ssid, const char *password)
 {
+    if (!s_wifi_enabled) {
+        ESP_LOGW(TAG, "Tentativa de conexao ignorada: Wi-Fi desativado");
+        return ESP_ERR_INVALID_STATE;
+    }
     if (ssid == NULL || ssid[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
@@ -208,6 +278,10 @@ esp_err_t wifi_mgr_forget(const char *ssid)
 
 esp_err_t wifi_mgr_scan(wifi_scan_cb_t cb, void *ctx)
 {
+    if (!s_wifi_enabled) {
+        ESP_LOGW(TAG, "Tentativa de scan ignorada: Wi-Fi desativado");
+        return ESP_ERR_INVALID_STATE;
+    }
     s_scan_cb = cb;
     s_scan_cb_ctx = ctx;
     esp_err_t err = esp_wifi_scan_start(NULL, false);
@@ -242,6 +316,8 @@ esp_err_t wifi_mgr_get_status(wifi_status_t *status)
 
 esp_err_t wifi_mgr_start(void)
 {
+    load_nvs_wifi_enabled();
+
     ESP_RETURN_ON_ERROR(bsp_feature_enable(BSP_FEATURE_WIFI, true), TAG, "falha ao ligar radio WiFi");
 
     /* Carrega a config salva no SD (se existir) para conexao automatica */
@@ -266,11 +342,11 @@ esp_err_t wifi_mgr_start(void)
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "esp_wifi_start failed");
 
     s_scan_timer = xTimerCreate("wifi_scan", pdMS_TO_TICKS(SCAN_PERIOD_MS), pdTRUE, NULL, scan_timer_cb);
-    if (s_scan_timer != NULL) {
+    if (s_scan_timer != NULL && s_wifi_enabled) {
         xTimerStart(s_scan_timer, 0);
     }
     s_retry_timer = xTimerCreate("wifi_retry", pdMS_TO_TICKS(CONNECT_RETRY_BASE_MS), pdFALSE, NULL, retry_timer_cb);
 
-    ESP_LOGI(TAG, "WiFi iniciado (radio C6 via SDIO)");
+    ESP_LOGI(TAG, "WiFi iniciado (radio C6 via SDIO, habilitado=%d)", (int)s_wifi_enabled);
     return ESP_OK;
 }

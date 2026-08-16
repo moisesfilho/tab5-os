@@ -57,6 +57,10 @@ bool bt_mgr_is_keyboard_connected(void);
 bool bt_mgr_is_mouse_connected(void);
 bool bt_mgr_is_audio_connected(void);
 
+/* Habilitar / Desabilitar subsistema Bluetooth */
+esp_err_t bt_mgr_set_enabled(bool enabled);
+bool bt_mgr_is_enabled(void);
+
 #ifdef __cplusplus
 }
 #endif

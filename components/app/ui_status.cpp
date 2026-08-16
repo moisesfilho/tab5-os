@@ -32,23 +32,40 @@ void apply_status_theme(void)
 
 void status_update(void)
 {
+    bool w_enabled = wifi_mgr_is_enabled();
     wifi_status_t w_status = {};
     bool w_connected = false;
-    if (wifi_mgr_get_status(&w_status) == ESP_OK) {
+    if (w_enabled && wifi_mgr_get_status(&w_status) == ESP_OK) {
         w_connected = w_status.connected;
     }
     s_last_wifi_connected = w_connected;
 
+    bool b_enabled = bt_mgr_is_enabled();
     bt_status_t b_status = {};
     bool b_connected = false;
-    if (bt_mgr_get_status(&b_status) == ESP_OK) {
+    if (b_enabled && bt_mgr_get_status(&b_status) == ESP_OK) {
         b_connected = b_status.any_connected;
     }
     s_last_bt_connected = b_connected;
 
     const ui_palette_t *pal = ui_theme_get();
+    if (wifi_icon_btn != nullptr) {
+        if (!w_enabled) {
+            lv_obj_add_flag(wifi_icon_btn, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_remove_flag(wifi_icon_btn, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     if (wifi_icon_label != nullptr) {
         lv_obj_set_style_text_color(wifi_icon_label, lv_color_hex(w_connected ? pal->accent : pal->text_muted), 0);
+    }
+
+    if (bt_icon_btn != nullptr) {
+        if (!b_enabled) {
+            lv_obj_add_flag(bt_icon_btn, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_remove_flag(bt_icon_btn, LV_OBJ_FLAG_HIDDEN);
+        }
     }
     if (bt_icon_label != nullptr) {
         lv_obj_set_style_text_color(bt_icon_label, lv_color_hex(b_connected ? pal->accent : pal->text_muted), 0);

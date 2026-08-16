@@ -460,3 +460,33 @@ components/app/
 - **Descoberta de Serviços e Descritores 0x2902 (CCCD)**: Pipeline sequencial ativado com sucesso.
 - **Entrada de Teclado Físico no Notas**: Mapeamento completo de caracteres e teclas especiais no LVGL 9.
 - **Reconexão Automática e Auto-Conexão no Boot**: 100% testado e validado em hardware com o teclado físico sem fio.
+
+---
+
+# Fase 7: Controles de Liga/Desliga para Wi-Fi e Bluetooth no Menu de Configurações
+
+## 1. Visão Geral
+Adicionar opções independentes no Menu de Configurações (painel da engrenagem) para habilitar e desabilitar o **Wi-Fi** e o **Bluetooth**, com controle efetivo dos rádios, persistência em NVS, bloqueio de buscas/conexões manuais quando inativos, e restauração imediata da auto-reconexão inteligente com redes e dispositivos pareados quando reativados.
+
+## 2. Escopo e Entregáveis
+1. **Menu de Configurações (`ui_bar.cpp`)**:
+   - Linhas com switches para **Wi-Fi** e **Bluetooth** abaixo de "Rotação".
+2. **Gerenciador de Wi-Fi (`wifi_mgr.h`, `wifi_mgr.cpp`)**:
+   - APIs `wifi_mgr_set_enabled(bool)` e `wifi_mgr_is_enabled()`.
+   - Persistência de estado em NVS (`radios` / `wifi_en`).
+   - Bloqueio de conexões e buscas quando desativado; auto-reconexão imediata a redes salvas ao reativar.
+3. **Gerenciador de Bluetooth (`bt_mgr.h`, `bt_mgr.cpp`)**:
+   - APIs `bt_mgr_set_enabled(bool)` e `bt_mgr_is_enabled()`.
+   - Persistência de estado em NVS (`radios` / `bt_en`).
+   - Desconexão geral, cancelamento de conexões/scans e restauração do teclado virtual quando desativado.
+   - Auto-reconexão imediata e transparente a dispositivos pareados ao reativar.
+4. **Indicadores na Barra Superior (`ui_status.cpp`)**:
+   - Atualização visual dos ícones de status refletindo os estados ligado/desligado/conectado.
+5. **Aplicativos de Rede (`ui_wifi.cpp` e `ui_bluetooth.cpp`)**:
+   - Bloqueio e feedback quando o respectivo rádio estiver desligado.
+
+## 3. Status de Conclusão: CONCLUÍDO (100%)
+- **Switches de Wi-Fi e Bluetooth no Menu**: Integrados ao painel popover e compatíveis com temas claro/escuro.
+- **Persistência em NVS**: Salvo na partição NVS (`radios`) e restaurado em cada boot.
+- **Controle Efetivo de Rádio**: Desconexão e bloqueio de buscas quando desativado; auto-reconexão imediata e inteligente a redes (`wifi.cfg`) e dispositivos Bluetooth (`bt.cfg`) quando reativado.
+- **Sincronização Visual**: Barra de status e aplicativos de rede refletem em tempo real o estado de cada rádio.

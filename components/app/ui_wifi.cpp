@@ -357,6 +357,14 @@ void render_networks(void)
     }
 
     lv_obj_clean(network_list);
+    if (!wifi_mgr_is_enabled()) {
+        lv_obj_t *empty = lv_label_create(network_list);
+        lv_label_set_text(empty, "Wi-Fi desativado nas configurações");
+        lv_obj_set_style_text_font(empty, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_align(empty, LV_ALIGN_TOP_LEFT, 12, 10);
+        return;
+    }
+
     if (network_count == 0) {
         lv_obj_t *empty = lv_label_create(network_list);
         lv_label_set_text(empty, "Nenhuma rede encontrada");

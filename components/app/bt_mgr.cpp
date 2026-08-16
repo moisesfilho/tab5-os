@@ -18,6 +18,8 @@
 #include "nimble/nimble_port_freertos.h"
 #include "store/config/ble_store_config.h"
 #include "ui_keyboard.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 
 extern "C" void ble_store_config_init(void);
 
@@ -40,12 +42,35 @@ SemaphoreHandle_t s_bt_mutex = nullptr;
 active_conn_t s_active_conns[MAX_ACTIVE_CONNS] = {};
 int s_active_count = 0;
 
+bool s_bt_enabled = true;
 bool s_nimble_inited = false;
 bool s_nimble_synced = false;
 bool s_scanning = false;
 TimerHandle_t s_scan_watchdog = nullptr;
 bt_scan_cb_t s_scan_cb = nullptr;
 void *s_scan_ctx = nullptr;
+
+static void load_nvs_bt_enabled(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("radios", NVS_READONLY, &h) == ESP_OK) {
+        uint8_t val = 1;
+        if (nvs_get_u8(h, "bt_en", &val) == ESP_OK) {
+            s_bt_enabled = (val != 0);
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_nvs_bt_enabled(bool en)
+{
+    nvs_handle_t h;
+    if (nvs_open("radios", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "bt_en", en ? 1 : 0);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
 
 bt_device_info_t s_discovered[BT_SCAN_MAX_DEVICES] = {};
 int s_discovered_count = 0;
@@ -713,12 +738,18 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
     default:
         return 0;
     }
+    return 0;
 }
 
 void ble_app_on_sync(void)
 {
     ESP_LOGI(TAG, "NimBLE Host sincronizado com o Controller!");
     s_nimble_synced = true;
+
+    if (!s_bt_enabled) {
+        ESP_LOGI(TAG, "Bluetooth desativado nas configuracoes - auto-conexao pausada");
+        return;
+    }
 
     /* Tenta conexão direta imediata com o dispositivo pareado */
     bt_saved_list_t list = {};
@@ -766,8 +797,68 @@ void update_device_connection_flags_locked(void)
 
 } // namespace
 
+bool bt_mgr_is_enabled(void)
+{
+    return s_bt_enabled;
+}
+
+esp_err_t bt_mgr_set_enabled(bool enabled)
+{
+    if (s_bt_enabled == enabled) {
+        return ESP_OK;
+    }
+    s_bt_enabled = enabled;
+    save_nvs_bt_enabled(enabled);
+    ESP_LOGI(TAG, "Bluetooth %s pelo usuario", enabled ? "HABILITADO" : "DESABILITADO");
+
+    if (!enabled) {
+        ble_gap_disc_cancel();
+        ble_gap_conn_cancel();
+        s_scanning = false;
+        if (s_scan_watchdog != nullptr) {
+            xTimerStop(s_scan_watchdog, 0);
+        }
+
+        if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            for (int i = 0; i < s_active_count; i++) {
+                if (s_active_conns[i].connected && s_active_conns[i].conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+                    ble_gap_terminate(s_active_conns[i].conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+                }
+                s_active_conns[i].connected = false;
+                s_active_conns[i].conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            }
+            s_active_count = 0;
+            for (int i = 0; i < s_discovered_count; i++) {
+                s_discovered[i].connected = false;
+            }
+            xSemaphoreGive(s_bt_mutex);
+        }
+        s_curr_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        ui_keyboard_notify_hardware_change();
+    } else {
+        if (s_nimble_synced) {
+            bt_saved_list_t list = {};
+            if (bt_storage_load_all(&list) == ESP_OK && list.count > 0) {
+                for (int i = 0; i < list.count; i++) {
+                    if (list.items[i].paired && list.items[i].auto_connect) {
+                        ESP_LOGI(TAG, "Auto-reconectando ao dispositivo salvo: %s [%s]...", list.items[i].name,
+                                 list.items[i].mac);
+                        bt_mgr_connect(list.items[i].mac, list.items[i].name, list.items[i].type);
+                        return ESP_OK;
+                    }
+                }
+                ESP_LOGI(TAG, "Iniciando escuta para auto-reconexao de %d dispositivo(s)...", list.count);
+                bt_mgr_scan(nullptr, nullptr);
+            }
+        }
+    }
+    return ESP_OK;
+}
+
 esp_err_t bt_mgr_start(void)
 {
+    load_nvs_bt_enabled();
+
     if (s_nimble_inited) {
         return ESP_OK;
     }
@@ -776,7 +867,7 @@ esp_err_t bt_mgr_start(void)
         s_bt_mutex = xSemaphoreCreateMutex();
     }
 
-    ESP_LOGI(TAG, "Iniciando subsistema NimBLE Bluetooth...");
+    ESP_LOGI(TAG, "Iniciando subsistema NimBLE Bluetooth (habilitado=%d)...", (int)s_bt_enabled);
 
     if (s_scan_watchdog == nullptr) {
         s_scan_watchdog = xTimerCreate("bt_sc_wd", pdMS_TO_TICKS(5500), pdFALSE, nullptr, scan_watchdog_cb);
@@ -814,6 +905,11 @@ esp_err_t bt_mgr_start(void)
 
 esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
 {
+    if (!s_bt_enabled) {
+        ESP_LOGW(TAG, "Tentativa de scan ignorada: Bluetooth desativado");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (s_bt_mutex == nullptr) {
         s_bt_mutex = xSemaphoreCreateMutex();
     }
@@ -890,6 +986,11 @@ esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
 
 esp_err_t bt_mgr_connect(const char *mac, const char *name, bt_dev_type_t type)
 {
+    if (!s_bt_enabled) {
+        ESP_LOGW(TAG, "Tentativa de conexao ignorada: Bluetooth desativado");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (mac == nullptr || mac[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
@@ -1047,11 +1148,14 @@ esp_err_t bt_mgr_get_status(bt_status_t *status)
         return ESP_ERR_INVALID_ARG;
     }
 
+    memset(status, 0, sizeof(*status));
+    if (!s_bt_enabled) {
+        return ESP_OK;
+    }
+
     if (s_bt_mutex != nullptr) {
         xSemaphoreTake(s_bt_mutex, portMAX_DELAY);
     }
-
-    memset(status, 0, sizeof(*status));
     status->scanning = s_scanning;
     status->connected_count = 0;
 

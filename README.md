@@ -23,7 +23,7 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 - **Persistência de Orientação** — a posição da tela é persistida automaticamente no cartão SD e restaurada no boot
 - **Barra superior estilo SO** — botão de engrenagem, ícone de status Wi-Fi, ícone de status Bluetooth e relógio ao vivo
 - **Rotação automática por IMU** — o vetor de gravidade do BMI270 aciona `lv_display_set_rotation` (0/90/180/270) com debounce
-- **Menu de configurações** — Configuração → Tema (claro/escuro) com destaque do item ativo
+- **Menu de configurações** — painel rápido integrado à barra superior com alternância de tema (claro/escuro), controle de rotação por IMU e interruptores para ligar/desligar Wi-Fi e Bluetooth com persistência em NVS, controle de rádio e auto-reconexão inteligente
 - **Relógio RTC** — RX8130CE semeia o relógio do sistema no boot (`settimeofday`)
 - **Fonte Latin-1** — Montserrat 14px custom com o suplemento Latin-1 completo, para caracteres acentuados renderizarem corretamente
 

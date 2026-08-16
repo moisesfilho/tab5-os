@@ -320,6 +320,16 @@ void render_devices(void)
 
     const ui_palette_t *pal = ui_theme_get();
 
+    if (!bt_mgr_is_enabled()) {
+        lv_obj_t *empty_lbl = lv_label_create(device_list);
+        lv_label_set_text(empty_lbl, "Bluetooth desativado nas configurações");
+        lv_obj_set_style_text_font(empty_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_color(empty_lbl, lv_color_hex(pal->text_muted), 0);
+        lv_obj_set_style_text_align(empty_lbl, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_center(empty_lbl);
+        return;
+    }
+
     if (s_device_count == 0) {
         lv_obj_t *empty_lbl = lv_label_create(device_list);
         lv_label_set_text(empty_lbl, "Nenhum dispositivo Bluetooth encontrado.\nToque em Buscar.");
@@ -440,6 +450,10 @@ void scan_button_cb(lv_event_t *event)
 {
     (void)event;
     const ui_palette_t *pal = ui_theme_get();
+    if (!bt_mgr_is_enabled()) {
+        set_status("Bluetooth desativado nas configurações", pal->accent);
+        return;
+    }
     if (scan_label != nullptr) {
         lv_label_set_text(scan_label, "Buscando...");
     }
@@ -456,11 +470,15 @@ void scan_button_cb(lv_event_t *event)
 void connect_button_cb(lv_event_t *event)
 {
     (void)event;
+    const ui_palette_t *pal = ui_theme_get();
+    if (!bt_mgr_is_enabled()) {
+        set_status("Bluetooth desativado nas configurações", pal->accent);
+        return;
+    }
     if (s_selected_mac[0] == '\0') {
         return;
     }
 
-    const ui_palette_t *pal = ui_theme_get();
     set_status("Conectando...", pal->accent);
 
     esp_err_t err = bt_mgr_connect(s_selected_mac, s_selected_name, s_selected_type);

@@ -23,7 +23,7 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 - **Orientation Persistence** — display rotation is automatically saved to the SD card and restored upon boot
 - **OS-style top bar** — gear button, Wi-Fi status indicator, Bluetooth connection indicator, and live clock
 - **Auto-rotation by IMU** — BMI270 gravity vector drives `lv_display_set_rotation` (0/90/180/270) with debounce
-- **Settings menu** — Configuração → Tema (light/dark) with active item highlight
+- **Settings menu** — quick panel integrated into the top bar with theme toggle (light/dark), IMU auto-rotation switch, and independent power switches for Wi-Fi and Bluetooth with NVS persistence, radio control, and smart auto-reconnection
 - **RTC clock** — RX8130CE seeds the system clock at boot (`settimeofday`)
 - **Latin-1 font** — custom Montserrat 14px with the full Latin-1 supplement, so accented characters render correctly
 

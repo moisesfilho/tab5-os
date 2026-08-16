@@ -34,6 +34,10 @@ esp_err_t wifi_mgr_forget(const char *ssid);
 /* Estado atual da conexao */
 esp_err_t wifi_mgr_get_status(wifi_status_t *status);
 
+/* Habilitar / Desabilitar subsistema Wi-Fi */
+esp_err_t wifi_mgr_set_enabled(bool enabled);
+bool wifi_mgr_is_enabled(void);
+
 #ifdef __cplusplus
 }
 #endif
