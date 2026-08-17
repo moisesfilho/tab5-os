@@ -19,6 +19,9 @@ void ui_mouse_inject_click(void);
 /* Notifica conexao ou desconexao de um mouse/touchpad para exibir/ocultar cursor */
 void ui_mouse_set_connected(bool connected);
 
+/* Define a visibilidade temporária do cursor do mouse (ex: durante screensaver) */
+void ui_mouse_set_cursor_visible(bool visible);
+
 /* Retorna se o mouse/touchpad esta conectado e ativo */
 bool ui_mouse_is_connected(void);
 

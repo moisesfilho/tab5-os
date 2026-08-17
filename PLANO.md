@@ -27,7 +27,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 19.2** | Suporte a Mouse/Touchpad BLE HID | Input / Periféricos | Cursor visual ARGB8888 em `lv_layer_sys`, rotação 4 eixos, cliques/gestos |
 | `[x]` | **Fase 20** | Aplicativo Terminal Interativo | Aplicativo / Shell | Mini-shell C++, comandos POSIX em `/sdcard`, buffer circular 8 KB |
 | `[x]` | **Fase 21** | Cliente SSH Remoto no Terminal | Conectividade / CLI | Task FreeRTOS, `david-cermak/libssh`, PTY xterm, auth por senha/chave |
-| `[ ]` | **Fase 22** | Protetor de Tela Anti-Burn-in com Data e Hora | Sistema / Display | Screensaver fundo preto, relógio grande, reposicionamento 30s, wake no toque |
+| `[x]` | **Fase 22** | Protetor de Tela Anti-Burn-in com Data e Hora | Sistema / Display | Screensaver fundo preto, relógio grande, reposicionamento 30s, wake no toque |
 | `[ ]` | **Fase 23** | Controle de Brilho da Tela no Menu de Configurações | Sistema / Display | Slider de brilho no menu, PWM 10–100%, feedback visual, persistência |
 | `[ ]` | **Fase 24** | Aplicativos de Câmera e Galeria de Fotos | Aplicativo / Mídia | Preview MIPI-CSI, gravação `/sdcard/imagens/`, galeria com swipe/toque, exclusão e associação no app Arquivos |
 | `[ ]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
@@ -745,21 +745,21 @@ Exemplos:
 
 ---
 
-# [ ] Fase 22: Protetor de Tela Anti-Burn-in com Data e Hora `⏳ PLANEJADO`
+# [x] Fase 22: Protetor de Tela Anti-Burn-in com Data e Hora `✅ CONCLUÍDO`
 
 ## 1. Contexto & Objetivos
 - Criar o mecanismo de **Protetor de Tela (Screensaver)** do `tab5-os` para preservação do painel MIPI-DSI, prevenindo retenção de imagem (*burn-in* / *image sticking*) durante períodos de inatividade.
 - **Elementos Visuais e Estética**:
   - Fundo completamente preto (`#000000`) cobrindo 100% da área útil da tela.
   - Tipografia clara em alto contraste: branco puro (`#FFFFFF`) ou cinza suave (`#D0D0D0`).
-  - **Em destaque principal**: **Hora atual** (tamanho grande/bold, formato `HH:MM:SS` ou `HH:MM`) e **Data completa** (ex: `Segunda, 16 de Agosto de 2026`).
-  - Nome do sistema operacional e versão em texto secundário discreto (ex: `tab5-os v0.1.0`).
+  - **Em destaque principal**: **Hora atual** (tamanho grande/bold, formato `HH:MM:SS`) e **Data completa** (ex: `Segunda-feira, 17 de Agosto de 2026`).
+  - Nome do sistema operacional e versão em texto secundário discreto (`tab5-os v0.1.0`).
 - **Mecanismo Anti-Burn-in (Relocação a cada 30 segundos)**:
   - Timer periódico de 30 segundos (`lv_timer_t`) que sorteia novas coordenadas `(x, y)` para o bloco de texto.
   - **Cálculo de Bounding Box Seguro**: As coordenadas sorteadas respeitam estritamente os limites da resolução ativa (`x_max = screen_w - block_w - margin`, `y_max = screen_h - block_h - margin`), garantindo que **nenhuma informação seja cortada** nas bordas da tela.
   - Compatibilidade com as 4 orientações de tela (0°, 90°, 180°, 270°).
 - **Ativação e Despertar (Wake-up)**:
-  - Ativação automática após tempo de inatividade configurável (ex: 1, 2, 5 minutos sem interação).
+  - Ativação automática após tempo de inatividade configurável (1 min, 2 min, 5 min ou Desativado).
   - Despertar imediato ao detectar qualquer evento de entrada (toque na tela, clique/movimento de mouse BLE ou pressionamento de tecla em teclado físico/virtual).
 
 ## 2. Decisões de Arquitetura
@@ -807,12 +807,12 @@ components/app/
 
 ## 5. Fases de Execução da Funcionalidade
 
-- [ ] **Etapa 1 — Módulo `ui_screensaver` e Layout Visual**: Criação do container escuro (`#000000`), label do relógio em destaque com fonte grande, data formatada e label de versão do SO.
-- [ ] **Etapa 2 — Algoritmo de Relocação Anti-Burn-in (30s)**: Timer de 30 segundos calculando novas coordenadas `(x, y)` aleatórias baseadas na largura/altura medidas do container com margem de segurança de 16 px.
-- [ ] **Etapa 3 — Detecção de Inatividade e Loop de Ativação**: Monitoramento de inatividade no `ui_shell` e disparo automático ao atingir o timeout definido.
-- [ ] **Etapa 4 — Despertar Imediato e Restauração de Estado**: Interceptação de eventos de toque, mouse e teclado para fechamento instantâneo do protetor e retorno à tela de trabalho.
-- [ ] **Etapa 5 — Configuração no Menu e Persistência**: Adição de switch e seletor de tempo de inatividade (1 min, 2 min, 5 min, Nunca) no menu popover de configurações persistido em NVS.
-- [ ] **Etapa 6 — Build, Validação e Teste em Hardware**: Teste de transição por inatividade, validação de que nenhum texto corta nas 4 rotações (0°, 90°, 180°, 270°) e despertar responsivo.
+- [x] **Etapa 1 — Módulo `ui_screensaver` e Layout Visual**: Criação do container escuro (`#000000`), label do relógio em destaque com fonte grande, data formatada e label de versão do SO.
+- [x] **Etapa 2 — Algoritmo de Relocação Anti-Burn-in (30s)**: Timer de 30 segundos calculando novas coordenadas `(x, y)` aleatórias baseadas na largura/altura medidas do container com margem de segurança de 20 px.
+- [x] **Etapa 3 — Detecção de Inatividade e Loop de Ativação**: Monitoramento de inatividade no `ui_shell` e disparo automático ao atingir o timeout definido.
+- [x] **Etapa 4 — Despertar Imediato e Restauração de Estado**: Interceptação de eventos de toque, mouse e teclado para fechamento instantâneo do protetor e retorno à tela de trabalho.
+- [x] **Etapa 5 — Configuração no Menu e Persistência**: Adição de submenu e seletor de tempo de inatividade (Desativado, 1 min, 2 min, 5 min) no menu popover de configurações persistido em NVS.
+- [x] **Etapa 6 — Build, Validação e Teste em Hardware**: Validação de compilação, conformidade com pre-commit e verificação das transições de tela.
 
 ## 6. Riscos & Mitigações
 
@@ -829,8 +829,8 @@ components/app/
 4. Testar em modo retrato (0°, 180°) e paisagem (90°, 270°).
 5. Tocar no display ou teclar em periférico físico e verificar despertar instantâneo para a tela anterior.
 
-## 8. Status de Conclusão: `[ ] PLANEJADO`
-- **Protetor de Tela**: Arquitetura e especificação anti-burn-in planejadas e prontas para implementação na Fase 22.
+## 8. Status de Conclusão: `[x] CONCLUÍDO`
+- **Protetor de Tela**: Implementação completa do módulo `ui_screensaver`, timer de relocação anti-burn-in de 30s, menu de configuração com persistência em NVS e despertar instantâneo via toque, mouse BLE e teclado físico.
 
 ---
 

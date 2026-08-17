@@ -7,6 +7,7 @@
 #include "ui_files.h"
 #include "ui_bluetooth.h"
 #include "ui_terminal.h"
+#include "ui_screensaver.h"
 #include "ui_theme.h"
 #include "ui_font.h"
 #include "file_assoc.h"
@@ -22,6 +23,12 @@ lv_obj_t *bt_scr = nullptr;
 lv_obj_t *terminal_scr = nullptr;
 lv_obj_t *splash = nullptr;
 lv_obj_t *splash_label = nullptr;
+
+void inactivity_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    ui_screensaver_check_inactivity();
+}
 
 void splash_timer_cb(lv_timer_t *timer)
 {
@@ -72,6 +79,9 @@ void ui_shell_init(void)
     files_scr = ui_files_create();
     bt_scr = ui_bluetooth_create();
     terminal_scr = ui_terminal_create();
+    ui_screensaver_init();
+
+    lv_timer_create(inactivity_timer_cb, 1000, nullptr);
 
     splash_start();
 }

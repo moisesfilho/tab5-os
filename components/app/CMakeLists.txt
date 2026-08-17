@@ -12,6 +12,7 @@ idf_component_register(
         "ui_status.cpp"
         "ui_theme.cpp"
         "ui_bar.cpp"
+        "ui_screensaver.cpp"
         "terminal_cmd.cpp"
         "ssh_client.cpp"
         "imu_reader.cpp"

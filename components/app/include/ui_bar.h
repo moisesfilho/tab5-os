@@ -7,3 +7,4 @@
 
 void ui_bar_init(lv_obj_t *parent);
 void ui_bar_refresh_theme(void);
+void ui_bar_set_visible(bool visible);

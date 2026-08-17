@@ -14,6 +14,7 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 
 ## Features
 
+- **Anti-Burn-in Screensaver** — MIPI-DSI panel protection against image sticking, featuring a pure black background (`#000000`), prominent digital clock (`HH:MM:SS`), full date in Portuguese, OS version, intelligent random relocation every 30 seconds with safe bounding box across all 4 orientations (0°, 90°, 180°, 270°), temporary mouse cursor hiding, and instant wake-up on touch, keyboard, or mouse events
 - **Terminal App & Remote SSH Client** — Linux-style console shell integrated into the OS, with interactive prompt (`/sdcard $`), command history, support for core commands (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`) and **full SSH Client** (`ssh [user@]host [-p port]`) running on a dedicated asynchronous FreeRTOS task powered by `libssh`, VT100/xterm terminal emulation, masked password prompt, and robust ANSI/OSC sequence stripping
 - **Bluetooth Manager & Physical Keyboard (BLE HID)** — connection, pairing, and automatic reconnection with Bluetooth Low Energy peripherals (HOGP) like physical keyboards and combo touchpad/mice, direct keystroke injection into apps (e.g., Notes and Terminal), dynamic virtual keyboard hiding, and top-bar connection indicator
 - **Mouse & Touchpad BLE HID with Visual Pointer** — automatic detection of BLE mice and touchpads, high-visibility visual cursor on LVGL 9, navigation and clicks adapted to all screen orientations (0°, 90°, 180°, 270°), and tap-to-click gesture recognition
@@ -25,7 +26,7 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 - **Orientation Persistence** — display rotation is automatically saved to the SD card and restored upon boot
 - **OS-style top bar** — gear button, Wi-Fi status indicator, Bluetooth connection indicator, and live clock
 - **Auto-rotation by IMU** — BMI270 gravity vector drives `lv_display_set_rotation` (0/90/180/270) with debounce
-- **Settings menu** — quick panel integrated into the top bar with theme toggle (light/dark), IMU auto-rotation switch, and independent power switches for Wi-Fi and Bluetooth with NVS persistence, radio control, and smart auto-reconnection
+- **Settings menu** — quick panel integrated into the top bar with theme toggle (light/dark), screensaver timeout selector (Disabled, 1 min, 2 min, 5 min), IMU auto-rotation switch, and independent power switches for Wi-Fi and Bluetooth with NVS persistence, radio control, and smart auto-reconnection
 - **RTC clock** — RX8130CE seeds the system clock at boot (`settimeofday`)
 - **Latin-1 font** — custom Montserrat 14px with the full Latin-1 supplement, so accented characters render correctly
 
@@ -94,6 +95,8 @@ tab5-os/
 ├── components/
 │   ├── app/                  # UI + IMU + Terminal + WiFi/BT
 │   │   ├── ui_bar.cpp        # Top bar, settings menu, clock
+│   │   ├── ui_screensaver.cpp # Anti-burn-in screensaver with clock/date
+│   │   ├── ui_mouse.cpp      # BLE HID mouse/touchpad support & cursor
 │   │   ├── ui_terminal.cpp   # Terminal app (interactive console)
 │   │   ├── terminal_cmd.cpp  # Shell command execution engine
 │   │   ├── ssh_client.cpp    # Asynchronous SSH client (FreeRTOS task + libssh)

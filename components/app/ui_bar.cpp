@@ -3,12 +3,19 @@
 #include "ui_status.h"
 #include "ui_font.h"
 #include "ui_shell.h"
+#include "ui_screensaver.h"
 #include "imu_reader.h"
 #include "wifi_mgr.h"
 #include "bt_mgr.h"
 #include <time.h>
 
 namespace {
+
+enum menu_page_t {
+    MENU_PAGE_MAIN,
+    MENU_PAGE_THEME,
+    MENU_PAGE_SCREENSAVER,
+};
 
 lv_obj_t *bar = nullptr;
 lv_obj_t *gear = nullptr;
@@ -21,13 +28,22 @@ lv_obj_t *menu_panel = nullptr;
 lv_obj_t *menu_header_label = nullptr;
 lv_obj_t *menu_row_theme = nullptr;
 lv_obj_t *menu_row_theme_label = nullptr;
-lv_obj_t *menu_chevron_label = nullptr;
+lv_obj_t *menu_row_ss = nullptr;
+lv_obj_t *menu_row_ss_label = nullptr;
 lv_obj_t *menu_row_light = nullptr;
 lv_obj_t *menu_row_light_label = nullptr;
 lv_obj_t *menu_row_dark = nullptr;
 lv_obj_t *menu_row_dark_label = nullptr;
 lv_obj_t *menu_row_back = nullptr;
 lv_obj_t *menu_row_back_label = nullptr;
+lv_obj_t *menu_row_ss_off = nullptr;
+lv_obj_t *menu_row_ss_off_label = nullptr;
+lv_obj_t *menu_row_ss_1m = nullptr;
+lv_obj_t *menu_row_ss_1m_label = nullptr;
+lv_obj_t *menu_row_ss_2m = nullptr;
+lv_obj_t *menu_row_ss_2m_label = nullptr;
+lv_obj_t *menu_row_ss_5m = nullptr;
+lv_obj_t *menu_row_ss_5m_label = nullptr;
 lv_obj_t *menu_row_rotation_label = nullptr;
 lv_obj_t *menu_row_rotation_switch = nullptr;
 lv_obj_t *menu_row_wifi_label = nullptr;
@@ -57,13 +73,22 @@ void close_menu(void)
     menu_header_label = nullptr;
     menu_row_theme = nullptr;
     menu_row_theme_label = nullptr;
-    menu_chevron_label = nullptr;
+    menu_row_ss = nullptr;
+    menu_row_ss_label = nullptr;
     menu_row_light = nullptr;
     menu_row_light_label = nullptr;
     menu_row_dark = nullptr;
     menu_row_dark_label = nullptr;
     menu_row_back = nullptr;
     menu_row_back_label = nullptr;
+    menu_row_ss_off = nullptr;
+    menu_row_ss_off_label = nullptr;
+    menu_row_ss_1m = nullptr;
+    menu_row_ss_1m_label = nullptr;
+    menu_row_ss_2m = nullptr;
+    menu_row_ss_2m_label = nullptr;
+    menu_row_ss_5m = nullptr;
+    menu_row_ss_5m_label = nullptr;
     menu_row_rotation_label = nullptr;
     menu_row_rotation_switch = nullptr;
     menu_row_wifi_label = nullptr;
@@ -112,15 +137,16 @@ void menu_row_create(const char *text, lv_event_cb_t cb, lv_obj_t **out_row, lv_
     }
 
     if (chevron) {
-        menu_chevron_label = lv_label_create(row);
-        lv_label_set_text(menu_chevron_label, LV_SYMBOL_RIGHT);
-        lv_obj_set_align(menu_chevron_label, LV_ALIGN_RIGHT_MID);
-        lv_obj_set_x(menu_chevron_label, -14);
-        lv_obj_set_style_text_font(menu_chevron_label, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_t *ch_label = lv_label_create(row);
+        lv_label_set_text(ch_label, LV_SYMBOL_RIGHT);
+        lv_obj_set_align(ch_label, LV_ALIGN_RIGHT_MID);
+        lv_obj_set_x(ch_label, -14);
+        lv_obj_set_style_text_font(ch_label, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_color(ch_label, lv_color_hex(ui_theme_get()->text_muted), 0);
     }
 }
 
-/* Reestiliza um item de tema: o ativo ganha fundo accent_soft e texto
+/* Reestiliza um item de tema/opcao: o ativo ganha fundo accent_soft e texto
  * accent (indicador tipo radio); o inativo fica com texto normal. */
 void apply_theme_item(lv_obj_t *row, lv_obj_t *label, bool active)
 {
@@ -149,8 +175,8 @@ void apply_menu_theme(void)
     if (menu_row_theme_label != nullptr) {
         lv_obj_set_style_text_color(menu_row_theme_label, lv_color_hex(pal->text), 0);
     }
-    if (menu_chevron_label != nullptr) {
-        lv_obj_set_style_text_color(menu_chevron_label, lv_color_hex(pal->text_muted), 0);
+    if (menu_row_ss_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_ss_label, lv_color_hex(pal->text), 0);
     }
     if (menu_row_back_label != nullptr) {
         lv_obj_set_style_text_color(menu_row_back_label, lv_color_hex(pal->text_muted), 0);
@@ -161,6 +187,21 @@ void apply_menu_theme(void)
     if (menu_row_dark_label != nullptr && menu_row_dark != nullptr) {
         apply_theme_item(menu_row_dark, menu_row_dark_label, ui_theme_is_dark());
     }
+
+    uint32_t current_ss = ui_screensaver_get_timeout();
+    if (menu_row_ss_off_label != nullptr && menu_row_ss_off != nullptr) {
+        apply_theme_item(menu_row_ss_off, menu_row_ss_off_label, current_ss == 0);
+    }
+    if (menu_row_ss_1m_label != nullptr && menu_row_ss_1m != nullptr) {
+        apply_theme_item(menu_row_ss_1m, menu_row_ss_1m_label, current_ss == 60);
+    }
+    if (menu_row_ss_2m_label != nullptr && menu_row_ss_2m != nullptr) {
+        apply_theme_item(menu_row_ss_2m, menu_row_ss_2m_label, current_ss == 120);
+    }
+    if (menu_row_ss_5m_label != nullptr && menu_row_ss_5m != nullptr) {
+        apply_theme_item(menu_row_ss_5m, menu_row_ss_5m_label, current_ss == 300);
+    }
+
     if (menu_row_rotation_label != nullptr) {
         lv_obj_set_style_text_color(menu_row_rotation_label, lv_color_hex(pal->text), 0);
     }
@@ -190,12 +231,18 @@ void apply_menu_theme(void)
     }
 }
 
-void open_menu(bool theme_page);
+void open_menu(menu_page_t page);
 
 void menu_theme_cb(lv_event_t *event)
 {
     (void)event;
-    open_menu(true);
+    open_menu(MENU_PAGE_THEME);
+}
+
+void menu_screensaver_cb(lv_event_t *event)
+{
+    (void)event;
+    open_menu(MENU_PAGE_SCREENSAVER);
 }
 
 void menu_light_cb(lv_event_t *event)
@@ -212,10 +259,38 @@ void menu_dark_cb(lv_event_t *event)
     close_menu();
 }
 
+void menu_ss_off_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_screensaver_set_timeout(0);
+    close_menu();
+}
+
+void menu_ss_1m_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_screensaver_set_timeout(60);
+    close_menu();
+}
+
+void menu_ss_2m_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_screensaver_set_timeout(120);
+    close_menu();
+}
+
+void menu_ss_5m_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_screensaver_set_timeout(300);
+    close_menu();
+}
+
 void menu_back_cb(lv_event_t *event)
 {
     (void)event;
-    open_menu(false);
+    open_menu(MENU_PAGE_MAIN);
 }
 
 /* Repassa o estado do switch de rotacao para o modulo do IMU. */
@@ -344,12 +419,12 @@ void menu_bluetooth_row_create(void)
 void gear_click_cb(lv_event_t *event)
 {
     (void)event;
-    open_menu(false);
+    open_menu(MENU_PAGE_MAIN);
 }
 
 /* Popover ancorado sob a engrenagem, com overlay transparente que fecha
- * ao tocar fora. `theme_page` escolhe a pagina inicial do painel. */
-void open_menu(bool theme_page)
+ * ao tocar fora. `page` escolhe a pagina inicial do painel. */
+void open_menu(menu_page_t page)
 {
     close_menu();
 
@@ -379,16 +454,24 @@ void open_menu(bool theme_page)
     lv_obj_set_flex_flow(menu_panel, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(menu_panel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    if (!theme_page) {
+    if (page == MENU_PAGE_MAIN) {
         menu_header_create("Configuração");
         menu_row_create("Tema", menu_theme_cb, &menu_row_theme, &menu_row_theme_label, true);
+        menu_row_create("Protetor de Tela", menu_screensaver_cb, &menu_row_ss, &menu_row_ss_label, true);
         menu_rotation_row_create();
         menu_wifi_row_create();
         menu_bluetooth_row_create();
-    } else {
+    } else if (page == MENU_PAGE_THEME) {
         menu_header_create("Tema");
         menu_row_create("Claro", menu_light_cb, &menu_row_light, &menu_row_light_label, false);
         menu_row_create("Escuro", menu_dark_cb, &menu_row_dark, &menu_row_dark_label, false);
+        menu_row_create("Voltar", menu_back_cb, &menu_row_back, &menu_row_back_label, false);
+    } else if (page == MENU_PAGE_SCREENSAVER) {
+        menu_header_create("Protetor de Tela");
+        menu_row_create("Desativado", menu_ss_off_cb, &menu_row_ss_off, &menu_row_ss_off_label, false);
+        menu_row_create("1 minuto", menu_ss_1m_cb, &menu_row_ss_1m, &menu_row_ss_1m_label, false);
+        menu_row_create("2 minutos", menu_ss_2m_cb, &menu_row_ss_2m, &menu_row_ss_2m_label, false);
+        menu_row_create("5 minutos", menu_ss_5m_cb, &menu_row_ss_5m, &menu_row_ss_5m_label, false);
         menu_row_create("Voltar", menu_back_cb, &menu_row_back, &menu_row_back_label, false);
     }
 
@@ -504,4 +587,18 @@ void ui_bar_init(lv_obj_t *parent)
     clock_update();
 
     ui_bar_refresh_theme();
+}
+
+void ui_bar_set_visible(bool visible)
+{
+    if (bar == nullptr) {
+        return;
+    }
+
+    if (visible) {
+        lv_obj_clear_flag(bar, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        close_menu();
+        lv_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN);
+    }
 }

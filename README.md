@@ -14,6 +14,7 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 
 ## Funcionalidades
 
+- **Protetor de Tela Anti-Burn-in** — preservação do painel MIPI-DSI contra retenção de imagem (*burn-in*), com tela em fundo 100% preto (`#000000`), relógio digital em destaque (`HH:MM:SS`), data completa em português, versão do SO, reposicionamento aleatório a cada 30 segundos com *bounding box* seguro para todas as 4 orientações, ocultação temporária do cursor do mouse e despertar imediato ao toque na tela, teclado ou mouse
 - **Aplicativo Terminal & Cliente SSH Remoto** — shell de console estilo Linux integrado ao sistema, com prompt interativo (`/sdcard $`), histórico de comandos, suporte aos comandos essenciais (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`) e **Cliente SSH completo** (`ssh [user@]host [-p porta]`) executado em task FreeRTOS assíncrona dedicada com `libssh`, emulação de terminal VT100/xterm, prompt protegido de senha e filtragem robusta de sequências ANSI/OSC
 - **Gerenciador de Bluetooth & Teclado Físico (BLE HID)** — suporte a conexão, pareamento e auto-reconexão com periféricos Bluetooth Low Energy (HOGP), como teclados físicos e mouses/touchpads integrados, com injeção direta de digitação nos aplicativos (ex: Notas e Terminal), ocultação dinâmica do teclado virtual e indicador de conexão na barra superior
 - **Suporte a Mouse & Touchpad BLE HID com Cursor Visual** — identificação automática de mouses e touchpads BLE, cursor visual de alta visibilidade no LVGL 9, navegação e clique com adaptação completa a todas as rotações da tela (0°, 90°, 180°, 270°) e detecção de gestos de toque rápido (tap-to-click)
@@ -25,7 +26,7 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 - **Persistência de Orientação** — a posição da tela é persistida automaticamente no cartão SD e restaurada no boot
 - **Barra superior estilo SO** — botão de engrenagem, ícone de status Wi-Fi, ícone de status Bluetooth e relógio ao vivo
 - **Rotação automática por IMU** — o vetor de gravidade do BMI270 aciona `lv_display_set_rotation` (0/90/180/270) com debounce
-- **Menu de configurações** — painel rápido integrado à barra superior com alternância de tema (claro/escuro), controle de rotação por IMU e interruptores para ligar/desligar Wi-Fi e Bluetooth com persistência em NVS, controle de rádio e auto-reconexão inteligente
+- **Menu de configurações** — painel rápido integrado à barra superior com alternância de tema (claro/escuro), seletor de timeout do protetor de tela (Desativado, 1 min, 2 min, 5 min), controle de rotação por IMU e interruptores para ligar/desligar Wi-Fi e Bluetooth com persistência em NVS, controle de rádio e auto-reconexão inteligente
 - **Relógio RTC** — RX8130CE semeia o relógio do sistema no boot (`settimeofday`)
 - **Fonte Latin-1** — Montserrat 14px custom com o suplemento Latin-1 completo, para caracteres acentuados renderizarem corretamente
 
@@ -94,6 +95,8 @@ tab5-os/
 ├── components/
 │   ├── app/                  # UI + IMU + Terminal + WiFi/BT
 │   │   ├── ui_bar.cpp        # Barra superior, menu de configurações, relógio
+│   │   ├── ui_screensaver.cpp # Protetor de tela anti-burn-in com relógio/data
+│   │   ├── ui_mouse.cpp      # Suporte e cursor para mouse/touchpad BLE HID
 │   │   ├── ui_terminal.cpp   # Aplicativo Terminal (console interativo)
 │   │   ├── terminal_cmd.cpp  # Motor de execução de comandos shell
 │   │   ├── ssh_client.cpp    # Cliente SSH assíncrono (task FreeRTOS + libssh)

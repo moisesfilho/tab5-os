@@ -1,4 +1,5 @@
 #include "ui_mouse.h"
+#include "ui_screensaver.h"
 #include "lvgl.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -114,6 +115,12 @@ void mouse_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 
     if (click_now && s_click_step == 0) {
         s_click_step = 1;
+    }
+
+    if (dx != 0 || dy != 0 || btn || click_now) {
+        if (ui_screensaver_is_active()) {
+            ui_screensaver_wake_up();
+        }
     }
 
     lv_display_t *disp = lv_display_get_default();
@@ -287,6 +294,19 @@ void ui_mouse_set_connected(bool connected)
         lv_async_call(set_cursor_visible_async, arg);
     }
     ESP_LOGI(TAG, "Mouse %s (cursor %s)", connected ? "CONECTADO" : "DESCONECTADO", connected ? "VISIVEL" : "OCULTO");
+}
+
+void ui_mouse_set_cursor_visible(bool visible)
+{
+    if (s_cursor_obj == nullptr) {
+        return;
+    }
+
+    if (visible && s_mouse_connected) {
+        lv_obj_remove_flag(s_cursor_obj, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_cursor_obj, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 bool ui_mouse_is_connected(void)

@@ -1,4 +1,5 @@
 #include "ui_keyboard.h"
+#include "ui_screensaver.h"
 #include "ui_theme.h"
 #include "ui_font.h"
 #include "ui_shell.h"
@@ -324,6 +325,10 @@ static lv_obj_t *find_textarea_recursive(lv_obj_t *parent)
 void ui_keyboard_inject_char(char c)
 {
     if (bsp_display_lock(pdMS_TO_TICKS(50))) {
+        if (ui_screensaver_is_active()) {
+            ui_screensaver_wake_up();
+        }
+
         lv_obj_t *target = kb_target;
         if (target == nullptr || !lv_obj_is_valid(target)) {
             target = find_textarea_recursive(lv_screen_active());
@@ -355,6 +360,10 @@ void ui_keyboard_inject_char(char c)
 void ui_keyboard_inject_key(uint32_t key)
 {
     if (bsp_display_lock(pdMS_TO_TICKS(50))) {
+        if (ui_screensaver_is_active()) {
+            ui_screensaver_wake_up();
+        }
+
         lv_obj_t *target = kb_target;
         if (target == nullptr || !lv_obj_is_valid(target)) {
             target = find_textarea_recursive(lv_screen_active());
