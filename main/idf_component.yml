@@ -4,6 +4,7 @@ dependencies:
   espressif/esp_lvgl_port: "^2"
   espressif/esp_hosted: "^2.11.0"
   espressif/esp_wifi_remote: "^1.6.4"
+  david-cermak/libssh: "*"
 
 overrides:
   - espressif/m5stack_tab5:

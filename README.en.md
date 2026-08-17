@@ -14,7 +14,7 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 
 ## Features
 
-- **Terminal App (Interactive Shell)** — Linux-style console shell integrated into the OS, with interactive prompt (`/sdcard $`), instant Enter-key command execution, command history, and support for core commands (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`)
+- **Terminal App & Remote SSH Client** — Linux-style console shell integrated into the OS, with interactive prompt (`/sdcard $`), command history, support for core commands (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`) and **full SSH Client** (`ssh [user@]host [-p port]`) running on a dedicated asynchronous FreeRTOS task powered by `libssh`, VT100/xterm terminal emulation, masked password prompt, and robust ANSI/OSC sequence stripping
 - **Bluetooth Manager & Physical Keyboard (BLE HID)** — connection, pairing, and automatic reconnection with Bluetooth Low Energy peripherals (HOGP) like physical keyboards and combo touchpad/mice, direct keystroke injection into apps (e.g., Notes and Terminal), dynamic virtual keyboard hiding, and top-bar connection indicator
 - **Mouse & Touchpad BLE HID with Visual Pointer** — automatic detection of BLE mice and touchpads, high-visibility visual cursor on LVGL 9, navigation and clicks adapted to all screen orientations (0°, 90°, 180°, 270°), and tap-to-click gesture recognition
 - **File Manager ("Arquivos")** — SD card directory and file browser supporting interactive folder navigation, two view modes (Grid icons or Detailed list), and automatic opening of associated file types
@@ -96,6 +96,7 @@ tab5-os/
 │   │   ├── ui_bar.cpp        # Top bar, settings menu, clock
 │   │   ├── ui_terminal.cpp   # Terminal app (interactive console)
 │   │   ├── terminal_cmd.cpp  # Shell command execution engine
+│   │   ├── ssh_client.cpp    # Asynchronous SSH client (FreeRTOS task + libssh)
 │   │   ├── ui_keyboard.cpp   # Virtual keyboard + PT-BR accents page
 │   │   ├── ui_status.cpp     # Orientation badge
 │   │   ├── ui_theme.cpp      # Light/dark palettes

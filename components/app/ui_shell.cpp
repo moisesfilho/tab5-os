@@ -149,6 +149,7 @@ void ui_shell_open_terminal(void)
 
 void ui_shell_close_terminal(void)
 {
+    ui_terminal_on_close();
     ui_keyboard_hide();
     lv_disp_load_scr(desktop_scr);
 }

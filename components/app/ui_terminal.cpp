@@ -5,11 +5,17 @@
 #include "ui_bar.h"
 #include "ui_font.h"
 #include "terminal_cmd.h"
+#include "ssh_client.h"
+#include "wifi_mgr.h"
 
 #include <string>
 #include <algorithm>
 
 namespace {
+
+enum TermMode { TERM_MODE_LOCAL = 0, TERM_MODE_SSH_PASSWORD, TERM_MODE_SSH_SESSION };
+
+TermMode s_term_mode = TERM_MODE_LOCAL;
 
 lv_obj_t *term_scr = nullptr;
 lv_obj_t *term_bar = nullptr;
@@ -44,6 +50,75 @@ void trim_history_if_needed(void)
     }
 }
 
+enum AnsiState { ANSI_STATE_NORMAL, ANSI_STATE_ESC, ANSI_STATE_CSI, ANSI_STATE_OSC, ANSI_STATE_OSC_ESC };
+
+static AnsiState s_ansi_state = ANSI_STATE_NORMAL;
+
+std::string strip_ansi_and_normalize(const char *data, size_t len)
+{
+    std::string out;
+    out.reserve(len);
+
+    for (size_t i = 0; i < len; ++i) {
+        char c = data[i];
+
+        switch (s_ansi_state) {
+        case ANSI_STATE_NORMAL:
+            if (c == '\x1B') {
+                s_ansi_state = ANSI_STATE_ESC;
+            } else if (c == '\r') {
+                if (i + 1 < len && data[i + 1] == '\n') {
+                    continue; // Skip \r in \r\n
+                }
+                continue; // Skip isolated \r
+            } else if (c == '\x07' || c == '\0') {
+                continue; // Skip control chars bell/null
+            } else {
+                out.push_back(c);
+            }
+            break;
+
+        case ANSI_STATE_ESC:
+            if (c == '[') {
+                s_ansi_state = ANSI_STATE_CSI;
+            } else if (c == ']' || c == '_' || c == 'P' || c == '^') {
+                s_ansi_state = ANSI_STATE_OSC;
+            } else {
+                s_ansi_state = ANSI_STATE_NORMAL;
+            }
+            break;
+
+        case ANSI_STATE_CSI:
+            // Sequências CSI terminam com bytes no intervalo 0x40-0x7E (@A-Z[\]^_`a-z{|}~)
+            if (static_cast<unsigned char>(c) >= 0x40 && static_cast<unsigned char>(c) <= 0x7E) {
+                s_ansi_state = ANSI_STATE_NORMAL;
+            }
+            break;
+
+        case ANSI_STATE_OSC:
+            if (c == '\x07') {
+                s_ansi_state = ANSI_STATE_NORMAL;
+            } else if (c == '\x1B') {
+                s_ansi_state = ANSI_STATE_OSC_ESC;
+            }
+            break;
+
+        case ANSI_STATE_OSC_ESC:
+            if (c == '\\') {
+                s_ansi_state = ANSI_STATE_NORMAL;
+            } else if (c == '[') {
+                s_ansi_state = ANSI_STATE_CSI;
+            } else if (c == ']') {
+                s_ansi_state = ANSI_STATE_OSC;
+            } else {
+                s_ansi_state = ANSI_STATE_NORMAL;
+            }
+            break;
+        }
+    }
+    return out;
+}
+
 void print_new_prompt(void)
 {
     term_history += current_cwd + " $ ";
@@ -58,22 +133,89 @@ void print_new_prompt(void)
 
 void reset_terminal(void)
 {
+    if (ssh_client_is_active()) {
+        ssh_client_disconnect();
+    }
+    s_term_mode = TERM_MODE_LOCAL;
+    s_ansi_state = ANSI_STATE_NORMAL;
     term_history.clear();
     print_new_prompt();
 }
 
 void init_terminal_banner(void)
 {
-    term_history = "Tab5-OS Terminal v1.0\n"
+    term_history = "Tab5-OS Terminal v1.1 (SSH Support)\n"
                    "Digite 'help' para listar os comandos disponiveis.\n\n";
     print_new_prompt();
 }
+
+void on_ssh_rx(const char *data, size_t len)
+{
+    if (term_ta == nullptr || data == nullptr || len == 0) {
+        return;
+    }
+    std::string clean = strip_ansi_and_normalize(data, len);
+    if (clean.empty()) {
+        return;
+    }
+    term_history += clean;
+    trim_history_if_needed();
+    prompt_min_index = term_history.size();
+    is_processing_cmd = true;
+    lv_textarea_set_text(term_ta, term_history.c_str());
+    lv_textarea_set_cursor_pos(term_ta, LV_TEXTAREA_CURSOR_LAST);
+    is_processing_cmd = false;
+}
+
+void on_ssh_state(ssh_client_state_t state, const char *msg)
+{
+    if (term_ta == nullptr) {
+        return;
+    }
+
+    if (state == SSH_CLIENT_CONNECTING) {
+        if (msg != nullptr) {
+            term_history += std::string(msg) + "\n";
+        }
+    } else if (state == SSH_CLIENT_NEED_PASSWORD) {
+        s_term_mode = TERM_MODE_SSH_PASSWORD;
+        term_history += "Password: ";
+    } else if (state == SSH_CLIENT_AUTHENTICATING) {
+        if (msg != nullptr) {
+            term_history += std::string(msg) + "\n";
+        }
+    } else if (state == SSH_CLIENT_CONNECTED) {
+        s_term_mode = TERM_MODE_SSH_SESSION;
+        term_history += "Sessao SSH estabelecida.\n";
+    } else if (state == SSH_CLIENT_ERROR || state == SSH_CLIENT_DISCONNECTED) {
+        if (msg != nullptr) {
+            term_history += std::string(msg) + "\n";
+        }
+        s_term_mode = TERM_MODE_LOCAL;
+        term_history += current_cwd + " $ ";
+    }
+
+    trim_history_if_needed();
+    prompt_min_index = term_history.size();
+    is_processing_cmd = true;
+    lv_textarea_set_text(term_ta, term_history.c_str());
+    lv_textarea_set_cursor_pos(term_ta, LV_TEXTAREA_CURSOR_LAST);
+    is_processing_cmd = false;
+}
+
+static uint32_t s_last_exec_time = 0;
 
 void execute_current_command(void)
 {
     if (term_ta == nullptr || is_processing_cmd) {
         return;
     }
+
+    uint32_t now = lv_tick_get();
+    if (now - s_last_exec_time < 100) {
+        return;
+    }
+    s_last_exec_time = now;
 
     const char *full_text = lv_textarea_get_text(term_ta);
     if (full_text == nullptr) {
@@ -91,8 +233,64 @@ void execute_current_command(void)
         input_line.pop_back();
     }
 
+    if (s_term_mode == TERM_MODE_SSH_PASSWORD) {
+        term_history += "\n";
+        prompt_min_index = term_history.size();
+        is_processing_cmd = true;
+        lv_textarea_set_text(term_ta, term_history.c_str());
+        lv_textarea_set_cursor_pos(term_ta, LV_TEXTAREA_CURSOR_LAST);
+        is_processing_cmd = false;
+
+        ssh_client_send_password(input_line.c_str());
+        return;
+    }
+
+    if (s_term_mode == TERM_MODE_SSH_SESSION) {
+        is_processing_cmd = true;
+        lv_textarea_set_text(term_ta, term_history.c_str());
+        lv_textarea_set_cursor_pos(term_ta, LV_TEXTAREA_CURSOR_LAST);
+        is_processing_cmd = false;
+
+        std::string to_send = input_line + "\n";
+        ssh_client_send_data(to_send.c_str(), to_send.size());
+        return;
+    }
+
     if (input_line == "clear") {
         reset_terminal();
+        return;
+    }
+
+    std::string ssh_user, ssh_host, ssh_err;
+    int ssh_port = 22;
+    if (terminal_parse_ssh_cmd(input_line, ssh_user, ssh_host, ssh_port, ssh_err)) {
+        term_history += input_line + "\n";
+        if (!ssh_err.empty()) {
+            term_history += ssh_err;
+            print_new_prompt();
+            return;
+        }
+
+        wifi_status_t wf_st = {};
+        wifi_mgr_get_status(&wf_st);
+        if (!wf_st.connected) {
+            term_history += "ssh: Wi-Fi nao esta conectado. Habilite e conecte-se a uma rede primeiro.\n";
+            print_new_prompt();
+            return;
+        }
+
+        trim_history_if_needed();
+        prompt_min_index = term_history.size();
+        is_processing_cmd = true;
+        lv_textarea_set_text(term_ta, term_history.c_str());
+        lv_textarea_set_cursor_pos(term_ta, LV_TEXTAREA_CURSOR_LAST);
+        is_processing_cmd = false;
+
+        esp_err_t err = ssh_client_connect(ssh_user.c_str(), ssh_host.c_str(), ssh_port, on_ssh_rx, on_ssh_state);
+        if (err != ESP_OK) {
+            term_history += "ssh: erro ao iniciar conexao.\n";
+            print_new_prompt();
+        }
         return;
     }
 
@@ -221,6 +419,14 @@ void apply_terminal_theme(void)
 }
 
 } // namespace
+
+void ui_terminal_on_close(void)
+{
+    if (ssh_client_is_active()) {
+        ssh_client_disconnect();
+    }
+    s_term_mode = TERM_MODE_LOCAL;
+}
 
 void ui_terminal_apply_layout(void)
 {

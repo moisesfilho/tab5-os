@@ -337,6 +337,7 @@ std::string cmd_help(void)
            "  touch <arq...>    - Cria arquivos vazios\n"
            "  cat <arquivo...>  - Exibe o conteúdo de arquivos de texto\n"
            "  echo [texto...]   - Imprime texto na tela\n"
+           "  ssh [user@]host   - Conecta via SSH (-p port)\n"
            "  clear             - Limpa o terminal\n"
            "  whoami            - Exibe o usuário atual\n"
            "  uname             - Exibe informações do sistema\n"
@@ -344,6 +345,54 @@ std::string cmd_help(void)
 }
 
 } // namespace
+
+bool terminal_parse_ssh_cmd(const std::string &line, std::string &user, std::string &host, int &port,
+                            std::string &err_msg)
+{
+    std::vector<std::string> args = tokenize(line);
+    if (args.empty() || args[0] != "ssh") {
+        return false;
+    }
+
+    user = "root";
+    host = "";
+    port = 22;
+    err_msg = "";
+
+    if (args.size() < 2) {
+        err_msg = "Uso: ssh [usuario@]servidor [-p porta]\n";
+        return true;
+    }
+
+    std::string target = args[1];
+    size_t at_pos = target.find('@');
+    if (at_pos != std::string::npos) {
+        user = target.substr(0, at_pos);
+        host = target.substr(at_pos + 1);
+    } else {
+        host = target;
+    }
+
+    if (host.empty()) {
+        err_msg = "ssh: servidor destino inválido.\n";
+        return true;
+    }
+
+    for (size_t i = 2; i < args.size(); ++i) {
+        if (args[i] == "-p" && i + 1 < args.size()) {
+            char *endptr = nullptr;
+            long val = std::strtol(args[i + 1].c_str(), &endptr, 10);
+            if (endptr == args[i + 1].c_str() || *endptr != '\0' || val <= 0 || val > 65535) {
+                err_msg = "ssh: porta inválida.\n";
+                return true;
+            }
+            port = static_cast<int>(val);
+            ++i;
+        }
+    }
+
+    return true;
+}
 
 std::string terminal_exec(const std::string &line, std::string &cwd)
 {
