@@ -50,6 +50,44 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: /language:cpp
+          upload: false
+          output: ../results
+
+      - name: Filter Third-Party Dependencies from SARIF
+        run: |
+          python3 -c "
+          import json, glob, os
+
+          for sarif_file in set(glob.glob('../results/**/*.sarif', recursive=True) + glob.glob('../results/*.sarif')):
+              if not os.path.isfile(sarif_file):
+                  continue
+              with open(sarif_file, 'r', encoding='utf-8') as f:
+                  data = json.load(f)
+
+              for run in data.get('runs', []):
+                  results = run.get('results', [])
+                  filtered = []
+                  for r in results:
+                      is_third_party = False
+                      for loc in r.get('locations', []):
+                          uri = loc.get('physicalLocation', {}).get('artifactLocation', {}).get('uri', '')
+                          if 'managed_components' in uri or uri.startswith('/tmp/esp/') or 'esp-idf' in uri:
+                              is_third_party = True
+                              break
+                      if not is_third_party:
+                          filtered.append(r)
+                  print(f'SARIF {sarif_file}: filtrados {len(results) - len(filtered)} alertas de dependencias ({len(filtered)} mantidos do projeto)')
+                  run['results'] = filtered
+
+              with open(sarif_file, 'w', encoding='utf-8') as f:
+                  json.dump(data, f, indent=2)
+          "
+
+      - name: Upload Filtered SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ../results
+          category: /language:cpp
 
       - name: Generate CodeQL Summary
         if: always()
