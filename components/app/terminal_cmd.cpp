@@ -87,22 +87,6 @@ std::string resolve_path(const std::string &cwd, const std::string &path)
     return normalize_path(cwd + "/" + path);
 }
 
-/* format_size: converte bytes para representacao humana (B/KB/MB). */
-/* CodeQL: cpp/unused-static-function - false positive, usada em cmd_ls. */
-// NOLINT(misc-unused-using-decls)
-std::string format_size(size_t size)
-{
-    char buf[32];
-    if (size < 1024) {
-        std::snprintf(buf, sizeof(buf), "%5u B", (unsigned int)size);
-    } else if (size < 1024 * 1024) {
-        std::snprintf(buf, sizeof(buf), "%5.1f KB", (float)size / 1024.0F);
-    } else {
-        std::snprintf(buf, sizeof(buf), "%5.1f MB", (float)size / (1024.0F * 1024.0F));
-    }
-    return std::string(buf);
-}
-
 struct DirEntry {
     std::string name;
     bool is_dir;
@@ -157,7 +141,15 @@ std::string cmd_ls(const std::vector<std::string> &args, const std::string &cwd)
         if (item.is_dir) {
             out << "<DIR>        " << item.name << "/\n";
         } else {
-            out << format_size(item.size) << "  " << item.name << "\n";
+            char size_buf[32];
+            if (item.size < 1024) {
+                std::snprintf(size_buf, sizeof(size_buf), "%5u B", (unsigned int)item.size);
+            } else if (item.size < 1024 * 1024) {
+                std::snprintf(size_buf, sizeof(size_buf), "%5.1f KB", (float)item.size / 1024.0F);
+            } else {
+                std::snprintf(size_buf, sizeof(size_buf), "%5.1f MB", (float)item.size / (1024.0F * 1024.0F));
+            }
+            out << size_buf << "  " << item.name << "\n";
         }
     }
     return out.str();

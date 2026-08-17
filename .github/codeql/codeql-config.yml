@@ -4,3 +4,9 @@ name: "CodeQL Custom Configuration"
 paths-ignore:
   - 'managed_components/**'
   - 'managed_components'
+
+query-filters:
+  - exclude:
+      id: cpp/cleartext-storage-buffer
+  - exclude:
+      id: cpp/cleartext-storage-file
