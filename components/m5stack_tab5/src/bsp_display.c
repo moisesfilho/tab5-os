@@ -450,14 +450,14 @@ esp_err_t bsp_touch_new(const bsp_touch_config_t *config, esp_lcd_touch_handle_t
 }
 
 #if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
-static lv_indev_t *bsp_display_indev_touch_init(lv_display_t *disp)
+static lv_indev_t *bsp_display_indev_touch_init(lv_display_t *target_disp)
 {
     BSP_ERROR_CHECK_RETURN_NULL(bsp_touch_new(NULL, &tp));
     assert(tp);
 
     /* Add touch input (for selected screen) */
     const lvgl_port_touch_cfg_t touch_cfg = {
-        .disp = disp,
+        .disp = target_disp,
         .handle = tp,
     };
 
@@ -512,9 +512,9 @@ lv_indev_t *bsp_display_get_input_dev(void)
     return disp_indev_touch;
 }
 
-void bsp_display_rotate(lv_display_t *disp, lv_disp_rotation_t rotation)
+void bsp_display_rotate(lv_display_t *target_disp, lv_disp_rotation_t rotation)
 {
-    lv_disp_set_rotation(disp, rotation);
+    lv_disp_set_rotation(target_disp, rotation);
 }
 
 bool bsp_display_lock(uint32_t timeout_ms)

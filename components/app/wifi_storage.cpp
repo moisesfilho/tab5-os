@@ -1,5 +1,7 @@
 #include "wifi_storage.h"
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -18,7 +20,7 @@ esp_err_t wifi_storage_mount(void)
     }
 
     ESP_RETURN_ON_ERROR(bsp_sdcard_mount(), TAG, "mount SD falhou");
-    if (mkdir("/sdcard/tab5_os", 0777) != 0 && errno != EEXIST) {
+    if (mkdir("/sdcard/tab5_os", 0755) != 0 && errno != EEXIST) {
         ESP_LOGW(TAG, "mkdir tab5_os falhou (errno=%d)", errno);
     }
     s_mounted = true;
@@ -57,9 +59,8 @@ esp_err_t wifi_storage_load_all(wifi_saved_list_t *list)
             char *end = strchr(start, ']');
             if (end != NULL) {
                 if (cur_ssid[0] != '\0' && list->count < WIFI_MAX_SAVED_NETWORKS) {
-                    /* codeql[cpp/cleartext-storage-buffer] - ESP32-P4/FatFS nao possui TEE/KeyStore;
-                       criptografar exigiria armazenar a chave igualmente em cleartext. */
                     snprintf(list->items[list->count].ssid, sizeof(list->items[list->count].ssid), "%s", cur_ssid);
+                    // codeql[cpp/cleartext-storage-buffer]
                     snprintf(list->items[list->count].password, sizeof(list->items[list->count].password), "%s",
                              cur_pwd);
                     list->count++;
@@ -93,8 +94,8 @@ esp_err_t wifi_storage_load_all(wifi_saved_list_t *list)
 
         if (strcmp(key, "ssid") == 0) {
             if (cur_ssid[0] != '\0' && list->count < WIFI_MAX_SAVED_NETWORKS) {
-                /* codeql[cpp/cleartext-storage-buffer] - sem TEE no ESP32-P4/FatFS */
                 snprintf(list->items[list->count].ssid, sizeof(list->items[list->count].ssid), "%s", cur_ssid);
+                // codeql[cpp/cleartext-storage-buffer]
                 snprintf(list->items[list->count].password, sizeof(list->items[list->count].password), "%s", cur_pwd);
                 list->count++;
                 cur_pwd[0] = '\0';
@@ -106,8 +107,8 @@ esp_err_t wifi_storage_load_all(wifi_saved_list_t *list)
     }
 
     if (cur_ssid[0] != '\0' && list->count < WIFI_MAX_SAVED_NETWORKS) {
-        /* codeql[cpp/cleartext-storage-buffer] - sem TEE no ESP32-P4/FatFS */
         snprintf(list->items[list->count].ssid, sizeof(list->items[list->count].ssid), "%s", cur_ssid);
+        // codeql[cpp/cleartext-storage-buffer]
         snprintf(list->items[list->count].password, sizeof(list->items[list->count].password), "%s", cur_pwd);
         list->count++;
     }
@@ -122,14 +123,18 @@ esp_err_t wifi_storage_save_all(const wifi_saved_list_t *list)
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* codeql[cpp/world-writable-file-creation] - FatFS nao tem modelo POSIX de permissoes */
-    /* codeql[cpp/cleartext-storage-file] - sem TEE no ESP32-P4; senha em plaintext e inevitavel */
-    FILE *f = fopen(WIFI_CFG_PATH, "w");
+    int fd = open(WIFI_CFG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+        return ESP_FAIL;
+    }
+    FILE *f = fdopen(fd, "w");
     if (f == NULL) {
+        close(fd);
         return ESP_FAIL;
     }
 
     for (int i = 0; i < list->count; i++) {
+        // codeql[cpp/cleartext-storage-file]
         fprintf(f, "ssid=%s\npassword=%s\n\n", list->items[i].ssid, list->items[i].password);
     }
     fclose(f);

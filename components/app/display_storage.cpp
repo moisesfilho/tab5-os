@@ -1,5 +1,7 @@
 #include "display_storage.h"
 #include "wifi_storage.h"
+#include <fcntl.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
@@ -52,10 +54,15 @@ esp_err_t display_storage_save_rotation(lv_disp_rotation_t rot)
         return ESP_FAIL;
     }
 
-    /* codeql[cpp/world-writable-file-creation] - FatFS nao tem modelo POSIX de permissoes */
-    FILE *f = fopen(DISPLAY_CFG_PATH, "w");
-    if (f == NULL) {
+    int fd = open(DISPLAY_CFG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
         ESP_LOGW(TAG, "falha ao abrir %s para gravacao", DISPLAY_CFG_PATH);
+        return ESP_FAIL;
+    }
+    FILE *f = fdopen(fd, "w");
+    if (f == NULL) {
+        close(fd);
+        ESP_LOGW(TAG, "falha ao associar stream para %s", DISPLAY_CFG_PATH);
         return ESP_FAIL;
     }
 

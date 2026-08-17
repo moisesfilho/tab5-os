@@ -1,0 +1,6 @@
+name: "CodeQL Custom Configuration"
+
+# Ignore external managed components downloaded automatically by IDF Component Manager
+paths-ignore:
+  - 'managed_components/**'
+  - 'managed_components'

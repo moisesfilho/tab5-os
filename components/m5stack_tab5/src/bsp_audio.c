@@ -96,16 +96,16 @@ const audio_codec_data_if_t *bsp_audio_get_codec_itf(void)
 
 esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void)
 {
-    const audio_codec_data_if_t *i2s_data_if = bsp_audio_get_codec_itf();
-    if (i2s_data_if == NULL) {
+    const audio_codec_data_if_t *data_if = bsp_audio_get_codec_itf();
+    if (data_if == NULL) {
 
         /* Initilize I2C */
         BSP_ERROR_CHECK_RETURN_NULL(bsp_i2c_init());
         /* Configure I2S peripheral and Power Amplifier */
         BSP_ERROR_CHECK_RETURN_NULL(bsp_audio_init(NULL));
-        i2s_data_if = bsp_audio_get_codec_itf();
+        data_if = bsp_audio_get_codec_itf();
     }
-    assert(i2s_data_if);
+    assert(data_if);
     /* Enable Feature */
     BSP_ERROR_CHECK_RETURN_NULL(bsp_feature_enable(BSP_FEATURE_SPEAKER, true));
 
@@ -139,23 +139,23 @@ esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void)
     esp_codec_dev_cfg_t codec_dev_cfg = {
         .dev_type = ESP_CODEC_DEV_TYPE_OUT,
         .codec_if = dev,
-        .data_if = i2s_data_if,
+        .data_if = data_if,
     };
     return esp_codec_dev_new(&codec_dev_cfg);
 }
 
 esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
 {
-    const audio_codec_data_if_t *i2s_data_if = bsp_audio_get_codec_itf();
-    if (i2s_data_if == NULL) {
+    const audio_codec_data_if_t *data_if = bsp_audio_get_codec_itf();
+    if (data_if == NULL) {
 
         /* Initilize I2C */
         BSP_ERROR_CHECK_RETURN_NULL(bsp_i2c_init());
         /* Configure I2S peripheral and Power Amplifier */
         BSP_ERROR_CHECK_RETURN_NULL(bsp_audio_init(NULL));
-        i2s_data_if = bsp_audio_get_codec_itf();
+        data_if = bsp_audio_get_codec_itf();
     }
-    assert(i2s_data_if);
+    assert(data_if);
 
     audio_codec_i2c_cfg_t i2c_cfg = {
         .port = BSP_I2C_NUM,
@@ -174,7 +174,7 @@ esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
     esp_codec_dev_cfg_t codec_dev_cfg = {
         .dev_type = ESP_CODEC_DEV_TYPE_IN,
         .codec_if = dev,
-        .data_if = i2s_data_if,
+        .data_if = data_if,
     };
     return esp_codec_dev_new(&codec_dev_cfg);
 }

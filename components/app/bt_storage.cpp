@@ -1,5 +1,7 @@
 #include "bt_storage.h"
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -152,12 +154,17 @@ esp_err_t bt_storage_save_all(const bt_saved_list_t *list)
     s_cache_valid = true;
 
     /* Assegura que o diretorio exista */
-    mkdir("/sdcard/tab5_os", 0777);
+    mkdir("/sdcard/tab5_os", 0755);
 
-    /* codeql[cpp/world-writable-file-creation] - FatFS nao tem modelo POSIX de permissoes */
-    FILE *f = fopen(BT_CFG_PATH, "w");
-    if (f == NULL) {
+    int fd = open(BT_CFG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
         ESP_LOGE(TAG, "Falha ao abrir %s para gravacao", BT_CFG_PATH);
+        return ESP_FAIL;
+    }
+    FILE *f = fdopen(fd, "w");
+    if (f == NULL) {
+        close(fd);
+        ESP_LOGE(TAG, "Falha ao associar stream para %s", BT_CFG_PATH);
         return ESP_FAIL;
     }
 

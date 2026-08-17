@@ -25,13 +25,11 @@ esp_err_t bsp_sensor_init(const bsp_sensor_config_t *cfg, sensor_handle_t *senso
         .min_delay = cfg->period
     };
 
-    switch (cfg->type) {
-    case IMU_ID:
+    if (cfg->type == IMU_ID) {
         config.bus = bsp_i2c_get_handle();
         config.addr = BMI270_I2C_ADDRESS_L;
         err = iot_sensor_create("sensor_hub_bmi270", &config, sensor_handle);
-        break;
-    default:
+    } else {
         return ESP_FAIL;
     }
 

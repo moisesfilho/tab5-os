@@ -6,8 +6,10 @@
 #include "ui_font.h"
 #include "wifi_storage.h"
 
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -48,7 +50,7 @@ void apply_notas_layout(void);
 void ensure_notas_dir(void)
 {
     if (wifi_storage_mount() == ESP_OK) {
-        mkdir("/sdcard/notas", 0777);
+        mkdir("/sdcard/notas", 0755);
     }
 }
 
@@ -117,10 +119,15 @@ bool perform_save_to_file(const std::string &path)
 
     ensure_notas_dir();
 
-    /* codeql[cpp/world-writable-file-creation] - FatFS nao tem modelo POSIX de permissoes */
-    FILE *f = fopen(path.c_str(), "w");
-    if (f == nullptr) {
+    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
         ESP_LOGE(TAG, "falha ao abrir arquivo para gravacao: %s", path.c_str());
+        return false;
+    }
+    FILE *f = fdopen(fd, "w");
+    if (f == nullptr) {
+        close(fd);
+        ESP_LOGE(TAG, "falha ao associar stream para gravacao: %s", path.c_str());
         return false;
     }
 

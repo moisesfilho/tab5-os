@@ -111,7 +111,7 @@ esp_err_t bsp_sdcard_sdmmc_mount(bsp_sdcard_cfg_t *cfg)
 {
     sdmmc_host_t sdhost = {0};
     sdmmc_slot_config_t sdslot = {0};
-    const esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+    const esp_vfs_fat_sdmmc_mount_config_t default_mount_config = {
 #ifdef CONFIG_BSP_SD_FORMAT_ON_MOUNT_FAIL
         .format_if_mount_failed = true,
 #else
@@ -122,18 +122,17 @@ esp_err_t bsp_sdcard_sdmmc_mount(bsp_sdcard_cfg_t *cfg)
     };
     assert(cfg);
 
-    if (!cfg->mount) {
-        cfg->mount = &mount_config;
-    }
-
-    if (!cfg->host) {
+    const esp_vfs_fat_sdmmc_mount_config_t *mount_config = cfg->mount ? cfg->mount : &default_mount_config;
+    sdmmc_host_t *host_config = cfg->host;
+    if (!host_config) {
         bsp_sdcard_get_sdmmc_host(SDMMC_HOST_SLOT_0, &sdhost);
-        cfg->host = &sdhost;
+        host_config = &sdhost;
     }
 
-    if (!cfg->slot.sdmmc) {
+    sdmmc_slot_config_t *slot_config = cfg->slot.sdmmc;
+    if (!slot_config) {
         bsp_sdcard_sdmmc_get_slot(SDMMC_HOST_SLOT_0, &sdslot);
-        cfg->slot.sdmmc = &sdslot;
+        slot_config = &sdslot;
     }
 
     sd_pwr_ctrl_ldo_config_t ldo_config = {
@@ -144,20 +143,20 @@ esp_err_t bsp_sdcard_sdmmc_mount(bsp_sdcard_cfg_t *cfg)
         ESP_LOGE(TAG, "Failed to create a new on-chip LDO power control driver");
         return ret;
     }
-    cfg->host->pwr_ctrl_handle = pwr_ctrl_handle;
+    host_config->pwr_ctrl_handle = pwr_ctrl_handle;
 
 #if !defined(CONFIG_FATFS_LONG_FILENAMES) || defined(CONFIG_FATFS_LFN_NONE)
     ESP_LOGW(TAG, "Warning: Long filenames on SD card are disabled in menuconfig!");
 #endif
 
-    return esp_vfs_fat_sdmmc_mount(BSP_SD_MOUNT_POINT, cfg->host, cfg->slot.sdmmc, cfg->mount, &bsp_sdcard);
+    return esp_vfs_fat_sdmmc_mount(BSP_SD_MOUNT_POINT, host_config, slot_config, mount_config, &bsp_sdcard);
 }
 
 esp_err_t bsp_sdcard_sdspi_mount(bsp_sdcard_cfg_t *cfg)
 {
     sdmmc_host_t sdhost = {0};
     sdspi_device_config_t sdslot = {0};
-    const esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+    const esp_vfs_fat_sdmmc_mount_config_t default_mount_config = {
 #ifdef CONFIG_BSP_SD_FORMAT_ON_MOUNT_FAIL
         .format_if_mount_failed = true,
 #else
@@ -179,18 +178,17 @@ esp_err_t bsp_sdcard_sdspi_mount(bsp_sdcard_cfg_t *cfg)
     ESP_RETURN_ON_ERROR(spi_bus_initialize(BSP_SDSPI_HOST, &buscfg, SPI_DMA_CH_AUTO), TAG, "SPI init failed");
     spi_sd_initialized = true;
 
-    if (!cfg->mount) {
-        cfg->mount = &mount_config;
-    }
-
-    if (!cfg->host) {
+    const esp_vfs_fat_sdmmc_mount_config_t *mount_config = cfg->mount ? cfg->mount : &default_mount_config;
+    sdmmc_host_t *host_config = cfg->host;
+    if (!host_config) {
         bsp_sdcard_get_sdspi_host(SDMMC_HOST_SLOT_0, &sdhost);
-        cfg->host = &sdhost;
+        host_config = &sdhost;
     }
 
-    if (!cfg->slot.sdspi) {
+    sdspi_device_config_t *slot_config = cfg->slot.sdspi;
+    if (!slot_config) {
         bsp_sdcard_sdspi_get_slot(BSP_SDSPI_HOST, &sdslot);
-        cfg->slot.sdspi = &sdslot;
+        slot_config = &sdslot;
     }
 
     sd_pwr_ctrl_ldo_config_t ldo_config = {
@@ -201,13 +199,13 @@ esp_err_t bsp_sdcard_sdspi_mount(bsp_sdcard_cfg_t *cfg)
         ESP_LOGE(TAG, "Failed to create a new on-chip LDO power control driver");
         return ret;
     }
-    cfg->host->pwr_ctrl_handle = pwr_ctrl_handle;
+    host_config->pwr_ctrl_handle = pwr_ctrl_handle;
 
 #if !CONFIG_FATFS_LONG_FILENAMES
     ESP_LOGW(TAG, "Warning: Long filenames on SD card are disabled in menuconfig!");
 #endif
 
-    return esp_vfs_fat_sdspi_mount(BSP_SD_MOUNT_POINT, cfg->host, cfg->slot.sdspi, cfg->mount, &bsp_sdcard);
+    return esp_vfs_fat_sdspi_mount(BSP_SD_MOUNT_POINT, host_config, slot_config, mount_config, &bsp_sdcard);
 }
 
 esp_err_t bsp_sdcard_mount(void)

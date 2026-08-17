@@ -1,6 +1,7 @@
 #include "terminal_cmd.h"
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -195,7 +196,7 @@ std::string cmd_mkdir(const std::vector<std::string> &args, const std::string &c
     std::string out;
     for (size_t i = 1; i < args.size(); ++i) {
         std::string target = resolve_path(cwd, args[i]);
-        if (mkdir(target.c_str(), 0777) != 0) {
+        if (mkdir(target.c_str(), 0755) != 0) {
             out += "mkdir: cannot create directory '" + args[i] + "': " + std::strerror(errno) + "\n";
         }
     }
@@ -255,13 +256,11 @@ std::string cmd_touch(const std::vector<std::string> &args, const std::string &c
     std::string out;
     for (size_t i = 1; i < args.size(); ++i) {
         std::string target = resolve_path(cwd, args[i]);
-        /* FatFS nao suporta permissoes POSIX; fopen("a") e equivalente seguro neste target. */
-        /* codeql[cpp/world-writable-file-creation] */
-        FILE *f = fopen(target.c_str(), "a"); // NOLINT(android-cloexec-fopen)
-        if (f == nullptr) {
+        int fd = open(target.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (fd < 0) {
             out += "touch: cannot touch '" + args[i] + "': " + std::strerror(errno) + "\n";
         } else {
-            fclose(f);
+            close(fd);
         }
     }
     return out;

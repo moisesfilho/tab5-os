@@ -34,6 +34,7 @@ jobs:
           languages: cpp
           build-mode: manual
           queries: security-and-quality
+          config-file: .github/codeql/codeql-config.yml
 
       - name: Install ESP-IDF
         uses: espressif/install-esp-idf-action@v1
