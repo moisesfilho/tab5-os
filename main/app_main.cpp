@@ -13,6 +13,7 @@
 #include "bt_mgr.h"
 #include "ui_mouse.h"
 #include "rtc_rx8130.h"
+#include "display_storage.h"
 
 static const char *TAG = "tab5_poc";
 
@@ -60,8 +61,10 @@ extern "C" void app_main(void)
 
     bsp_display_unlock();
 
-    /* 60% p/ reduzir carga na alimentacao USB (backlight 100% causava brownout) */
-    bsp_display_brightness_set(60);
+    /* Aplica o brilho configurado (ou 80% como padrao seguro) */
+    int brightness = DISPLAY_DEFAULT_BRIGHTNESS;
+    display_storage_load_brightness(&brightness);
+    bsp_display_brightness_set(brightness);
 
     ESP_LOGI(TAG, "UI iniciada");
 }

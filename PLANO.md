@@ -28,7 +28,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 20** | Aplicativo Terminal Interativo | Aplicativo / Shell | Mini-shell C++, comandos POSIX em `/sdcard`, buffer circular 8 KB |
 | `[x]` | **Fase 21** | Cliente SSH Remoto no Terminal | Conectividade / CLI | Task FreeRTOS, `david-cermak/libssh`, PTY xterm, auth por senha/chave |
 | `[x]` | **Fase 22** | Protetor de Tela Anti-Burn-in com Data e Hora | Sistema / Display | Screensaver fundo preto, relógio grande, reposicionamento 30s, wake no toque |
-| `[ ]` | **Fase 23** | Controle de Brilho da Tela no Menu de Configurações | Sistema / Display | Slider de brilho no menu, PWM 10–100%, feedback visual, persistência |
+| `[x]` | **Fase 23** | Controle de Brilho da Tela no Menu de Configurações | Sistema / Display | Slider de brilho no menu, PWM 10–100%, feedback visual, persistência |
 | `[ ]` | **Fase 24** | Aplicativos de Câmera e Galeria de Fotos | Aplicativo / Mídia | Preview MIPI-CSI, gravação `/sdcard/imagens/`, galeria com swipe/toque, exclusão e associação no app Arquivos |
 | `[ ]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
 
@@ -834,7 +834,7 @@ components/app/
 
 ---
 
-# [ ] Fase 23: Controle de Brilho da Tela no Menu de Configurações `⏳ PLANEJADO`
+# [x] Fase 23: Controle de Brilho da Tela no Menu de Configurações `✅ IMPLEMENTADO`
 
 ## 1. Contexto & Objetivos
 - Adicionar controle interativo da intensidade de **brilho do backlight** do display MIPI-DSI no **Menu de Configurações** (painel popover da engrenagem).
@@ -844,7 +844,7 @@ components/app/
   - Indicador numérico percentual em tempo real (ex: `75%`) e ícone indicativo de luminosidade (`LV_SYMBOL_IMAGE` / `LV_SYMBOL_EYE_OPEN`).
   - Faixa de ajuste seguro entre **10% e 100%** (com limite inferior de 10% para impedir que o usuário apague completamente a tela por engano).
 - **Persistência de Estado**:
-  - O nível de brilho selecionado é persistido em NVS (namespace `display`, chave `brightness`) ou `/sdcard/tab5_os/display.cfg` e restaurado automaticamente em cada boot.
+  - O nível de brilho selecionado é persistido em NVS (namespace `tab5`, chave `brightness`) ou `/sdcard/tab5_os/display.cfg` e restaurado automaticamente em cada boot.
 
 ## 2. Decisões de Arquitetura
 
@@ -853,7 +853,7 @@ components/app/
 | D1 | Controle de Hardware | `bsp_display_brightness_set(int percent)` | API nativa do BSP que gerencia o driver PWM do backlight |
 | D2 | Componente de UI | `lv_slider` em `ui_bar.cpp` (popover de configurações) | Controle intuitivo, contínuo e integrado ao painel existente |
 | D3 | Limites de Brilho | Mínimo de 10% e Máximo de 100% | Evita tela preta acidental mantendo a UI sempre visível |
-| D4 | Persistência | NVS (`display/brightness`) e/ou `display_storage` | Rápido, seguro e independente do cartão microSD |
+| D4 | Persistência | NVS (`tab5/brightness`) e `display_storage` | Rápido, seguro e independente do cartão microSD |
 | D5 | Estratégia de I/O | PWM imediato no arraste e gravação em NVS ao soltar | Resposta visual instantânea sem desgaste de escrita em Flash |
 
 ## 3. Estrutura de Arquivos & Componentes
@@ -879,7 +879,7 @@ components/app/
 │ Bluetooth                       [ O ]   │
 ├─────────────────────────────────────────┤
 │ Brilho                            80%   │
-│ [☼] ━━━━━━━●━━━━━━━━━━━━ [10% - 100%]   │
+│ ━━━━━━━━━━━━●━━━━━━━━━━━ [10% - 100%]   │
 ├─────────────────────────────────────────┤
 │ Protetor de Tela               [ 2 min] │
 └─────────────────────────────────────────┘
@@ -887,10 +887,10 @@ components/app/
 
 ## 5. Fases de Execução da Funcionalidade
 
-- [ ] **Etapa 1 — Backend de Persistência (`display_storage`)**: Funções `display_storage_load_brightness(int *percent)` e `display_storage_save_brightness(int percent)` com fallback padrão de 80%. Aplicação do brilho no boot durante `app_main.cpp`.
-- [ ] **Etapa 2 — Slider de Brilho no `ui_bar.cpp`**: Adição da linha "Brilho" no menu popover com `lv_slider`, label de porcentagem e estilização compatível com temas claro e escuro.
-- [ ] **Etapa 3 — Eventos e Ajuste em Tempo Real**: Callback `LV_EVENT_VALUE_CHANGED` chamando `bsp_display_brightness_set()` imediatamente e evento `LV_EVENT_RELEASED` gravando o valor persistente.
-- [ ] **Etapa 4 — Build, Validação e Teste em Hardware**: Teste físico de variação de intensidade luminosa do backlight e validação de persistência após desligar e ligar o Tab5.
+- [x] **Etapa 1 — Backend de Persistência (`display_storage`)**: Funções `display_storage_load_brightness(int *percent)` e `display_storage_save_brightness(int percent)` com fallback padrão de 80%. Aplicação do brilho no boot durante `app_main.cpp`.
+- [x] **Etapa 2 — Slider de Brilho no `ui_bar.cpp`**: Adição da linha "Brilho" no menu popover com `lv_slider`, label de porcentagem e estilização compatível com temas claro e escuro.
+- [x] **Etapa 3 — Eventos e Ajuste em Tempo Real**: Callback `LV_EVENT_VALUE_CHANGED` chamando `bsp_display_brightness_set()` imediatamente e evento `LV_EVENT_RELEASED` gravando o valor persistente.
+- [x] **Etapa 4 — Build, Validação e Teste em Hardware**: Teste físico de variação de intensidade luminosa do backlight e validação de persistência após desligar e ligar o Tab5.
 
 ## 6. Riscos & Mitigações
 
@@ -905,8 +905,8 @@ components/app/
 3. Verificar que o slider não permite ajuste abaixo de 10%.
 4. Reiniciar o Tab5 e validar que o nível de brilho configurado é restaurado no boot.
 
-## 8. Status de Conclusão: `[ ] PLANEJADO`
-- **Controle de Brilho**: Arquitetura planejada e pronta para implementação na Fase 23.
+## 8. Status de Conclusão: `[x] IMPLEMENTADO`
+- **Controle de Brilho**: Implementado com slider de 10% a 100% no menu de configurações, PWM em tempo real, persistência em NVS/SD e restauração automática no boot.
 
 ---
 

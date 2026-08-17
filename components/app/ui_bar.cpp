@@ -4,9 +4,11 @@
 #include "ui_font.h"
 #include "ui_shell.h"
 #include "ui_screensaver.h"
+#include "display_storage.h"
 #include "imu_reader.h"
 #include "wifi_mgr.h"
 #include "bt_mgr.h"
+#include "bsp/esp-bsp.h"
 #include <time.h>
 
 namespace {
@@ -50,6 +52,9 @@ lv_obj_t *menu_row_wifi_label = nullptr;
 lv_obj_t *menu_row_wifi_switch = nullptr;
 lv_obj_t *menu_row_bt_label = nullptr;
 lv_obj_t *menu_row_bt_switch = nullptr;
+lv_obj_t *menu_row_brightness_label = nullptr;
+lv_obj_t *menu_row_brightness_val_label = nullptr;
+lv_obj_t *menu_row_brightness_slider = nullptr;
 
 void close_menu(void);
 
@@ -95,6 +100,9 @@ void close_menu(void)
     menu_row_wifi_switch = nullptr;
     menu_row_bt_label = nullptr;
     menu_row_bt_switch = nullptr;
+    menu_row_brightness_label = nullptr;
+    menu_row_brightness_val_label = nullptr;
+    menu_row_brightness_slider = nullptr;
 }
 
 void menu_header_create(const char *text)
@@ -228,6 +236,17 @@ void apply_menu_theme(void)
         lv_obj_set_style_border_color(menu_row_bt_switch, lv_color_hex(pal->border), 0);
         lv_obj_set_style_bg_color(menu_row_bt_switch, lv_color_hex(pal->accent), LV_PART_INDICATOR);
         lv_obj_set_style_bg_color(menu_row_bt_switch, lv_color_hex(pal->text), LV_PART_KNOB);
+    }
+    if (menu_row_brightness_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_brightness_label, lv_color_hex(pal->text), 0);
+    }
+    if (menu_row_brightness_val_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_brightness_val_label, lv_color_hex(pal->text_muted), 0);
+    }
+    if (menu_row_brightness_slider != nullptr) {
+        lv_obj_set_style_bg_color(menu_row_brightness_slider, lv_color_hex(pal->border), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(menu_row_brightness_slider, lv_color_hex(pal->accent), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(menu_row_brightness_slider, lv_color_hex(pal->text), LV_PART_KNOB);
     }
 }
 
@@ -416,6 +435,89 @@ void menu_bluetooth_row_create(void)
     }
 }
 
+void brightness_slider_cb(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *slider = (lv_obj_t *)lv_event_get_target(event);
+    int val = (int)lv_slider_get_value(slider);
+    if (val < DISPLAY_MIN_BRIGHTNESS) {
+        val = DISPLAY_MIN_BRIGHTNESS;
+    }
+    if (val > DISPLAY_MAX_BRIGHTNESS) {
+        val = DISPLAY_MAX_BRIGHTNESS;
+    }
+
+    if (code == LV_EVENT_VALUE_CHANGED) {
+        if (menu_row_brightness_val_label != nullptr) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d%%", val);
+            lv_label_set_text(menu_row_brightness_val_label, buf);
+        }
+        bsp_display_brightness_set(val);
+    } else if (code == LV_EVENT_RELEASED) {
+        display_storage_save_brightness(val);
+    }
+}
+
+/* Row "Brilho" com slider horizontal no menu de configuracao. */
+void menu_brightness_row_create(void)
+{
+    lv_obj_t *row = lv_obj_create(menu_panel);
+    lv_obj_set_width(row, lv_pct(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_shadow_width(row, 0, 0);
+    lv_obj_set_style_radius(row, 8, 0);
+    lv_obj_set_style_pad_left(row, 14, 0);
+    lv_obj_set_style_pad_right(row, 14, 0);
+    lv_obj_set_style_pad_top(row, 8, 0);
+    lv_obj_set_style_pad_bottom(row, 8, 0);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Flex coluna para empilhar o header e o slider verticalmente sem sobreposicao */
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(row, 8, 0);
+
+    lv_obj_t *header_box = lv_obj_create(row);
+    lv_obj_set_width(header_box, lv_pct(100));
+    lv_obj_set_height(header_box, 18);
+    lv_obj_set_style_bg_opa(header_box, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(header_box, 0, 0);
+    lv_obj_set_style_shadow_width(header_box, 0, 0);
+    lv_obj_set_style_pad_all(header_box, 0, 0);
+    lv_obj_clear_flag(header_box, LV_OBJ_FLAG_SCROLLABLE);
+
+    menu_row_brightness_label = lv_label_create(header_box);
+    lv_label_set_text(menu_row_brightness_label, "Brilho");
+    lv_obj_set_style_text_font(menu_row_brightness_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_align(menu_row_brightness_label, LV_ALIGN_LEFT_MID, 0, 0);
+
+    int cur_br = DISPLAY_DEFAULT_BRIGHTNESS;
+    display_storage_load_brightness(&cur_br);
+
+    menu_row_brightness_val_label = lv_label_create(header_box);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d%%", cur_br);
+    lv_label_set_text(menu_row_brightness_val_label, buf);
+    lv_obj_set_style_text_font(menu_row_brightness_val_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_align(menu_row_brightness_val_label, LV_ALIGN_RIGHT_MID, 0, 0);
+
+    menu_row_brightness_slider = lv_slider_create(row);
+    lv_obj_set_width(menu_row_brightness_slider, lv_pct(100));
+    lv_obj_set_height(menu_row_brightness_slider, 8);
+    lv_obj_set_style_radius(menu_row_brightness_slider, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_radius(menu_row_brightness_slider, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(menu_row_brightness_slider, LV_RADIUS_CIRCLE, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(menu_row_brightness_slider, 3, LV_PART_KNOB);
+    lv_slider_set_range(menu_row_brightness_slider, DISPLAY_MIN_BRIGHTNESS, DISPLAY_MAX_BRIGHTNESS);
+    lv_slider_set_value(menu_row_brightness_slider, cur_br, LV_ANIM_OFF);
+
+    lv_obj_add_event_cb(menu_row_brightness_slider, brightness_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(menu_row_brightness_slider, brightness_slider_cb, LV_EVENT_RELEASED, nullptr);
+}
+
 void gear_click_cb(lv_event_t *event)
 {
     (void)event;
@@ -461,6 +563,7 @@ void open_menu(menu_page_t page)
         menu_rotation_row_create();
         menu_wifi_row_create();
         menu_bluetooth_row_create();
+        menu_brightness_row_create();
     } else if (page == MENU_PAGE_THEME) {
         menu_header_create("Tema");
         menu_row_create("Claro", menu_light_cb, &menu_row_light, &menu_row_light_label, false);
