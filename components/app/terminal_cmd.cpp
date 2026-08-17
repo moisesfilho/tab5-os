@@ -364,7 +364,7 @@ bool terminal_parse_ssh_cmd(const std::string &line, std::string &user, std::str
         return true;
     }
 
-    std::string target = args[1];
+    const std::string &target = args[1];
     size_t at_pos = target.find('@');
     if (at_pos != std::string::npos) {
         user = target.substr(0, at_pos);

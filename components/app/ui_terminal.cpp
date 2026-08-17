@@ -104,9 +104,7 @@ std::string strip_ansi_and_normalize(const char *data, size_t len)
             break;
 
         case ANSI_STATE_OSC_ESC:
-            if (c == '\\') {
-                s_ansi_state = ANSI_STATE_NORMAL;
-            } else if (c == '[') {
+            if (c == '[') {
                 s_ansi_state = ANSI_STATE_CSI;
             } else if (c == ']') {
                 s_ansi_state = ANSI_STATE_OSC;
@@ -173,20 +171,16 @@ void on_ssh_state(ssh_client_state_t state, const char *msg)
         return;
     }
 
-    if (state == SSH_CLIENT_CONNECTING) {
-        if (msg != nullptr) {
-            term_history += std::string(msg) + "\n";
-        }
-    } else if (state == SSH_CLIENT_NEED_PASSWORD) {
+    if (state == SSH_CLIENT_NEED_PASSWORD) {
         s_term_mode = TERM_MODE_SSH_PASSWORD;
         term_history += "Password: ";
-    } else if (state == SSH_CLIENT_AUTHENTICATING) {
-        if (msg != nullptr) {
-            term_history += std::string(msg) + "\n";
-        }
     } else if (state == SSH_CLIENT_CONNECTED) {
         s_term_mode = TERM_MODE_SSH_SESSION;
         term_history += "Sessao SSH estabelecida.\n";
+    } else if (state == SSH_CLIENT_CONNECTING || state == SSH_CLIENT_AUTHENTICATING) {
+        if (msg != nullptr) {
+            term_history += std::string(msg) + "\n";
+        }
     } else if (state == SSH_CLIENT_ERROR || state == SSH_CLIENT_DISCONNECTED) {
         if (msg != nullptr) {
             term_history += std::string(msg) + "\n";
@@ -261,7 +255,9 @@ void execute_current_command(void)
         return;
     }
 
-    std::string ssh_user, ssh_host, ssh_err;
+    std::string ssh_user;
+    std::string ssh_host;
+    std::string ssh_err;
     int ssh_port = 22;
     if (terminal_parse_ssh_cmd(input_line, ssh_user, ssh_host, ssh_port, ssh_err)) {
         term_history += input_line + "\n";
