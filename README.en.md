@@ -14,6 +14,10 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 
 ## Features
 
+- **Camera App & V4L2/ISP Pipeline on ESP32-P4** — real-time 640×480 camera preview directly from SC202CS sensor over MIPI-CSI with hardware ISP acceleration, persistent V4L2 streaming architecture (`VIDIOC_STREAMON`/`VIDIOC_STREAMOFF`), ISP color correction matrix (CCM) clamping protection, and asynchronous JPEG photo capture via FreeRTOS task on SD card
+- **Photo Gallery App** — native photo viewer for JPEG images saved on the SD card (`/sdcard/photos/`), powered by high-performance Tiny JPEG Decompressor (TJpgDec) directly to PSRAM canvas buffer on LVGL 9, image navigation, and seamless integration with Camera and File Manager
+- **HTTP File Server App** — built-in embedded HTTP file server for downloading and sharing captured photos over local Wi-Fi via any web browser, with on-demand startup for power efficiency and a dedicated desktop status screen
+- **Responsive Flexbox Desktop Grid** — left-to-right, top-to-bottom layout (`LV_FLEX_FLOW_ROW_WRAP`) with dynamic column centering, left-aligned row wraps across orientations, and styled vector app icons (Camera 📷, Notepad 🗒️, Gallery 🖼️, Server 💽)
 - **Anti-Burn-in Screensaver** — MIPI-DSI panel protection against image sticking, featuring a pure black background (`#000000`), prominent digital clock (`HH:MM:SS`), full date in Portuguese, OS version, intelligent random relocation every 30 seconds with safe bounding box across all 4 orientations (0°, 90°, 180°, 270°), temporary mouse cursor hiding, and instant wake-up on touch, keyboard, or mouse events
 - **Terminal App & Remote SSH Client** — Linux-style console shell integrated into the OS, with interactive prompt (`/sdcard $`), command history, support for core commands (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`) and **full SSH Client** (`ssh [user@]host [-p port]`) running on a dedicated asynchronous FreeRTOS task powered by `libssh`, VT100/xterm terminal emulation, masked password prompt, and robust ANSI/OSC sequence stripping
 - **Bluetooth Manager & Physical Keyboard (BLE HID)** — connection, pairing, and automatic reconnection with Bluetooth Low Energy peripherals (HOGP) like physical keyboards and combo touchpad/mice, direct keystroke injection into apps (e.g., Notes and Terminal), dynamic virtual keyboard hiding, and top-bar connection indicator
@@ -93,8 +97,15 @@ tab5-os/
 ├── main/
 │   └── app_main.cpp          # Boot: display, RTC, IMU, UI
 ├── components/
-│   ├── app/                  # UI + IMU + Terminal + WiFi/BT
+│   ├── app/                  # UI + IMU + Terminal + WiFi/BT + Camera + Gallery + Server
+│   │   ├── ui_desktop.cpp    # Responsive desktop grid and styled app icons
 │   │   ├── ui_bar.cpp        # Top bar, settings menu, clock
+│   │   ├── ui_camera.cpp     # Camera app with preview and shutter button
+│   │   ├── camera_mgr.cpp    # V4L2/ISP manager and async photo capture
+│   │   ├── ui_gallery.cpp    # Gallery photo viewer
+│   │   ├── tjpgd.c           # Hardware/optimized JPEG decompressor (TJpgDec)
+│   │   ├── ui_fileserver.cpp # HTTP File Server control app
+│   │   ├── http_file_server.cpp # Embedded HTTP server for photo downloads
 │   │   ├── ui_screensaver.cpp # Anti-burn-in screensaver with clock/date
 │   │   ├── ui_mouse.cpp      # BLE HID mouse/touchpad support & cursor
 │   │   ├── ui_terminal.cpp   # Terminal app (interactive console)
@@ -103,8 +114,8 @@ tab5-os/
 │   │   ├── ui_keyboard.cpp   # Virtual keyboard + PT-BR accents page
 │   │   ├── ui_status.cpp     # Orientation badge
 │   │   ├── ui_theme.cpp      # Light/dark palettes
-│   │   ├── imu_reader.cpp    # BMI270 events → rotation target
-│   │   ├── orientation.cpp   # Gravity vector → rotation mapping
+│   │   ├── imu_reader.cpp    # BMI270 events -> rotation target
+│   │   ├── orientation.cpp   # Gravity vector -> rotation mapping
 │   │   └── fonts/            # Custom Latin-1 font
 │   ├── m5stack_tab5/         # Local BSP (override of the official one)
 │   └── rtc_rx8130/           # RX8130CE RTC driver

@@ -29,7 +29,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 21** | Cliente SSH Remoto no Terminal | Conectividade / CLI | Task FreeRTOS, `david-cermak/libssh`, PTY xterm, auth por senha/chave |
 | `[x]` | **Fase 22** | Protetor de Tela Anti-Burn-in com Data e Hora | Sistema / Display | Screensaver fundo preto, relógio grande, reposicionamento 30s, wake no toque |
 | `[x]` | **Fase 23** | Controle de Brilho da Tela no Menu de Configurações | Sistema / Display | Slider de brilho no menu, PWM 10–100%, feedback visual, persistência |
-| `[ ]` | **Fase 24** | Aplicativos de Câmera e Galeria de Fotos | Aplicativo / Mídia | Preview MIPI-CSI, gravação `/sdcard/imagens/`, galeria com swipe/toque, exclusão e associação no app Arquivos |
+| `[x]` | **Fase 24** | Aplicativos de Câmera, Galeria de Fotos e Servidor HTTP | Aplicativo / Mídia | Preview MIPI-CSI, gravação `/sdcard/photos/`, galeria com TJpgDec, servidor HTTP e grid desktop responsivo |
 | `[ ]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
 | `[ ]` | **Fase 26** | Aplicativo Chat IA (OpenAI-compatível) | Aplicativo / Conectividade | Chat texto, cadastro de token/URL/modelo, cliente HTTP `/chat/completions`, persistência em `ai.cfg` |
 | `[ ]` | **Fase 27** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |

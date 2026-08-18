@@ -1,4 +1,4 @@
 # codespell: o projeto usa comentários/docs em português — palavras PT-BR
 # que colidem com o dicionário de inglês são ignoradas aqui.
 [codespell]
-ignore-words-list = faze,fase,fases,vetor,caracteres,atual,erro,erros,controle,controles,nome,nomes,itens,oficial,ser,orientacao,rotacao,variante,datas,comando,comandos,sequencial,limite,cliente,utiliza,momento,componente,componentes,responde,seletor,acidental,foto,fotos,som,classe,classes,copie,conector
+ignore-words-list = faze,fase,fases,vetor,caracteres,atual,erro,erros,controle,controles,nome,nomes,itens,oficial,ser,orientacao,rotacao,variante,datas,comando,comandos,sequencial,limite,cliente,utiliza,momento,componente,componentes,responde,seletor,acidental,foto,fotos,som,classe,classes,copie,conector,pares,nd

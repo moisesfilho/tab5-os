@@ -7,6 +7,9 @@
 #include "ui_files.h"
 #include "ui_bluetooth.h"
 #include "ui_terminal.h"
+#include "ui_camera.h"
+#include "ui_gallery.h"
+#include "ui_fileserver.h"
 #include "ui_screensaver.h"
 #include "ui_theme.h"
 #include "ui_font.h"
@@ -21,6 +24,10 @@ lv_obj_t *wifi_scr = nullptr;
 lv_obj_t *files_scr = nullptr;
 lv_obj_t *bt_scr = nullptr;
 lv_obj_t *terminal_scr = nullptr;
+lv_obj_t *camera_scr = nullptr;
+lv_obj_t *gallery_scr = nullptr;
+lv_obj_t *gallery_caller_scr = nullptr;
+lv_obj_t *fileserver_scr = nullptr;
 lv_obj_t *splash = nullptr;
 lv_obj_t *splash_label = nullptr;
 
@@ -79,6 +86,9 @@ void ui_shell_init(void)
     files_scr = ui_files_create();
     bt_scr = ui_bluetooth_create();
     terminal_scr = ui_terminal_create();
+    camera_scr = ui_camera_create();
+    gallery_scr = ui_gallery_create();
+    fileserver_scr = ui_fileserver_create();
     ui_screensaver_init();
 
     lv_timer_create(inactivity_timer_cb, 1000, nullptr);
@@ -164,6 +174,60 @@ void ui_shell_close_terminal(void)
     lv_disp_load_scr(desktop_scr);
 }
 
+void ui_shell_open_camera(void)
+{
+    ui_keyboard_hide();
+    lv_disp_load_scr(camera_scr);
+    ui_camera_on_open();
+}
+
+void ui_shell_close_camera(void)
+{
+    ui_camera_on_close();
+    ui_keyboard_hide();
+    lv_disp_load_scr(desktop_scr);
+}
+
+void ui_shell_open_gallery(void)
+{
+    ui_keyboard_hide();
+    gallery_caller_scr = desktop_scr;
+    lv_disp_load_scr(gallery_scr);
+    ui_gallery_on_open();
+}
+
+void ui_shell_open_gallery_with_file(const char *filepath)
+{
+    ui_keyboard_hide();
+    lv_obj_t *act = lv_disp_get_scr_act(NULL);
+    gallery_caller_scr = (act != nullptr && act != gallery_scr) ? act : desktop_scr;
+    ui_gallery_open_file(filepath);
+    lv_disp_load_scr(gallery_scr);
+}
+
+void ui_shell_close_gallery(void)
+{
+    ui_gallery_on_close();
+    ui_keyboard_hide();
+    lv_obj_t *target = (gallery_caller_scr != nullptr) ? gallery_caller_scr : desktop_scr;
+    gallery_caller_scr = nullptr;
+    lv_disp_load_scr(target);
+}
+
+void ui_shell_open_fileserver(void)
+{
+    ui_keyboard_hide();
+    lv_disp_load_scr(fileserver_scr);
+    ui_fileserver_on_open();
+}
+
+void ui_shell_close_fileserver(void)
+{
+    ui_fileserver_on_close();
+    ui_keyboard_hide();
+    lv_disp_load_scr(desktop_scr);
+}
+
 void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
@@ -172,6 +236,9 @@ void ui_shell_refresh_theme(void)
     ui_files_refresh_theme();
     ui_bluetooth_refresh_theme();
     ui_terminal_refresh_theme();
+    ui_camera_refresh_theme();
+    ui_gallery_refresh_theme();
+    ui_fileserver_refresh_theme();
 
     if (splash != nullptr) {
         lv_obj_set_style_bg_color(splash, lv_color_hex(ui_theme_get()->background), 0);
@@ -192,5 +259,11 @@ void ui_shell_notify_keyboard_layout(void)
         ui_bluetooth_apply_layout();
     } else if (act == terminal_scr) {
         ui_terminal_apply_layout();
+    } else if (act == camera_scr) {
+        ui_camera_apply_layout();
+    } else if (act == gallery_scr) {
+        ui_gallery_apply_layout();
+    } else if (act == fileserver_scr) {
+        ui_fileserver_apply_layout();
     }
 }

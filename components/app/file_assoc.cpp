@@ -52,7 +52,12 @@ void file_assoc_init(void)
     /* Registra o app Notas como handler padrao para arquivos de texto e configuracao */
     file_assoc_register("txt", ui_shell_open_notas_with_file);
     file_assoc_register("cfg", ui_shell_open_notas_with_file);
-    ESP_LOGI(TAG, "sistema de associacao de arquivos inicializado (.txt, .cfg -> Notas)");
+    /* Registra o app Galeria como handler padrao para imagens */
+    file_assoc_register("jpg", ui_shell_open_gallery_with_file);
+    file_assoc_register("jpeg", ui_shell_open_gallery_with_file);
+    file_assoc_register("png", ui_shell_open_gallery_with_file);
+    file_assoc_register("bmp", ui_shell_open_gallery_with_file);
+    ESP_LOGI(TAG, "sistema de associacao inicializado (.txt/.cfg -> Notas, .jpg/.jpeg/.png/.bmp -> Galeria)");
 }
 
 esp_err_t file_assoc_register(const char *ext, file_open_handler_t handler)

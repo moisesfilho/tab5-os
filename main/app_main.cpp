@@ -14,6 +14,8 @@
 #include "ui_mouse.h"
 #include "rtc_rx8130.h"
 #include "display_storage.h"
+#include "camera_mgr.h"
+#include "http_file_server.h"
 
 static const char *TAG = "tab5_poc";
 
@@ -53,6 +55,9 @@ extern "C" void app_main(void)
 
     /* Inicia o subsistema Bluetooth */
     bt_mgr_start();
+
+    /* Inicializa o subsistema de Camera (SC202CS / esp_video) */
+    camera_mgr_init();
 
     bsp_display_lock(0);
 
