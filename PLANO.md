@@ -31,6 +31,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 23** | Controle de Brilho da Tela no Menu de Configurações | Sistema / Display | Slider de brilho no menu, PWM 10–100%, feedback visual, persistência |
 | `[ ]` | **Fase 24** | Aplicativos de Câmera e Galeria de Fotos | Aplicativo / Mídia | Preview MIPI-CSI, gravação `/sdcard/imagens/`, galeria com swipe/toque, exclusão e associação no app Arquivos |
 | `[ ]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
+| `[ ]` | **Fase 26** | Aplicativo Chat IA (OpenAI-compatível) | Aplicativo / Conectividade | Chat texto, cadastro de token/URL/modelo, cliente HTTP `/chat/completions`, persistência em `ai.cfg` |
 
 ---
 
@@ -910,7 +911,7 @@ components/app/
 
 ---
 
-# [ ] Fase 24: Aplicativos de Câmera e Galeria de Fotos `⏳ PLANEJADO`
+# [x] Fase 24: Aplicativos de Câmera e Galeria de Fotos `✔ CONCLUÍDO`
 
 ## 1. Contexto & Objetivos
 - **Aplicativo "Câmera" (`ui_camera`)**:
@@ -1000,12 +1001,12 @@ components/app/
 
 ## 5. Fases de Execução da Funcionalidade
 
-- [ ] **Etapa 1 — Backend de Câmera e Captura (`camera_mgr`)**: Inicialização do driver MIPI-CSI com `bsp_camera_start()`, streaming V4L2 em buffer PSRAM e gravação JPEG com nome `IMG_YYYYMMDD_HHMMSS.jpg` em `/sdcard/imagens/`.
-- [ ] **Etapa 2 — Interface do Aplicativo Câmera (`ui_camera`)**: Janela LVGL com canvas/image de preview, botão circular de disparo e atalho para galeria no `ui_shell`.
-- [ ] **Etapa 3 — Interface e Navegação da Galeria (`ui_gallery`)**: Leitura de `/sdcard/imagens/`, ordenação decrescente por data/nome e renderização em tela cheia com suporte a abertura de imagem específica via `ui_gallery_open_file(filepath)`.
-- [ ] **Etapa 4 — Sistema de Gestos, Cliques e Exclusão de Fotos**: Manipulação de `LV_EVENT_GESTURE` (`LV_DIR_LEFT` = próxima foto mais antiga, `LV_DIR_RIGHT` = foto anterior mais recente), toques nas metades laterais da tela e botão `[🗑]` com modal de confirmação para remoção física de fotos do SD.
-- [ ] **Etapa 5 — Atualização de Associações (`file_assoc`) e Desktop**: Registro de `.jpg`, `.jpeg`, `.png` e `.bmp` no `file_assoc_init()` apontando para a Galeria, e adição dos tiles "Câmera" e "Galeria" no `ui_desktop.cpp`.
-- [ ] **Etapa 6 — Build, Validação e Teste em Hardware**: Teste físico de captura de foto, gravação com nome cronológico no microSD, navegação por swipe na galeria, exclusão de fotos com diálogo de confirmação e validação de abertura de fotos diretamente pelo app Arquivos.
+- [x] **Etapa 1 — Backend de Câmera e Captura (`camera_mgr`)**: Inicialização do driver MIPI-CSI com `bsp_camera_start()`, streaming V4L2 em buffer PSRAM e gravação JPEG com nome `IMG_YYYYMMDD_HHMMSS.jpg` em `/sdcard/imagens/`.
+- [x] **Etapa 2 — Interface do Aplicativo Câmera (`ui_camera`)**: Janela LVGL com canvas/image de preview, botão circular de disparo e atalho para galeria no `ui_shell`.
+- [x] **Etapa 3 — Interface e Navegação da Galeria (`ui_gallery`)**: Leitura de `/sdcard/imagens/`, ordenação decrescente por data/nome e renderização em tela cheia com suporte a abertura de imagem específica via `ui_gallery_open_file(filepath)`.
+- [x] **Etapa 4 — Sistema de Gestos, Cliques e Exclusão de Fotos**: Manipulação de `LV_EVENT_GESTURE` (`LV_DIR_LEFT` = próxima foto mais antiga, `LV_DIR_RIGHT` = foto anterior mais recente), toques nas metades laterais da tela e botão `[🗑]` com modal de confirmação para remoção física de fotos do SD.
+- [x] **Etapa 5 — Atualização de Associações (`file_assoc`) e Desktop**: Registro de `.jpg`, `.jpeg`, `.png` e `.bmp` no `file_assoc_init()` apontando para a Galeria, e adição dos tiles "Câmera" e "Galeria" no `ui_desktop.cpp`.
+- [x] **Etapa 6 — Build, Validação e Teste em Hardware**: Teste físico de captura de foto, gravação com nome cronológico no microSD, navegação por swipe na galeria, exclusão de fotos com diálogo de confirmação e validação de abertura de fotos diretamente pelo app Arquivos.
 
 ## 6. Riscos & Mitigações
 
@@ -1136,3 +1137,121 @@ components/app/
 
 ## 8. Status de Conclusão: `[ ] PLANEJADO`
 - **Gravador de Voz**: Arquitetura planejada e pronta para implementação na Fase 25.
+
+---
+
+# [ ] Fase 26: Aplicativo Chat IA (Interação com Modelos via API OpenAI-compatível) `⏳ PLANEJADO`
+
+## 1. Contexto & Objetivos
+- Criação do aplicativo nativo **"Chat"** (`ui_chat`) para conversação por texto com modelos de linguagem (LLMs) acessados via API remota compatível com **OpenAI Chat Completions**.
+- **Entrada e Saída de Texto**: O usuário digita uma mensagem no teclado virtual (ou físico Bluetooth) e recebe a resposta textual do modelo diretamente no console de conversa.
+- **Configuração Flexível do Provedor**: Tela de cadastro para **URL base** da API, **token de autenticação** (Bearer) e **modelo** a ser usado, persistidos em `/sdcard/tab5_os/ai.cfg`.
+- **Referência de Implementação — Plano OpenCode Go**:
+  - O plano **OpenCode Go** (opencode.ai) expõe um endpoint **OpenAI-compatível** usado como referência da implementação de acesso a modelo: `POST {base_url}/chat/completions` com header `Authorization: Bearer <token>` e corpo JSON com `model` e `messages`.
+  - Endpoint de exemplo do gateway: `https://opencode.ai/zen/go/v1/chat/completions` (modelos como `deepseek-v4-pro`, `deepseek-v4-flash`, `kimi-k2.6`, etc.).
+  - A arquitetura segue o mesmo contrato, mas com **URL, token e modelo configuráveis** pelo usuário, permitindo acesso a qualquer gateway compatível (OpenCode Go, OpenAI, OpenRouter, Ollama, etc.).
+- **Histórico de Conversa**: Manutenção do contexto de mensagens (`messages[]` com papéis `user`/`assistant`) na memória durante a sessão, permitindo diálogos de múltiplos turnos.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Protocolo de acesso ao modelo | **OpenAI Chat Completions** (`POST {base_url}/chat/completions`, Bearer token) | Contrato universal usado pelo plano OpenCode Go e pela maioria dos provedores/LLM |
+| D2 | Cliente HTTP | `esp_http_client` (componente nativo do ESP-IDF) | Suporta HTTPS/TLS via mbedTLS, streaming (chunked) e timeouts configuráveis sem dependência externa |
+| D3 | Execução da requisição | **Task FreeRTOS dedicada** (`ai_client_task`, stack em PSRAM) | Isola latência de rede e parsing JSON sem bloquear a thread gráfica do LVGL (padrão do `ssh_client`) |
+| D4 | Serialização/parsing | `cJSON` (nativo do ESP-IDF) | Construção e leitura compacta do payload `{model, messages, max_tokens}` e da resposta `choices[0].message.content` |
+| D5 | Persistência de configuração | `/sdcard/tab5_os/ai.cfg` (linhas `base_url=...`, `token=...`, `model=...`) | Mesmo padrão de `wifi.cfg`/`bt.cfg`, inspecionável e persistente entre boots |
+| D6 | Thread-safety da UI | Callbacks despachados exclusivamente sob `bsp_display_lock()` | Atualização segura do console de conversa a partir da task de rede |
+| D7 | Validação de conectividade | Checagem prévia com `wifi_mgr_is_connected()` | Evita tentativas de requisição sem rede ativa, com mensagem de erro amigável |
+| D8 | Integração no sistema | Tela `ui_chat` no `ui_shell`, tile no `ui_desktop` | Ciclo de vida, temas e rotação consistentes com os demais apps |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── ai_client.h            # [NEW] Cliente HTTP OpenAI-compatível (task, request/response)
+│   ├── ai_storage.h           # [NEW] I/O de configuração em /sdcard/tab5_os/ai.cfg
+│   ├── ui_chat.h              # [NEW] Interface do app Chat (console de conversa)
+│   ├── ui_desktop.h           # [MODIFY] Tile 'Chat' no launcher
+│   └── ui_shell.h             # [MODIFY] Rotinas ui_shell_open_chat / close_chat
+├── ai_client.cpp              # [NEW] Cliente HTTP, montagem JSON, task FreeRTOS e callbacks
+├── ai_storage.cpp             # [NEW] Leitura e escrita de base_url/token/modelo no SD
+├── ui_chat.cpp                # [NEW] Console de conversa, campo de envio e tela de configuração
+├── ui_desktop.cpp             # [MODIFY] Registro visual do tile 'Chat'
+├── ui_shell.cpp               # [MODIFY] Transições de tela do chat
+├── CMakeLists.txt             # [MODIFY] Registro de ai_client.cpp, ai_storage.cpp e ui_chat.cpp
+main/
+└── app_main.cpp               # [MODIFY] Chamada de ai_storage_load() no boot (se necessário)
+```
+
+## 4. Especificação Visual e Layout da Interface
+
+### Tela Principal do Chat
+```
+┌─────────────────────────────────────────┐
+│  [←] Chat                        [⚙]   │  ← Barra com voltar e configuração
+├─────────────────────────────────────────┤
+│  ┌───────────────────────────────────┐  │
+│  │ Eu: O que é o ESP32-P4?           │  │  ← Histórico de mensagens
+│  │ IA:  O ESP32-P4 é um SoC...       │  │     (bolhas user/assistant)
+│  │     (resposta em múltiplas linhas)│  │
+│  └───────────────────────────────────┘  │  ← Área rolável da conversa
+│  ┌───────────────────────────────────┐  │
+│  │ Digite sua mensagem...   [Enviar] │  │  ← Campo de texto + botão
+│  └───────────────────────────────────┘  │
+│  [ Teclado Virtual ou Físico Bluetooth ]│
+└─────────────────────────────────────────┘
+```
+
+### Tela de Configuração do Provedor
+```
+┌─────────────────────────────────────────┐
+│  [←] Configuração da IA          [✕]   │
+├─────────────────────────────────────────┤
+│  URL da API (base_url)                  │
+│  ┌─────────────────────────────────────┐│
+│  │ https://opencode.ai/zen/go/v1      ││  ← Ex.: gateway OpenCode Go
+│  └─────────────────────────────────────┘│
+│  Token de autenticação (Bearer)         │
+│  ┌─────────────────────────────────────┐│
+│  │ sk-••••••••••••••••••••            ││  ← Campo mascarado (echo oculto)
+│  └─────────────────────────────────────┘│
+│  Modelo                                 │
+│  ┌─────────────────────────────────────┐│
+│  │ deepseek-v4-pro                     ││  ← Ex.: modelo do plano Go
+│  └─────────────────────────────────────┘│
+│                    [ Salvar ]           │
+└─────────────────────────────────────────┘
+```
+
+## 5. Fases de Execução da Funcionalidade
+
+- [ ] **Etapa 1 — Backend de Armazenamento (`ai_storage`)**: Leitura e escrita de `base_url`, `token` e `model` em `/sdcard/tab5_os/ai.cfg` com parsing robusto e sanitização de valores.
+- [ ] **Etapa 2 — Cliente HTTP (`ai_client`)**: Montagem do payload `{model, messages, max_tokens}`, header `Authorization: Bearer <token>`, POST via `esp_http_client` em task FreeRTOS com stack em PSRAM, timeout configurável e parsing da resposta com `cJSON` (`choices[0].message.content`).
+- [ ] **Etapa 3 — Interface do Chat (`ui_chat`)**: Console de conversa com bolhas de usuário/assistente, campo de envio acoplado ao `ui_keyboard` (com suporte à supressão por teclado físico), indicador de "pensando..." durante a requisição e área de configuração do provedor.
+- [ ] **Etapa 4 — Integração com o Sistema**: Registro do tile 'Chat' no `ui_desktop`, ciclo de vida no `ui_shell`, suporte a 4 rotações e temas claro/escuro.
+- [ ] **Etapa 5 — Build, Validação e Teste em Hardware**: Teste real com o gateway **OpenCode Go** (e/ou OpenAI-compatible local) validando envio, recepção, múltiplos turnos e persistência da configuração.
+
+## 6. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Latência de rede bloqueando a interface LVGL | Todas as operações HTTP/JSON rodam exclusivamente na task FreeRTOS dedicada; a UI recebe apenas callbacks protegidos por `bsp_display_lock()` |
+| Consumo de memória com respostas longas | `max_tokens` limitado (ex.: 512) e truncamento seguro da resposta no buffer antes da exibição |
+| Certificado TLS para gateways HTTPS | Uso de `esp_http_client` com certificado raiz embutido do endpoint configurado (ou `skip` apenas para testes locais) |
+| Token armazenado em texto plano no SD | Mesmo modelo dos demais configs do sistema (`wifi.cfg`/`bt.cfg`); documentado como limitação do firmware embarcado |
+| Timeout sem resposta ou 429 de cota | Tratamento de erros HTTP (401, 429, 5xx) com mensagem legível no console e retorno ao prompt local |
+| Provedor com streaming (SSE) | v1 sem streaming (resposta completa); streaming `data:` previsto como evolução futura |
+
+## 7. Critérios de Validação & Teste em Hardware
+1. Abrir o app Chat pelo Desktop e validar abertura da tela de conversa.
+2. Acessar a configuração, cadastrar `base_url`, `token` e `model` (ex.: gateway OpenCode Go + `deepseek-v4-pro`) e salvar.
+3. Reiniciar o Tab5 e validar que a configuração foi restaurada a partir do `ai.cfg`.
+4. Enviar uma mensagem e validar a exibição da resposta do modelo no console.
+5. Enviar uma segunda mensagem e validar a manutenção do contexto (múltiplos turnos).
+6. Desconectar o Wi-Fi e validar a mensagem de erro amigável sem travamento da UI.
+7. Testar em modo retrato (0°, 180°) e paisagem (90°, 270°) com teclado virtual e físico.
+
+## 8. Status de Conclusão: `[ ] PLANEJADO`
+- **Chat IA**: Arquitetura planejada e pronta para implementação na Fase 26, tendo como referência de acesso a modelo o plano OpenCode Go (OpenAI Chat Completions).
