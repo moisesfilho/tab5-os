@@ -14,10 +14,11 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 
 ## Funcionalidades
 
+- **Aplicativo Gravador de Voz e Player de Áudio** — gravação nativa de voz via microfones integrados com codec ADC ES7210 em formato padrão WAV PCM 16-bit 16 kHz Mono (`/sdcard/gravacoes/REC_YYYYMMDD_HHMMSS.wav`), trava de segurança automática de 5 minutos, reprodutor de áudio com codec DAC ES8388 e barra de progresso em tempo real, listagem cronológica com modal de exclusão e associação direta com arquivos `.wav` e `.pcm`
 - **Aplicativo Câmera & Pipeline V4L2/ISP no ESP32-P4** — captura de fotos e streaming em tempo real na resolução 640×480 diretamente do sensor SC202CS via MIPI-CSI acelerado por hardware, com arquitetura persistente de streaming V4L2 (`VIDIOC_STREAMON`/`VIDIOC_STREAMOFF`), proteção contra estouro de matriz de correção de cores (CCM) e salvamento JPEG assíncrono em task FreeRTOS no cartão SD
 - **Aplicativo Galeria de Fotos** — visualizador de fotos nativo para imagens JPEG gravadas no cartão SD (`/sdcard/photos/`), com decodificador JPEG de alto desempenho (TJpgDec) em buffer PSRAM com renderização em Canvas LVGL 9, navegação de imagens e integração bidirecional com a Câmera e o Gerenciador de Arquivos
 - **Aplicativo Servidor Web de Arquivos (HTTP)** — servidor HTTP integrado para download e compartilhamento de fotos pela rede Wi-Fi local via navegador, com inicialização sob demanda para economia de energia e tela de controle no desktop com status, URL e estatísticas
-- **Área de Trabalho com Grid Responsivo Flexbox** — layout responsivo com fluxo contínuo da esquerda para a direita e de cima para baixo (`LV_FLEX_FLOW_ROW_WRAP`), centralização dinâmica de colunas, alinhamento à esquerda nas quebras de linha e ícones vetoriais estilizados (Câmera 📷, Bloco de Notas 🗒️, Galeria 🖼️, Servidor 💽)
+- **Área de Trabalho com Grid Responsivo Flexbox** — layout responsivo com fluxo contínuo da esquerda para a direita e de cima para baixo (`LV_FLEX_FLOW_ROW_WRAP`), centralização dinâmica de colunas, alinhamento à esquerda nas quebras de linha e ícones vetoriais estilizados (Câmera 📷, Bloco de Notas 🗒️, Galeria 🖼️, Servidor 💽, Gravador 🎙️)
 - **Protetor de Tela Anti-Burn-in** — preservação do painel MIPI-DSI contra retenção de imagem (*burn-in*), com tela em fundo 100% preto (`#000000`), relógio digital em destaque (`HH:MM:SS`), data completa em português, versão do SO, reposicionamento aleatório a cada 30 segundos com *bounding box* seguro para todas as 4 orientações, ocultação temporária do cursor do mouse e despertar imediato ao toque na tela, teclado ou mouse
 - **Aplicativo Terminal & Cliente SSH Remoto** — shell de console estilo Linux integrado ao sistema, com prompt interativo (`/sdcard $`), histórico de comandos, suporte aos comandos essenciais (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`) e **Cliente SSH completo** (`ssh [user@]host [-p porta]`) executado em task FreeRTOS assíncrona dedicada com `libssh`, emulação de terminal VT100/xterm, prompt protegido de senha e filtragem robusta de sequências ANSI/OSC
 - **Gerenciador de Bluetooth & Teclado Físico (BLE HID)** — suporte a conexão, pareamento e auto-reconexão com periféricos Bluetooth Low Energy (HOGP), como teclados físicos e mouses/touchpads integrados, com injeção direta de digitação nos aplicativos (ex: Notas e Terminal), ocultação dinâmica do teclado virtual e indicador de conexão na barra superior
@@ -102,6 +103,8 @@ tab5-os/
 │   │   ├── ui_bar.cpp        # Barra superior, menu de configuracoes, relogio
 │   │   ├── ui_camera.cpp     # Aplicativo Camera com preview e obturador
 │   │   ├── camera_mgr.cpp    # Gerenciador V4L2/ISP e gravacao assincrona de fotos
+│   │   ├── ui_recorder.cpp   # Aplicativo Gravador de Voz e Player de Audio
+│   │   ├── audio_recorder.cpp # Backend I2S, codecs ES7210/ES8388 e encoder WAV
 │   │   ├── ui_gallery.cpp    # Visualizador de fotos da Galeria
 │   │   ├── tjpgd.c           # Descompressor JPEG acelerado (TJpgDec)
 │   │   ├── ui_fileserver.cpp # Aplicativo Servidor Web HTTP

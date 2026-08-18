@@ -10,6 +10,7 @@
 #include "ui_camera.h"
 #include "ui_gallery.h"
 #include "ui_fileserver.h"
+#include "ui_recorder.h"
 #include "ui_screensaver.h"
 #include "ui_theme.h"
 #include "ui_font.h"
@@ -28,6 +29,8 @@ lv_obj_t *camera_scr = nullptr;
 lv_obj_t *gallery_scr = nullptr;
 lv_obj_t *gallery_caller_scr = nullptr;
 lv_obj_t *fileserver_scr = nullptr;
+lv_obj_t *recorder_scr = nullptr;
+lv_obj_t *recorder_caller_scr = nullptr;
 lv_obj_t *splash = nullptr;
 lv_obj_t *splash_label = nullptr;
 
@@ -89,6 +92,7 @@ void ui_shell_init(void)
     camera_scr = ui_camera_create();
     gallery_scr = ui_gallery_create();
     fileserver_scr = ui_fileserver_create();
+    recorder_scr = ui_recorder_create();
     ui_screensaver_init();
 
     lv_timer_create(inactivity_timer_cb, 1000, nullptr);
@@ -228,6 +232,33 @@ void ui_shell_close_fileserver(void)
     lv_disp_load_scr(desktop_scr);
 }
 
+void ui_shell_open_recorder(void)
+{
+    ui_keyboard_hide();
+    recorder_caller_scr = desktop_scr;
+    lv_disp_load_scr(recorder_scr);
+    ui_recorder_on_open();
+}
+
+void ui_shell_open_recorder_with_file(const char *filepath)
+{
+    ui_keyboard_hide();
+    lv_obj_t *act = lv_disp_get_scr_act(NULL);
+    recorder_caller_scr = (act != nullptr && act != recorder_scr) ? act : desktop_scr;
+    ui_recorder_open_file(filepath);
+    lv_disp_load_scr(recorder_scr);
+    ui_recorder_on_open();
+}
+
+void ui_shell_close_recorder(void)
+{
+    ui_recorder_on_close();
+    ui_keyboard_hide();
+    lv_obj_t *target = (recorder_caller_scr != nullptr) ? recorder_caller_scr : desktop_scr;
+    recorder_caller_scr = nullptr;
+    lv_disp_load_scr(target);
+}
+
 void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
@@ -239,6 +270,7 @@ void ui_shell_refresh_theme(void)
     ui_camera_refresh_theme();
     ui_gallery_refresh_theme();
     ui_fileserver_refresh_theme();
+    ui_recorder_refresh_theme();
 
     if (splash != nullptr) {
         lv_obj_set_style_bg_color(splash, lv_color_hex(ui_theme_get()->background), 0);
@@ -265,5 +297,7 @@ void ui_shell_notify_keyboard_layout(void)
         ui_gallery_apply_layout();
     } else if (act == fileserver_scr) {
         ui_fileserver_apply_layout();
+    } else if (act == recorder_scr) {
+        ui_recorder_apply_layout();
     }
 }
