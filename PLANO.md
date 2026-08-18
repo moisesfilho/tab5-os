@@ -32,6 +32,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[ ]` | **Fase 24** | Aplicativos de Câmera e Galeria de Fotos | Aplicativo / Mídia | Preview MIPI-CSI, gravação `/sdcard/imagens/`, galeria com swipe/toque, exclusão e associação no app Arquivos |
 | `[ ]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
 | `[ ]` | **Fase 26** | Aplicativo Chat IA (OpenAI-compatível) | Aplicativo / Conectividade | Chat texto, cadastro de token/URL/modelo, cliente HTTP `/chat/completions`, persistência em `ai.cfg` |
+| `[ ]` | **Fase 27** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
 
 ---
 
@@ -1255,3 +1256,92 @@ main/
 
 ## 8. Status de Conclusão: `[ ] PLANEJADO`
 - **Chat IA**: Arquitetura planejada e pronta para implementação na Fase 26, tendo como referência de acesso a modelo o plano OpenCode Go (OpenAI Chat Completions).
+
+---
+
+# [ ] Fase 27: Modo Pen Drive USB — USB Mass Storage (MSC) para Recuperação de Arquivos `⏳ PLANEJADO`
+
+## 1. Contexto & Objetivos
+- Implementar o **Modo Pen Drive**: ao conectar o Tab5 ao computador via USB-C, o dispositivo se apresenta ao sistema operacional do host como um **disco removível** (classe **MSC — Mass Storage Class**), permitindo que o PC monte o volume e o usuário copie/recupere arquivos do cartão microSD de forma transparente — sem precisar retirar o cartão físico.
+- **Cenário de Uso Principal (Recuperação de Dados)**: O tab5-os armazena notas, fotos, gravações, configurações e arquivos diversos no microSD (`/sdcard`). O modo pen drive oferece um canal direto para backup, transferência ou resgate desses arquivos em qualquer computador.
+- **Hardware e Stack**:
+  - O ESP32-P4 possui controlador USB **OTG (DWC2)** nativo; no Tab5 o conector USB-C já é utilizado para programação (USB-Serial-JTAG) e alimentação.
+  - A implementação de classe MSC em modo *device* será feita com **TinyUSB** (`esp_tinyusb`, componente oficial do ESP-IDF) com o driver **`tusb_msc`**, exportando o cartão SD como um dispositivo de blocos lógico.
+- **Ativação**: Controle manual no menu de configurações (chave "Modo Pen Drive") com opção de ativação automática ao detectar conexão USB ao host — o sistema pergunta (ou age conforme a configuração persistida) antes de entregar o acesso ao disco.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Stack USB device | `esp_tinyusb` (TinyUSB) com classe **MSC** | Suporte oficial do ESP-IDF 5.5 para USB-OTG em modo device com múltiplas classes |
+| D2 | Storage exportado | Passagem direta de blocos (`sdmmc_card_read_blocks`/`write_blocks`) do microSD | O computador enxerga o **filesystem FAT real** do cartão, montando e recuperando arquivos exatamente como estão no SD |
+| D3 | Acesso exclusivo ao SD | Bloqueio do VFS local (`/sdcard`) enquanto o MSC estiver ativo | Previne concorrência de escrita entre o sistema e o host, evitando corrupção do FAT |
+| D4 | Ativação | Chave "Modo Pen Drive" no menu de configurações + detecção de plugue USB | Controle explícito do usuário; o comportamento automático é opcional e persistido em NVS/SD |
+| D5 | Segurança de dados | Desmontagem limpa e notificação visual antes de encerrar o modo | Garante que todos os buffers pendentes sejam sincronizados ao cartão antes do host desconectar |
+| D6 | Múltiplos LUNs | Suporte futuro a LUN separado para uma partição/espelho em PSRAM | Permite expor também um volume de "sistema" sem comprometer o SD |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── usb_msc.h               # [NEW] API de ativação, I/O de blocos e callbacks de conexão
+│   ├── ui_bar.h                # [MODIFY] Switch "Modo Pen Drive" no menu de configurações
+│   └── ui_shell.h              # [MODIFY] Modal/aviso de modo pen drive ativo
+├── usb_msc.cpp                 # [NEW] Inicialização TinyUSB MSC, callbacks lun e I/O de blocos
+├── ui_bar.cpp                  # [MODIFY] Switch do modo pen drive e persistência da preferência
+├── ui_shell.cpp                # [MODIFY] Tela de aviso/bloqueio durante o modo ativo
+└── CMakeLists.txt              # [MODIFY] Registro de usb_msc.cpp
+main/
+├── idf_component.yml           # [MODIFY] Adição da dependência espressif/esp_tinyusb
+└── app_main.cpp                # [MODIFY] Inicialização condicional do modo pen drive no boot
+```
+
+## 4. Especificação de Fluxo e Interface
+
+```
+┌──────────────────────────────┐     ┌──────────────────────────────┐     ┌──────────────────────────────┐
+│  Usuário liga "Modo Pen      │     │  Tab5 enumerado como         │     │  Host monta o volume e       │
+│  Drive" no menu (ou pluga    │ ──> │  dispositivo MSC (TinyUSB)   │ ──> │  recupera/copia arquivos     │
+│  no computador)              │     │  no USB-C / DWC2             │     │  do microSD (FAT)            │
+└──────────────────────────────┘     └──────────────────────────────┘     └──────────────────────────────┘
+```
+
+### Fluxo de Ativação (Manual)
+1. Usuário acessa o menu de configurações (engrenagem) e liga a chave **"Modo Pen Drive"** (preferência persistida).
+2. O sistema exibe um aviso explicando que, durante o modo, os apps não acessarão o `/sdcard`.
+3. Ao conectar o cabo USB-C ao computador (ou ao reiniciar com o modo ativo), o `usb_msc` inicializa o TinyUSB e o Tab5 é enumerado como um disco removível.
+4. O computador monta o volume, e o usuário copia/recupera os arquivos livremente.
+5. Ao finalizar, o usuário desliga o modo (ou o sistema detecta a desconexão) — ocorre a sincronização (`sync`) e o VFS `/sdcard` é restaurado para os apps.
+
+### Fluxo de Ativação (Automático — opcional)
+- Com a preferência "detectar automaticamente" ativa, o plugue do cabo dispara o modo; um modal de confirmação (`lv_msgbox`) pergunta "Ativar modo pen drive?" para evitar surpresas.
+
+## 5. Fases de Execução da Funcionalidade
+
+- [ ] **Etapa 1 — Dependência e Backend (`usb_msc`)**: Adicionar `espressif/esp_tinyusb` ao `main/idf_component.yml`; implementar inicialização do `tusb_msc` em modo device com callbacks de `inquiry`, `read_capacity`, `read`/`write` de blocos delegando ao driver SDMMC (`sdmmc_card_read_blocks`/`write_blocks`).
+- [ ] **Etapa 2 — Bloqueio do VFS Local**: Garantir acesso exclusivo ao cartão durante o modo ativo (barreira no `wifi_storage`/apps de arquivos e aviso visual), com restauração segura do `/sdcard` ao desativar.
+- [ ] **Etapa 3 — Switch no Menu de Configurações**: Chave "Modo Pen Drive" no `ui_bar.cpp` com persistência da preferência em NVS e modal explicativo ao ligar.
+- [ ] **Etapa 4 — Detecção de Plugue/Desconexão**: Callbacks de conexão/desconexão do TinyUSB (quando disponíveis no DWC2) ou polling da linha VBUS para ativação automática e `sync` no desligamento.
+- [ ] **Etapa 5 — Build, Validação e Teste em Hardware**: Compilação com `pre-commit`, gravação e validação real em Windows e Linux: montagem do volume, leitura/escrita de arquivos e integridade do FAT após uso.
+
+## 6. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Corrupção do FAT por acesso concorrente ao SD | Acesso exclusivo: VFS local bloqueado enquanto o MSC estiver ativo, com sincronização (`sync`) antes de liberar |
+| Velocidade limitada pela SDIO + TinyUSB | DMA SDMMC em blocos grandes (512 B setores) e buffer em PSRAM; prioridade de task dedicada |
+| Enumeração instável em certos hosts | Utilização de descritores MSC padrão (BOT + SCSI) e conformidade com a spec de classe; testes em Linux e Windows |
+| Usuário desconectar sem desligar o modo | Detecção de desconexão e flush forçado; instrução visual de "ejetar" antes de remover o cabo |
+| Compartilhamento do controlador USB com o console (USB-Serial-JTAG) | Console permanece na interface JTAG; o MSC usa o mesmo barramento apenas em modo device ativo — validado em hardware |
+
+## 7. Critérios de Validação & Teste em Hardware
+1. Ligar "Modo Pen Drive" no menu e conectar o Tab5 ao computador via USB-C.
+2. Verificar que o computador detecta um **disco removível** (sem driver especial) e monta o volume.
+3. Copiar um arquivo do computador para o SD e outro do SD para o computador, conferindo integridade dos dados.
+4. Acessar notas, fotos e gravações gravadas pelos apps (`/sdcard/notas/`, `/sdcard/imagens/`, `/sdcard/gravacoes/`) e recuperá-los pelo PC.
+5. Desligar o modo e validar que os apps voltam a acessar normalmente o `/sdcard`.
+6. Testar a desconexão abrupta do cabo e validar que o cartão permanece íntegro (sem corrupção) no próximo boot.
+
+## 8. Status de Conclusão: `[ ] PLANEJADO`
+- **Modo Pen Drive USB**: Arquitetura planejada e pronta para implementação na Fase 27, permitindo recuperação de arquivos do microSD via USB Mass Storage em qualquer computador.
