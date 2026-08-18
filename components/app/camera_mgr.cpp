@@ -95,7 +95,7 @@ struct BitWriter {
     uint32_t bit_buf;
     int bit_cnt;
 
-    inline void put_bit(int b)
+    void put_bit(int b)
     {
         bit_buf = (bit_buf << 1) | (b & 1);
         bit_cnt++;
@@ -110,14 +110,14 @@ struct BitWriter {
         }
     }
 
-    inline void write_bits(uint32_t bits, int num_bits)
+    void write_bits(uint32_t bits, int num_bits)
     {
         for (int i = num_bits - 1; i >= 0; i--) {
             put_bit((bits >> i) & 1);
         }
     }
 
-    inline void flush()
+    void flush()
     {
         if (bit_cnt > 0) {
             bit_buf <<= (8 - bit_cnt);
@@ -202,21 +202,21 @@ static void init_huff_tables_if_needed()
 }
 
 static const float s_C[8][8] = {
-    {0.3535534f, 0.3535534f, 0.3535534f, 0.3535534f, 0.3535534f, 0.3535534f, 0.3535534f, 0.3535534f},
-    {0.4903926f, 0.4157348f, 0.2777851f, 0.0975452f, -0.0975452f, -0.2777851f, -0.4157348f, -0.4903926f},
-    {0.4619398f, 0.1913417f, -0.1913417f, -0.4619398f, -0.4619398f, -0.1913417f, 0.1913417f, 0.4619398f},
-    {0.4157348f, -0.0975452f, -0.4903926f, -0.2777851f, 0.2777851f, 0.4903926f, 0.0975452f, -0.4157348f},
-    {0.3535534f, -0.3535534f, -0.3535534f, 0.3535534f, 0.3535534f, -0.3535534f, -0.3535534f, 0.3535534f},
-    {0.2777851f, -0.4903926f, 0.0975452f, 0.4157348f, -0.4157348f, -0.0975452f, 0.4903926f, -0.2777851f},
-    {0.1913417f, -0.4619398f, 0.4619398f, -0.1913417f, -0.1913417f, 0.4619398f, -0.4619398f, 0.1913417f},
-    {0.0975452f, -0.2777851f, 0.4157348f, -0.4903926f, 0.4903926f, -0.4157348f, 0.2777851f, -0.0975452f}};
+    {0.3535534F, 0.3535534F, 0.3535534F, 0.3535534F, 0.3535534F, 0.3535534F, 0.3535534F, 0.3535534F},
+    {0.4903926F, 0.4157348F, 0.2777851F, 0.0975452F, -0.0975452F, -0.2777851F, -0.4157348F, -0.4903926F},
+    {0.4619398F, 0.1913417F, -0.1913417F, -0.4619398F, -0.4619398F, -0.1913417F, 0.1913417F, 0.4619398F},
+    {0.4157348F, -0.0975452F, -0.4903926F, -0.2777851F, 0.2777851F, 0.4903926F, 0.0975452F, -0.4157348F},
+    {0.3535534F, -0.3535534F, -0.3535534F, 0.3535534F, 0.3535534F, -0.3535534F, -0.3535534F, 0.3535534F},
+    {0.2777851F, -0.4903926F, 0.0975452F, 0.4157348F, -0.4157348F, -0.0975452F, 0.4903926F, -0.2777851F},
+    {0.1913417F, -0.4619398F, 0.4619398F, -0.1913417F, -0.1913417F, 0.4619398F, -0.4619398F, 0.1913417F},
+    {0.0975452F, -0.2777851F, 0.4157348F, -0.4903926F, 0.4903926F, -0.4157348F, 0.2777851F, -0.0975452F}};
 
 static void exact_fdct8x8(const int16_t *in, float *out)
 {
     float tmp[64];
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
-            float sum = 0.0f;
+            float sum = 0.0F;
             for (int k = 0; k < 8; k++) {
                 sum += s_C[i][k] * (float)in[k * 8 + j];
             }
@@ -225,7 +225,7 @@ static void exact_fdct8x8(const int16_t *in, float *out)
     }
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
-            float sum = 0.0f;
+            float sum = 0.0F;
             for (int k = 0; k < 8; k++) {
                 sum += tmp[i * 8 + k] * s_C[j][k];
             }
@@ -384,11 +384,19 @@ static bool save_rgb565_as_jpeg(const char *filepath, const uint8_t *rgb565_data
     fwrite(sos, 1, sizeof(sos), fp);
 
     BitWriter bw = {fp, 0, 0};
-    int16_t last_dc_y = 0, last_dc_cb = 0, last_dc_cr = 0;
+    int16_t last_dc_y = 0;
+    int16_t last_dc_cb = 0;
+    int16_t last_dc_cr = 0;
 
-    int16_t block_y_in[64], block_cb_in[64], block_cr_in[64];
-    float block_y_dct[64], block_cb_dct[64], block_cr_dct[64];
-    int16_t block_y_q[64], block_cb_q[64], block_cr_q[64];
+    int16_t block_y_in[64];
+    int16_t block_cb_in[64];
+    int16_t block_cr_in[64];
+    float block_y_dct[64];
+    float block_cb_dct[64];
+    float block_cr_dct[64];
+    int16_t block_y_q[64];
+    int16_t block_cb_q[64];
+    int16_t block_cr_q[64];
 
     const uint16_t *pixels = (const uint16_t *)rgb565_data;
 
@@ -486,9 +494,6 @@ void save_task_func(void *param)
 /* =========================================================================
  * Decodificacao e Conversao Bayer / RAW8 / RGB565 Otimizada
  * ========================================================================= */
-
-static int s_awb_gain_r = 380;
-static int s_awb_gain_b = 400;
 
 static void convert_raw8_bayer_to_rgb565(const uint8_t *src, int src_w, int src_h, uint16_t *dst, int dst_w, int dst_h)
 {
@@ -831,6 +836,7 @@ esp_err_t camera_mgr_capture_photo_async(char *out_filepath, size_t max_len, cam
 
     s_is_saving = true;
     if (s_save_queue != nullptr && xQueueSend(s_save_queue, &req, 0) == pdTRUE) {
+        // NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
         return ESP_OK;
     }
 

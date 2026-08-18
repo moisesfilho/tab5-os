@@ -134,7 +134,7 @@ void update_ui_state(void)
         char stats_buf[160];
         snprintf(stats_buf, sizeof(stats_buf),
                  "Fotos em /sdcard/imagens: %zu fotos\nEspaço Ocupado: %.1f MB (%zu bytes)", photo_count,
-                 (float)total_bytes / (1024.0f * 1024.0f), total_bytes);
+                 (float)total_bytes / (1024.0F * 1024.0F), total_bytes);
         lv_label_set_text(stats_info_label, stats_buf);
     }
 }

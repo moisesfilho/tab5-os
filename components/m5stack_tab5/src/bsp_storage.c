@@ -129,7 +129,7 @@ esp_err_t bsp_sdcard_sdmmc_mount(bsp_sdcard_cfg_t *cfg)
         host_config = &sdhost;
     }
 
-    sdmmc_slot_config_t *slot_config = cfg->slot.sdmmc;
+    const sdmmc_slot_config_t *slot_config = cfg->slot.sdmmc;
     if (!slot_config) {
         bsp_sdcard_sdmmc_get_slot(SDMMC_HOST_SLOT_0, &sdslot);
         slot_config = &sdslot;
@@ -185,7 +185,7 @@ esp_err_t bsp_sdcard_sdspi_mount(bsp_sdcard_cfg_t *cfg)
         host_config = &sdhost;
     }
 
-    sdspi_device_config_t *slot_config = cfg->slot.sdspi;
+    const sdspi_device_config_t *slot_config = cfg->slot.sdspi;
     if (!slot_config) {
         bsp_sdcard_sdspi_get_slot(BSP_SDSPI_HOST, &sdslot);
         slot_config = &sdslot;

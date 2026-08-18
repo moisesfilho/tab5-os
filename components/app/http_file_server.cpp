@@ -111,11 +111,16 @@ static esp_err_t download_handler(httpd_req_t *req)
     }
 
     char chunk[2048];
-    size_t read_bytes;
-    while ((read_bytes = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
-        if (httpd_resp_send_chunk(req, chunk, read_bytes) != ESP_OK) {
-            fclose(fp);
-            return ESP_FAIL;
+    while (!feof(fp) && !ferror(fp)) {
+        size_t read_bytes = fread(chunk, 1, sizeof(chunk), fp);
+        if (read_bytes > 0) {
+            if (httpd_resp_send_chunk(req, chunk, read_bytes) != ESP_OK) {
+                fclose(fp);
+                return ESP_FAIL;
+            }
+        }
+        if (read_bytes < sizeof(chunk)) {
+            break;
         }
     }
     fclose(fp);

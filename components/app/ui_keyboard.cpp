@@ -157,21 +157,22 @@ void apply_keyboard_theme(void)
     /* Estado normal das teclas, pressionado, foco e acao tem contraste claro. */
     lv_obj_set_style_bg_color(keyboard, lv_color_hex(pal->surface), LV_PART_ITEMS);
     lv_obj_set_style_bg_color(keyboard, lv_color_hex(pal->surface_alt),
-                              (lv_style_selector_t)(LV_PART_ITEMS | LV_STATE_FOCUSED));
+                              (lv_style_selector_t)((uint32_t)LV_PART_ITEMS | (uint32_t)LV_STATE_FOCUSED));
     lv_obj_set_style_bg_color(keyboard, lv_color_hex(pal->accent),
-                              (lv_style_selector_t)(LV_PART_ITEMS | LV_STATE_PRESSED));
+                              (lv_style_selector_t)((uint32_t)LV_PART_ITEMS | (uint32_t)LV_STATE_PRESSED));
     lv_obj_set_style_bg_color(keyboard, lv_color_hex(pal->accent_soft),
-                              (lv_style_selector_t)(LV_PART_ITEMS | LV_STATE_CHECKED));
+                              (lv_style_selector_t)((uint32_t)LV_PART_ITEMS | (uint32_t)LV_STATE_CHECKED));
     lv_obj_set_style_border_color(keyboard, lv_color_hex(pal->accent),
-                                  (lv_style_selector_t)(LV_PART_ITEMS | LV_STATE_CHECKED));
+                                  (lv_style_selector_t)((uint32_t)LV_PART_ITEMS | (uint32_t)LV_STATE_CHECKED));
     lv_obj_set_style_text_color(keyboard, lv_color_hex(pal->text),
-                                (lv_style_selector_t)(LV_PART_ITEMS | LV_STATE_CHECKED));
+                                (lv_style_selector_t)((uint32_t)LV_PART_ITEMS | (uint32_t)LV_STATE_CHECKED));
     lv_obj_set_style_text_color(keyboard, lv_color_hex(pal->text), LV_PART_ITEMS);
-    lv_obj_set_style_text_color(keyboard, lv_color_white(), (lv_style_selector_t)(LV_PART_ITEMS | LV_STATE_PRESSED));
+    lv_obj_set_style_text_color(keyboard, lv_color_white(),
+                                (lv_style_selector_t)((uint32_t)LV_PART_ITEMS | (uint32_t)LV_STATE_PRESSED));
     lv_obj_set_style_border_width(keyboard, 1, LV_PART_ITEMS);
     lv_obj_set_style_border_color(keyboard, lv_color_hex(pal->border), LV_PART_ITEMS);
     lv_obj_set_style_border_color(keyboard, lv_color_hex(pal->accent),
-                                  (lv_style_selector_t)(LV_PART_ITEMS | LV_STATE_FOCUSED));
+                                  (lv_style_selector_t)((uint32_t)LV_PART_ITEMS | (uint32_t)LV_STATE_FOCUSED));
     lv_obj_set_style_radius(keyboard, 8, LV_PART_ITEMS);
     lv_obj_set_style_shadow_width(keyboard, 0, LV_PART_ITEMS);
 }
