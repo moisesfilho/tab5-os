@@ -30,5 +30,5 @@ Checks: >
   -clang-diagnostic-unknown-warning-option,
   -clang-analyzer-deadcode.DeadStores
 WarningsAsErrors: ''
-HeaderFilterRegex: 'components/app/'
+HeaderFilterRegex: 'components/(os|apps)/'
 FormatStyle: none

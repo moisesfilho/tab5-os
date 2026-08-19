@@ -1468,3 +1468,32 @@ main/
 
 ## 8. Status de Conclusão: `[ ] PLANEJADO`
 - **Modo Pen Drive USB**: Arquitetura planejada e pronta para implementação na Fase 27, permitindo recuperação de arquivos do microSD via USB Mass Storage em qualquer computador.
+
+---
+
+# [x] Fase 24: Reestruturação Arquitetural Modular (`components/os` e `components/apps`) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Modularização do código-fonte do firmware eliminando o componente monolítico `components/app/`.
+- Separação clara entre o subsistema do **Sistema Operacional** (`components/os`) e as **Aplicações de Usuário** (`components/apps`), aplicando o padrão de engenharia *Package by Feature*.
+
+## 2. Estrutura Modular Implementada
+- **`components/os/`**:
+  - `core/`: Gerenciadores de sistema (`app_registry`, `file_assoc`, `timezone_mgr`, `display_storage`, `wifi_mgr`, `wifi_storage`, `bt_mgr`, `bt_storage`, `imu_reader`, `orientation`).
+  - `shell/`: Interface do sistema operacional (`ui_shell`, `ui_desktop`, `ui_bar`, `ui_status`, `ui_screensaver`, `ui_keyboard`, `ui_mouse`, `ui_theme`, `ui_app_bar`, `ui_font`).
+  - `fonts/`: Fontes Latin-1 compiladas.
+- **`components/apps/`** (*Package by Feature*):
+  - `camera/`: UI da câmera e driver de streaming MIPI-CSI (`ui_camera`, `camera_mgr`).
+  - `gallery/`: Visualizador JPEG de alta performance (`ui_gallery`, `tjpgd`).
+  - `notas/`: Editor de texto e notas em microSD (`ui_notas`).
+  - `recorder/`: Gravador de áudio I2S e reprodutor WAV (`ui_recorder`, `audio_recorder`).
+  - `chat/`: Assistente de Chat com IA (`ui_chat`, `ai_client`, `ai_storage`).
+  - `terminal/`: Shell interativo e cliente SSH (`ui_terminal`, `terminal_cmd`, `ssh_client`).
+  - `fileserver/`: Servidor Web HTTP de arquivos (`ui_fileserver`, `http_file_server`).
+  - `files/`: Explorador de arquivos microSD (`ui_files`).
+  - `wifi/`: Gerenciador de conexões Wi-Fi (`ui_wifi`).
+  - `bluetooth/`: Gerenciador de conexões Bluetooth (`ui_bluetooth`).
+
+## 3. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Build e Links**: Compilação concluída com sucesso no ESP-IDF 5.5.5 (`libos.a` e `libapps.a`).
+- **Validação Local e Hardware**: Testado via `pre-commit` e gravado com sucesso no hardware M5Stack Tab5 via USB-C.

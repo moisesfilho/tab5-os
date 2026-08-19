@@ -72,9 +72,11 @@ jobs:
             --config-file=.clang-tidy \
             --extra-arg="-Wno-unknown-warning-option" \
             --extra-arg="-Wno-extern-c-compat" \
-            --header-filter='components/app/' \
+            --header-filter='components/(os|apps)/' \
             main/app_main.cpp \
-            components/app/*.cpp 2>&1 | tee clang-tidy.log
+            components/os/core/*.cpp \
+            components/os/shell/*.cpp \
+            components/apps/*/*.cpp 2>&1 | tee clang-tidy.log
           # Desconsidera flags especificas do GCC RISC-V
           grep -vE "error: unknown argument:" clang-tidy.log > clang-tidy-clean.log
           if grep -qE 'error:|warning:' clang-tidy-clean.log; then
@@ -92,7 +94,8 @@ jobs:
             --suppress=syntaxError \
             --suppress=incorrectStringBooleanError \
             --file-filter=main/* \
-            --file-filter=components/app/* \
+            --file-filter=components/os/* \
+            --file-filter=components/apps/* \
             --error-exitcode=1 \
             --inline-suppr
 
@@ -102,8 +105,8 @@ jobs:
           echo "## 🔍 Lint & Static Analysis Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Ferramenta | Escopo | Resultado |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| **clang-tidy** | \`main/\`, \`components/app/\` | ${{ steps.clang_tidy.outcome == 'success' && '✅ Passou' || (steps.clang_tidy.outcome == 'skipped' && '⏭️ Ignorado' || '❌ Problemas detectados') }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **cppcheck** | \`main/\`, \`components/app/\` | ${{ steps.cppcheck.outcome == 'success' && '✅ Passou' || (steps.cppcheck.outcome == 'skipped' && '⏭️ Ignorado' || '❌ Problemas detectados') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **clang-tidy** | \`main/\`, \`components/os/\`, \`components/apps/\` | ${{ steps.clang_tidy.outcome == 'success' && '✅ Passou' || (steps.clang_tidy.outcome == 'skipped' && '⏭️ Ignorado' || '❌ Problemas detectados') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **cppcheck** | \`main/\`, \`components/os/\`, \`components/apps/\` | ${{ steps.cppcheck.outcome == 'success' && '✅ Passou' || (steps.cppcheck.outcome == 'skipped' && '⏭️ Ignorado' || '❌ Problemas detectados') }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> ℹ️ *Logs de execução disponíveis no artefato \`lint-logs\`.*" >> $GITHUB_STEP_SUMMARY
 

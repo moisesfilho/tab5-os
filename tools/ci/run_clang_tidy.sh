@@ -13,8 +13,8 @@ fi
 
 FILES=()
 for f in "$@"; do
-    # Apenas arquivos de projeto em main/ ou components/app/
-    if [[ "$f" =~ ^(main/|components/app/).*\.(cpp|c)$ ]] && [[ ! "$f" =~ ^components/app/fonts/ ]]; then
+    # Apenas arquivos de projeto em main/, components/os/ ou components/apps/
+    if [[ "$f" =~ ^(main/|components/os/|components/apps/).*\.(cpp|c)$ ]] && [[ ! "$f" =~ ^components/os/fonts/ ]]; then
         FILES+=("$f")
     fi
 done
@@ -31,7 +31,7 @@ clang-tidy -p build \
     --config-file=.clang-tidy \
     --extra-arg="-Wno-unknown-warning-option" \
     --extra-arg="-Wno-extern-c-compat" \
-    --header-filter='components/app/' \
+    --header-filter='components/(os|apps)/' \
     "${FILES[@]}" 2>&1 | tee "$TMP_LOG"
 
 grep -vE "error: unknown argument:" "$TMP_LOG" > "${TMP_LOG}.clean" || true

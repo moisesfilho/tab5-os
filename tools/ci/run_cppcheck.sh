@@ -8,7 +8,7 @@ fi
 
 FILES=()
 for f in "$@"; do
-    if [[ "$f" =~ ^(main/|components/app/).*\.(cpp|c)$ ]] && [[ ! "$f" =~ ^components/app/fonts/ ]]; then
+    if [[ "$f" =~ ^(main/|components/os/|components/apps/).*\.(cpp|c)$ ]] && [[ ! "$f" =~ ^components/os/fonts/ ]]; then
         FILES+=("$f")
     fi
 done

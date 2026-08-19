@@ -50,7 +50,7 @@ Para que uma nova aplicação seja reconhecida e funcione corretamente no sistem
 
 ## 3. Registro da Aplicação (`app_desc_t`)
 
-O manifesto da aplicação é declarado através da estrutura `app_desc_t` definida em [`app_registry.h`](file:///home/moises/Projetos/tab5-os/components/app/include/app_registry.h):
+O manifesto da aplicação é declarado através da estrutura `app_desc_t` definida em [`app_registry.h`](file:///home/moises/Projetos/tab5-os/components/os/core/app_registry.h):
 
 ```cpp
 typedef struct {
@@ -65,37 +65,13 @@ typedef struct {
 } app_desc_t;
 ```
 
-### Exemplo de Registro Básico:
-```cpp
-#include "app_registry.h"
-#include "ui_shell.h"
-
-void ui_meuapp_register(void)
-{
-    static const char *s_extensions[] = {"log", "csv", nullptr};
-
-    static const app_desc_t s_desc = {
-        .id = "meuapp",
-        .name = "Meu App",
-        .icon_symbol = LV_SYMBOL_LIST,
-        .icon_builder = nullptr,
-        .icon_theme_refresh = nullptr,
-        .on_launch = ui_shell_open_meuapp,
-        .file_extensions = s_extensions,
-        .on_open_file = ui_shell_open_meuapp_with_file,
-    };
-
-    app_registry_register(&s_desc);
-}
-```
-
 ---
 
 ## 4. Componentes Compartilhados do Sistema
 
 ### 4.1. Barra de Título Padronizada (`ui_app_bar_t`)
 
-Localizada em [`ui_app_bar.h`](file:///home/moises/Projetos/tab5-os/components/app/include/ui_app_bar.h), padroniza o cabeçalho de todas as aplicações com:
+Localizada em [`ui_app_bar.h`](file:///home/moises/Projetos/tab5-os/components/os/shell/ui_app_bar.h), padroniza o cabeçalho de todas as aplicações com:
 - Título da aplicação alinhado à esquerda.
 - Botão "Fechar" à direita (estilo quadrado/retangular compacto 36×28px com raio 6px).
 - Suporte a botões de ação personalizados.
@@ -127,7 +103,7 @@ ui_app_bar_refresh_theme(&app_bar);
 
 ### 4.2. Sistema de Temas (`ui_theme`)
 
-Localizado em [`ui_theme.h`](file:///home/moises/Projetos/tab5-os/components/app/include/ui_theme.h), gerencia as paletas Claro / Escuro do sistema.
+Localizado em [`ui_theme.h`](file:///home/moises/Projetos/tab5-os/components/os/shell/ui_theme.h), gerencia as paletas Claro / Escuro do sistema.
 
 #### Cores Disponíveis na Paleta (`ui_palette_t`):
 - `background`: Fundo principal da aplicação.
@@ -150,7 +126,7 @@ lv_obj_set_style_text_color(meu_label, lv_color_hex(pal->text), 0);
 
 ### 4.3. Tipografia e Fontes (`ui_font`)
 
-Localizado em [`ui_font.h`](file:///home/moises/Projetos/tab5-os/components/app/include/ui_font.h):
+Localizado em [`ui_font.h`](file:///home/moises/Projetos/tab5-os/components/os/shell/ui_font.h):
 - `lv_font_montserrat_14_latin1`: Fonte padrão do sistema configurada globalmente no tema do display (`lv_theme_default_init`). Possui suporte completo ao range Latin-1 (`0x20-0x7F`, `0xA0-0xFF`: á, é, í, ó, ú, ç, ã, õ, etc.) + símbolos do LVGL.
 - `lv_font_montserrat_28_latin1`: Fonte grande para ícones do desktop, contadores e cabeçalhos de destaque.
 
@@ -163,7 +139,7 @@ Localizado em [`ui_font.h`](file:///home/moises/Projetos/tab5-os/components/app/
 
 ### 4.4. Teclado Virtual Integrado (`ui_keyboard`)
 
-Localizado em [`ui_keyboard.h`](file:///home/moises/Projetos/tab5-os/components/app/include/ui_keyboard.h):
+Localizado em [`ui_keyboard.h`](file:///home/moises/Projetos/tab5-os/components/os/shell/ui_keyboard.h):
 - Ao focar um `lv_textarea`, o teclado virtual pode ser aberto com `ui_keyboard_show(textarea)`.
 - Ao fechar a aplicação ou desfocar o campo, use `ui_keyboard_hide()`.
 - Consulte a altura ocupada pelo teclado com `ui_keyboard_get_height()` para redimensionar a área útil da aplicação de forma reativa.
@@ -180,7 +156,7 @@ Localizado em [`ui_keyboard.h`](file:///home/moises/Projetos/tab5-os/components/
 
 ## 5. Passo a Passo para Adicionar uma Nova Aplicação
 
-### Passo 1: Criar o Header [`components/app/include/ui_meuapp.h`](file:///home/moises/Projetos/tab5-os/components/app/include/ui_meuapp.h)
+### Passo 1: Criar a Pasta do App e o Header [`components/apps/meuapp/ui_meuapp.h`](file:///home/moises/Projetos/tab5-os/components/apps/meuapp/ui_meuapp.h)
 
 ```cpp
 #pragma once
@@ -206,14 +182,13 @@ void ui_meuapp_open_file(const char *filepath);
 
 ---
 
-### Passo 2: Implementar o Código [`components/app/ui_meuapp.cpp`](file:///home/moises/Projetos/tab5-os/components/app/ui_meuapp.cpp)
+### Passo 2: Implementar o Código [`components/apps/meuapp/ui_meuapp.cpp`](file:///home/moises/Projetos/tab5-os/components/apps/meuapp/ui_meuapp.cpp)
 
 ```cpp
 #include "ui_meuapp.h"
 #include "app_registry.h"
 #include "ui_app_bar.h"
 #include "ui_theme.h"
-#include "ui_font.h"
 #include "ui_shell.h"
 #include "esp_log.h"
 
@@ -222,10 +197,9 @@ static const char *TAG = "tab5_meuapp";
 namespace {
 
 lv_obj_t *meuapp_scr = nullptr;
-ui_app_bar_t meuapp_app_bar = {};
-lv_obj_t *content_label = nullptr;
+ui_app_bar_t meuapp_bar;
 
-void close_btn_cb(lv_event_t *e)
+static void on_close_click(lv_event_t *e)
 {
     (void)e;
     ui_shell_open_desktop();
