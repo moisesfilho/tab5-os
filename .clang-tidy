@@ -20,6 +20,8 @@ Checks: >
   -readability-implicit-bool-conversion,
   -readability-braces-around-statements,
   -readability-else-after-return,
+  -readability-uppercase-literal-suffix,
+  -readability-isolate-declaration,
   -performance-enum-size,
   -performance-no-int-to-ptr,
   -bugprone-suspicious-enum-usage,

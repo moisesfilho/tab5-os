@@ -421,7 +421,8 @@ void load_and_display_current_photo(void)
     ui_app_bar_set_title(&gallery_app_bar, header_str);
 
     if (gallery_canvas_buf != nullptr && image_canvas != nullptr) {
-        int img_w = 640, img_h = 480;
+        int img_w = 640;
+        int img_h = 480;
         if (decode_jpeg_to_canvas(photo.fullpath.c_str(), gallery_canvas_buf, &img_w, &img_h)) {
             lv_canvas_set_buffer(image_canvas, gallery_canvas_buf, img_w, img_h, LV_COLOR_FORMAT_RGB565);
             lv_obj_set_size(image_canvas, img_w, img_h);

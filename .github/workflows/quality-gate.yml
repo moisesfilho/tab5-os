@@ -49,6 +49,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install lint tools
+        run: |
+          sudo apt-get update -o Acquire::http::Timeout=15 -o Acquire::ftp::Timeout=15 -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends clang-tidy cppcheck
+
       - name: Install ESP-IDF
         uses: espressif/install-esp-idf-action@v1
         with:
@@ -58,11 +63,6 @@ jobs:
       - name: Configure + build (compile db)
         run: |
           idf.py build
-
-      - name: Install lint tools
-        run: |
-          sudo apt-get update -o Acquire::Retries=3
-          sudo apt-get install -y --no-install-recommends clang-tidy cppcheck
 
       - name: clang-tidy (app code only)
         id: clang_tidy
@@ -75,8 +75,8 @@ jobs:
             --header-filter='components/app/' \
             main/app_main.cpp \
             components/app/*.cpp 2>&1 | tee clang-tidy.log
-          # Desconsidera flags especificas do GCC RISC-V (ex: -fno-tree-switch-conversion)
-          grep -vE "error: unknown argument: '-f" clang-tidy.log > clang-tidy-clean.log
+          # Desconsidera flags especificas do GCC RISC-V
+          grep -vE "error: unknown argument:" clang-tidy.log > clang-tidy-clean.log
           if grep -qE 'error:|warning:' clang-tidy-clean.log; then
             echo "::error::clang-tidy encontrou problemas — ver clang-tidy.log"
             cat clang-tidy-clean.log

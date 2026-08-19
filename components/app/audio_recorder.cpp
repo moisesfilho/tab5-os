@@ -253,12 +253,17 @@ void play_task(void *param)
         channels = header.num_channels;
         bits = header.bits_per_samp;
         data_bytes = header.data_size;
+        clearerr(fp);
         ESP_LOGI(TAG, "Header WAV valido: sr=%u, ch=%u, bits=%u, data_bytes=%u", (unsigned)sample_rate,
                  (unsigned)channels, (unsigned)bits, (unsigned)data_bytes);
     } else {
-        fseek(fp, 0, SEEK_END);
-        data_bytes = ftell(fp);
-        fseek(fp, 0, SEEK_SET);
+        clearerr(fp);
+        if (fseek(fp, 0, SEEK_END) == 0) {
+            long sz = ftell(fp);
+            data_bytes = (sz > 0) ? (uint32_t)sz : 0;
+            fseek(fp, 0, SEEK_SET);
+        }
+        clearerr(fp);
         ESP_LOGW(TAG, "Header WAV ausente, assumindo PCM cru: %u bytes", (unsigned)data_bytes);
     }
 
@@ -319,6 +324,10 @@ void play_task(void *param)
         if (s_status.state == AUDIO_RECORDER_STATE_PAUSED) {
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
+        }
+
+        if (feof(fp) || ferror(fp)) {
+            break;
         }
 
         size_t to_read = AUDIO_BUFFER_SIZE;
