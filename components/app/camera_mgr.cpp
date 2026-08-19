@@ -1,4 +1,5 @@
 #include "camera_mgr.h"
+#include "timezone_mgr.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_log.h"
 #include "esp_video_init.h"
@@ -867,9 +868,8 @@ static void generate_next_photo_filepath(char *out_path, size_t max_len)
 {
     mkdir("/sdcard/imagens", 0777);
 
-    time_t now = time(nullptr);
     struct tm timeinfo;
-    localtime_r(&now, &timeinfo);
+    timezone_mgr_get_localtime(&timeinfo);
 
     if (timeinfo.tm_year + 1900 >= 2024) {
         char base[128];
@@ -973,9 +973,8 @@ esp_err_t camera_mgr_capture_photo(char *out_filepath, size_t max_len)
 {
     mkdir("/sdcard/imagens", 0777);
 
-    time_t now = time(nullptr);
     struct tm timeinfo;
-    localtime_r(&now, &timeinfo);
+    timezone_mgr_get_localtime(&timeinfo);
 
     char filename[128];
     if (timeinfo.tm_year + 1900 < 2024) {

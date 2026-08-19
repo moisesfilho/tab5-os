@@ -6,6 +6,7 @@
 #include "ui_bar.h"
 #include "ui_app_bar.h"
 #include "ui_font.h"
+#include "timezone_mgr.h"
 #include "wifi_storage.h"
 
 #include <fcntl.h>
@@ -238,13 +239,13 @@ void show_save_modal(void)
     lv_obj_add_event_cb(save_modal_ta, save_modal_ta_click_cb, LV_EVENT_CLICKED, nullptr);
 
     /* Sugestao de nome */
-    time_t now = time(nullptr);
     struct tm timeinfo;
-    localtime_r(&now, &timeinfo);
+    timezone_mgr_get_localtime(&timeinfo);
     char default_filename[64];
     if (timeinfo.tm_year > 100) {
         std::strftime(default_filename, sizeof(default_filename), "nota_%Y%m%d_%H%M%S.txt", &timeinfo);
     } else {
+        time_t now = time(nullptr);
         std::snprintf(default_filename, sizeof(default_filename), "nota_%lu.txt", (unsigned long)now);
     }
     lv_textarea_set_text(save_modal_ta, default_filename);

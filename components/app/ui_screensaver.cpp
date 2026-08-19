@@ -3,6 +3,7 @@
 #include "ui_keyboard.h"
 #include "ui_mouse.h"
 #include "ui_font.h"
+#include "timezone_mgr.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "nvs_flash.h"
@@ -70,9 +71,10 @@ void update_clock_and_date(void)
         return;
     }
 
-    time_t now = time(nullptr);
     struct tm t;
-    localtime_r(&now, &t);
+    if (timezone_mgr_get_localtime(&t) == nullptr) {
+        return;
+    }
 
     char time_buf[16];
     snprintf(time_buf, sizeof(time_buf), "%02d:%02d:%02d", t.tm_hour, t.tm_min, t.tm_sec);

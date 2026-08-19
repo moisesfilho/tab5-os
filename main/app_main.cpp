@@ -17,6 +17,7 @@
 #include "camera_mgr.h"
 #include "http_file_server.h"
 #include "ai_storage.h"
+#include "timezone_mgr.h"
 #include "ui_font.h"
 
 static const char *TAG = "tab5_poc";
@@ -37,6 +38,9 @@ extern "C" void app_main(void)
 
     /* Semeia o relogio do sistema a partir do RTC RX8130CE (I2C do BSP) */
     rtc_rx8130_init();
+
+    /* Inicializa configuracao global de fuso horario */
+    timezone_mgr_init();
 
     /* Monta o SD para restaurar configs persistidas (display, wifi e ai) */
     if (wifi_storage_mount() == ESP_OK) {

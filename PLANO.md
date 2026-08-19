@@ -29,6 +29,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 21** | Cliente SSH Remoto no Terminal | Conectividade / CLI | Task FreeRTOS, `david-cermak/libssh`, PTY xterm, auth por senha/chave |
 | `[x]` | **Fase 22** | Protetor de Tela Anti-Burn-in com Data e Hora | Sistema / Display | Screensaver fundo preto, relógio grande, reposicionamento 30s, wake no toque |
 | `[x]` | **Fase 23** | Controle de Brilho da Tela no Menu de Configurações | Sistema / Display | Slider de brilho no menu, PWM 10–100%, feedback visual, persistência |
+| `[x]` | **Fase 23.1** | Configuração Geral de Fuso Horário | Sistema / Config | Módulo `timezone_mgr`, offset POSIX `TZ`, ajuste `[-]`/`[+]` no menu, sincronização em todos os apps |
 | `[x]` | **Fase 24** | Aplicativos de Câmera, Galeria de Fotos e Servidor HTTP | Aplicativo / Mídia | Preview MIPI-CSI, gravação `/sdcard/photos/`, galeria com TJpgDec, servidor HTTP e grid desktop responsivo |
 | `[x]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
 | `[x]` | **Fase 26** | Aplicativo Chat IA (OpenAI-compatível) | Aplicativo / Conectividade | Chat texto, cadastro de token/URL/modelo, cliente HTTP `/chat/completions`, persistência em `ai.cfg` |
@@ -911,6 +912,58 @@ components/app/
 
 ## 8. Status de Conclusão: `[x] IMPLEMENTADO`
 - **Controle de Brilho**: Implementado com slider de 10% a 100% no menu de configurações, PWM em tempo real, persistência em NVS/SD e restauração automática no boot.
+
+---
+
+# [x] Fase 23.1: Configuração Geral de Fuso Horário `✅ CONCLUÍDO`
+
+## 1. Contexto & Objetivos
+- Criação do módulo centralizado **`timezone_mgr`** para gerenciamento de fuso horário em todo o sistema operacional **Tab5 OS**.
+- **Entrada Numérica Direta e Intuitiva**: O usuário configura o offset em horas inteiras (ex: `-3` para UTC-3 / Brasília, `0` para UTC, `+5` para UTC+5).
+- **Padronização POSIX TZ**:
+  - Conversão automática do offset para a convenção POSIX `TZ` (`setenv("TZ", tz_str, 1)` + `tzset()`), aplicando os sinais invertidos da especificação POSIX.
+  - Sincronização automática com todas as funções C/C++ padrão (`localtime_r`, `strftime`, `ctime`).
+- **Persistência Dupla**:
+  - Gravado no **NVS** (namespace `"tab5"`, chave `"tz_offset"`) e espelhado no **microSD** em `/sdcard/timezone.cfg`.
+- **Refatorações nos Módulos e Aplicações**:
+  - **Barra Superior (`ui_bar`)**: Inclusão de linha "Fuso Horário" com botões `[-]` e `[+]` e atualização instantânea do relógio digital.
+  - **Proteção de Tela (`ui_screensaver`)**: Relógio e data em descanso ajustados em tempo real ao fuso configurado.
+  - **Câmera (`camera_mgr`)**: Nomenclatura `IMG_YYYYMMDD_HHMMSS.jpg` gerada com o timestamp local.
+  - **Gravador (`audio_recorder`)**: Nomenclatura `REC_YYYYMMDD_HHMMSS.wav` gerada com o timestamp local.
+  - **Notas (`ui_notas`)**: Sugestão de salvamento `nota_YYYYMMDD_HHMMSS.txt` com o timestamp local.
+  - **Arquivos (`ui_files`)**: Coluna de data/hora de modificação dos arquivos formatada com o fuso local.
+  - **Galeria (`ui_gallery`)**: Cabeçalhos e metadados cronológicos com o fuso local.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Abordagem de Fuso | Variável de ambiente POSIX `TZ` + `tzset()` | Mecanismo nativo, thread-safe com `localtime_r` e universal no libc/ESP-IDF |
+| D2 | Formato de Entrada | Offset numérico inteiro simples (ex: `-3`) | Simplicidade ergonômica sem sobrecarregar a memória com banco tzdata completo |
+| D3 | Interface de Ajuste | Botões `[-]` e `[+]` com indicador de valor no menu popover | Ajuste rápido sem necessidade de teclado virtual |
+| D4 | Persistência | NVS (`tab5/tz_offset`) + microSD (`/sdcard/timezone.cfg`) | Resiliência e persistência mesmo sem o cartão SD inserido |
+| D5 | Sincronização Reativa | Callback de botão invoca `clock_update()` imediatamente | Feedback visual instantâneo na barra de status |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── timezone_mgr.h         # [NEW] Declaração da API de fuso horário e helpers
+│   ├── ui_bar.h               # [MODIFY] Declaração dos controles de fuso horário
+│   └── ui_screensaver.h       # [MODIFY] Atualização do relógio sob fuso
+├── timezone_mgr.cpp           # [NEW] Persistência NVS/SD, POSIX TZ e localtime helpers
+├── ui_bar.cpp                 # [MODIFY] Linha Fuso Horário no menu e refresh de relógio
+├── ui_screensaver.cpp         # [MODIFY] Relógio e data adaptados ao fuso horário
+├── camera_mgr.cpp             # [MODIFY] Nomes de fotos IMG_YYYYMMDD_HHMMSS com fuso
+├── audio_recorder.cpp         # [MODIFY] Nomes de gravações REC_YYYYMMDD_HHMMSS com fuso
+├── ui_notas.cpp               # [MODIFY] Sugestão de nota_YYYYMMDD_HHMMSS com fuso
+├── ui_files.cpp               # [MODIFY] Formatação de data/hora na lista com fuso
+└── CMakeLists.txt             # [MODIFY] Registro de timezone_mgr.cpp
+```
+
+## 4. Status de Conclusão: `[x] IMPLEMENTADO`
+- **Fuso Horário Global**: Implementado com offset numérico (`-3`), integração POSIX `TZ`, interface interativa no menu de configurações e sincronização completa com relógio, screensaver e geradores de arquivos.
 
 ---
 

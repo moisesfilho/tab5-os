@@ -1,4 +1,5 @@
 #include "audio_recorder.h"
+#include "timezone_mgr.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_codec_dev.h"
 #include "esp_log.h"
@@ -72,9 +73,8 @@ void build_recording_filename(char *out, size_t out_len)
 {
     ensure_record_dir_exists();
 
-    time_t now = time(nullptr);
     struct tm tm_info;
-    localtime_r(&now, &tm_info);
+    timezone_mgr_get_localtime(&tm_info);
 
     if (tm_info.tm_year < 120) { // Ano anterior a 2020 (RTC nao inicializado)
         snprintf(out, out_len, "%s/REC_%04d.wav", RECORD_DIR, (int)esp_log_timestamp());

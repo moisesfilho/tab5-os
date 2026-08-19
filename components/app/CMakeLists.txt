@@ -24,6 +24,7 @@ idf_component_register(
         "bt_mgr.cpp"
         "bt_storage.cpp"
         "display_storage.cpp"
+        "timezone_mgr.cpp"
         "file_assoc.cpp"
         "camera_mgr.cpp"
         "ui_camera.cpp"

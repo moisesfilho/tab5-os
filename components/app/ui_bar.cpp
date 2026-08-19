@@ -5,6 +5,7 @@
 #include "ui_shell.h"
 #include "ui_screensaver.h"
 #include "display_storage.h"
+#include "timezone_mgr.h"
 #include "imu_reader.h"
 #include "wifi_mgr.h"
 #include "bt_mgr.h"
@@ -55,8 +56,15 @@ lv_obj_t *menu_row_bt_switch = nullptr;
 lv_obj_t *menu_row_brightness_label = nullptr;
 lv_obj_t *menu_row_brightness_val_label = nullptr;
 lv_obj_t *menu_row_brightness_slider = nullptr;
+lv_obj_t *menu_row_tz_label = nullptr;
+lv_obj_t *menu_row_tz_val_label = nullptr;
+lv_obj_t *menu_row_tz_minus_btn = nullptr;
+lv_obj_t *menu_row_tz_minus_label = nullptr;
+lv_obj_t *menu_row_tz_plus_btn = nullptr;
+lv_obj_t *menu_row_tz_plus_label = nullptr;
 
 void close_menu(void);
+void clock_update(void);
 
 void menu_overlay_cb(lv_event_t *event)
 {
@@ -103,6 +111,12 @@ void close_menu(void)
     menu_row_brightness_label = nullptr;
     menu_row_brightness_val_label = nullptr;
     menu_row_brightness_slider = nullptr;
+    menu_row_tz_label = nullptr;
+    menu_row_tz_val_label = nullptr;
+    menu_row_tz_minus_btn = nullptr;
+    menu_row_tz_minus_label = nullptr;
+    menu_row_tz_plus_btn = nullptr;
+    menu_row_tz_plus_label = nullptr;
 }
 
 void menu_header_create(const char *text)
@@ -247,6 +261,28 @@ void apply_menu_theme(void)
         lv_obj_set_style_bg_color(menu_row_brightness_slider, lv_color_hex(pal->border), LV_PART_MAIN);
         lv_obj_set_style_bg_color(menu_row_brightness_slider, lv_color_hex(pal->accent), LV_PART_INDICATOR);
         lv_obj_set_style_bg_color(menu_row_brightness_slider, lv_color_hex(pal->text), LV_PART_KNOB);
+    }
+    if (menu_row_tz_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_tz_label, lv_color_hex(pal->text), 0);
+    }
+    if (menu_row_tz_val_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_tz_val_label, lv_color_hex(pal->text), 0);
+    }
+    if (menu_row_tz_minus_btn != nullptr) {
+        lv_obj_set_style_bg_color(menu_row_tz_minus_btn, lv_color_hex(pal->surface_alt), 0);
+        lv_obj_set_style_border_color(menu_row_tz_minus_btn, lv_color_hex(pal->border), 0);
+        lv_obj_set_style_border_width(menu_row_tz_minus_btn, 1, 0);
+    }
+    if (menu_row_tz_minus_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_tz_minus_label, lv_color_hex(pal->text), 0);
+    }
+    if (menu_row_tz_plus_btn != nullptr) {
+        lv_obj_set_style_bg_color(menu_row_tz_plus_btn, lv_color_hex(pal->surface_alt), 0);
+        lv_obj_set_style_border_color(menu_row_tz_plus_btn, lv_color_hex(pal->border), 0);
+        lv_obj_set_style_border_width(menu_row_tz_plus_btn, 1, 0);
+    }
+    if (menu_row_tz_plus_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_tz_plus_label, lv_color_hex(pal->text), 0);
     }
 }
 
@@ -518,6 +554,81 @@ void menu_brightness_row_create(void)
     lv_obj_add_event_cb(menu_row_brightness_slider, brightness_slider_cb, LV_EVENT_RELEASED, nullptr);
 }
 
+static void tz_btn_cb(lv_event_t *e)
+{
+    int delta = (int)(intptr_t)lv_event_get_user_data(e);
+    int cur = timezone_mgr_get_offset();
+    int next_val = cur + delta;
+    if (next_val >= TIMEZONE_MIN_OFFSET && next_val <= TIMEZONE_MAX_OFFSET) {
+        timezone_mgr_set_offset(next_val);
+        if (menu_row_tz_val_label != nullptr) {
+            char buf[16];
+            timezone_mgr_format_offset(next_val, buf, sizeof(buf));
+            lv_label_set_text(menu_row_tz_val_label, buf);
+        }
+        clock_update();
+    }
+}
+
+/* Row "Fuso Horário" com botões [-] e [+] para ajuste rápido. */
+void menu_timezone_row_create(void)
+{
+    lv_obj_t *row = lv_obj_create(menu_panel);
+    lv_obj_set_width(row, lv_pct(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_shadow_width(row, 0, 0);
+    lv_obj_set_style_radius(row, 8, 0);
+    lv_obj_set_style_pad_left(row, 14, 0);
+    lv_obj_set_style_pad_right(row, 14, 0);
+    lv_obj_set_style_pad_top(row, 6, 0);
+    lv_obj_set_style_pad_bottom(row, 6, 0);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    menu_row_tz_label = lv_label_create(row);
+    lv_label_set_text(menu_row_tz_label, "Fuso Horário");
+    lv_obj_set_style_text_font(menu_row_tz_label, &lv_font_montserrat_14_latin1, 0);
+
+    lv_obj_t *ctrl_box = lv_obj_create(row);
+    lv_obj_set_size(ctrl_box, LV_SIZE_CONTENT, 32);
+    lv_obj_set_style_bg_opa(ctrl_box, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctrl_box, 0, 0);
+    lv_obj_set_style_pad_all(ctrl_box, 0, 0);
+    lv_obj_clear_flag(ctrl_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(ctrl_box, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(ctrl_box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(ctrl_box, 4, 0);
+
+    menu_row_tz_minus_btn = lv_button_create(ctrl_box);
+    lv_obj_set_size(menu_row_tz_minus_btn, 28, 28);
+    lv_obj_set_style_radius(menu_row_tz_minus_btn, 6, 0);
+    lv_obj_add_event_cb(menu_row_tz_minus_btn, tz_btn_cb, LV_EVENT_CLICKED, (void *)(intptr_t)-1);
+    menu_row_tz_minus_label = lv_label_create(menu_row_tz_minus_btn);
+    lv_label_set_text(menu_row_tz_minus_label, LV_SYMBOL_MINUS);
+    lv_obj_center(menu_row_tz_minus_label);
+
+    int cur_offset = timezone_mgr_get_offset();
+    char tz_buf[16];
+    timezone_mgr_format_offset(cur_offset, tz_buf, sizeof(tz_buf));
+
+    menu_row_tz_val_label = lv_label_create(ctrl_box);
+    lv_label_set_text(menu_row_tz_val_label, tz_buf);
+    lv_obj_set_style_text_font(menu_row_tz_val_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_width(menu_row_tz_val_label, 32);
+    lv_obj_set_style_text_align(menu_row_tz_val_label, LV_TEXT_ALIGN_CENTER, 0);
+
+    menu_row_tz_plus_btn = lv_button_create(ctrl_box);
+    lv_obj_set_size(menu_row_tz_plus_btn, 28, 28);
+    lv_obj_set_style_radius(menu_row_tz_plus_btn, 6, 0);
+    lv_obj_add_event_cb(menu_row_tz_plus_btn, tz_btn_cb, LV_EVENT_CLICKED, (void *)(intptr_t)1);
+    menu_row_tz_plus_label = lv_label_create(menu_row_tz_plus_btn);
+    lv_label_set_text(menu_row_tz_plus_label, LV_SYMBOL_PLUS);
+    lv_obj_center(menu_row_tz_plus_label);
+}
+
 void gear_click_cb(lv_event_t *event)
 {
     (void)event;
@@ -541,7 +652,7 @@ void open_menu(menu_page_t page)
     lv_obj_add_event_cb(menu_overlay, menu_overlay_cb, LV_EVENT_CLICKED, nullptr);
 
     menu_panel = lv_obj_create(layer);
-    lv_obj_set_size(menu_panel, 220, LV_SIZE_CONTENT);
+    lv_obj_set_size(menu_panel, 230, LV_SIZE_CONTENT);
     lv_obj_set_align(menu_panel, LV_ALIGN_TOP_LEFT);
     lv_obj_set_pos(menu_panel, 10, UI_BAR_HEIGHT + 8);
     lv_obj_set_style_bg_opa(menu_panel, LV_OPA_COVER, 0);
@@ -564,6 +675,7 @@ void open_menu(menu_page_t page)
         menu_wifi_row_create();
         menu_bluetooth_row_create();
         menu_brightness_row_create();
+        menu_timezone_row_create();
     } else if (page == MENU_PAGE_THEME) {
         menu_header_create("Tema");
         menu_row_create("Claro", menu_light_cb, &menu_row_light, &menu_row_light_label, false);
@@ -587,13 +699,12 @@ void clock_update(void)
         return;
     }
 
-    time_t now = time(nullptr);
     struct tm t;
-    localtime_r(&now, &t);
-
-    char buf[32];
-    strftime(buf, sizeof(buf), "%d/%m/%Y %H:%M:%S", &t);
-    lv_label_set_text(clock_label, buf);
+    if (timezone_mgr_get_localtime(&t) != nullptr) {
+        char buf[32];
+        strftime(buf, sizeof(buf), "%d/%m/%Y %H:%M:%S", &t);
+        lv_label_set_text(clock_label, buf);
+    }
 }
 
 void clock_timer_cb(lv_timer_t *timer)
