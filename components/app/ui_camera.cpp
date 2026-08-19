@@ -88,11 +88,7 @@ void close_click_cb(lv_event_t *e)
 void gallery_click_cb(lv_event_t *e)
 {
     (void)e;
-    if (!s_last_saved_filepath.empty()) {
-        ui_shell_open_gallery_with_file(s_last_saved_filepath.c_str());
-    } else {
-        ui_shell_open_gallery();
-    }
+    ui_shell_open_gallery();
 }
 
 void on_photo_saved_cb(esp_err_t res, const char *filepath, void *user_data)
@@ -118,8 +114,12 @@ void shutter_click_cb(lv_event_t *e)
     trigger_shutter_flash();
     show_toast("Salvando foto...");
 
+    lv_display_t *disp = lv_display_get_default();
+    lv_disp_rotation_t rot = disp ? lv_display_get_rotation(disp) : LV_DISPLAY_ROTATION_0;
+
     char target_path[128] = {0};
-    esp_err_t err = camera_mgr_capture_photo_async(target_path, sizeof(target_path), on_photo_saved_cb, nullptr);
+    esp_err_t err = camera_mgr_capture_photo_with_rotation_async(target_path, sizeof(target_path), (int)rot,
+                                                                 on_photo_saved_cb, nullptr);
     if (err == ESP_OK && target_path[0] != '\0') {
         s_last_saved_filepath = target_path;
     }
@@ -136,11 +136,26 @@ void on_camera_frame(const uint8_t *frame_buf, uint16_t width, uint16_t height, 
         return;
     }
 
+    lv_display_t *disp = lv_display_get_default();
+    lv_disp_rotation_t rot = disp ? lv_display_get_rotation(disp) : LV_DISPLAY_ROTATION_0;
+
     if (bsp_display_lock(pdMS_TO_TICKS(20))) {
-        if (width == PREVIEW_W && height == PREVIEW_H) {
-            memcpy(canvas_buf, frame_buf, PREVIEW_W * PREVIEW_H * 2);
-            lv_obj_invalidate(preview_canvas);
+        if (rot == LV_DISPLAY_ROTATION_0) {
+            /* Retrato normal (0): rotaciona 90 CW para orientar em pe (480x640) */
+            camera_mgr_rotate_rgb565_90((const uint16_t *)frame_buf, width, height, (uint16_t *)canvas_buf);
+        } else if (rot == LV_DISPLAY_ROTATION_180) {
+            /* Retrato invertido (180): rotaciona 270 CW (480x640) */
+            camera_mgr_rotate_rgb565_270((const uint16_t *)frame_buf, width, height, (uint16_t *)canvas_buf);
+        } else if (rot == LV_DISPLAY_ROTATION_270) {
+            /* Paisagem B (270): rotaciona 180 (640x480) */
+            camera_mgr_rotate_rgb565_180((const uint16_t *)frame_buf, width, height, (uint16_t *)canvas_buf);
+        } else {
+            /* Paisagem A (90): copia direta sem rotacao (640x480) */
+            if (width == PREVIEW_W && height == PREVIEW_H) {
+                memcpy(canvas_buf, frame_buf, (size_t)PREVIEW_W * PREVIEW_H * 2);
+            }
         }
+        lv_obj_invalidate(preview_canvas);
         bsp_display_unlock();
     }
 }
@@ -211,8 +226,8 @@ lv_obj_t *ui_camera_create(void)
     lv_obj_set_style_clip_corner(preview_container, true, 0);
     lv_obj_clear_flag(preview_container, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Canvas para renderizacao de frames RGB565 */
-    size_t c_size = PREVIEW_W * PREVIEW_H * 2;
+    /* Canvas para renderizacao de frames RGB565 (aloca tamanho maximo 640x480x2) */
+    size_t c_size = (size_t)PREVIEW_W * PREVIEW_H * 2;
     canvas_buf = (uint8_t *)heap_caps_malloc(c_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!canvas_buf) {
         canvas_buf = (uint8_t *)malloc(c_size);
@@ -289,7 +304,17 @@ lv_obj_t *ui_camera_create(void)
     lv_obj_clear_flag(flash_overlay, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(flash_overlay, LV_OBJ_FLAG_HIDDEN);
 
+    /* Reage a mudancas de orientacao */
+    lv_obj_add_event_cb(
+        camera_scr,
+        [](lv_event_t *e) {
+            (void)e;
+            ui_camera_apply_layout();
+        },
+        LV_EVENT_SIZE_CHANGED, nullptr);
+
     apply_camera_theme();
+    ui_camera_apply_layout();
     return camera_scr;
 }
 
@@ -300,14 +325,50 @@ void ui_camera_refresh_theme(void)
 
 void ui_camera_apply_layout(void)
 {
-    if (camera_scr != nullptr) {
-        lv_obj_invalidate(camera_scr);
+    if (camera_scr == nullptr || preview_container == nullptr || preview_canvas == nullptr) {
+        return;
     }
+
+    lv_display_t *disp = lv_display_get_default();
+    lv_disp_rotation_t rot = disp ? lv_display_get_rotation(disp) : LV_DISPLAY_ROTATION_0;
+    bool is_portrait = (rot == LV_DISPLAY_ROTATION_0 || rot == LV_DISPLAY_ROTATION_180);
+
+    if (is_portrait) {
+        /* Modo Retrato: preview em pe (480 largura x 640 altura) */
+        lv_obj_set_size(preview_container, 480, 640);
+        lv_obj_align(preview_container, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT * 2 + 30);
+        if (canvas_buf != nullptr) {
+            lv_canvas_set_buffer(preview_canvas, canvas_buf, 480, 640, LV_COLOR_FORMAT_RGB565);
+        }
+        lv_obj_set_size(preview_canvas, 480, 640);
+        lv_obj_center(preview_canvas);
+
+        if (bottom_bar != nullptr) {
+            lv_obj_set_size(bottom_bar, lv_pct(100), 96);
+            lv_obj_align(bottom_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+        }
+    } else {
+        /* Modo Paisagem: preview horizontal (640 largura x 480 altura) */
+        lv_obj_set_size(preview_container, 640, 480);
+        lv_obj_align(preview_container, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT * 2 + 10);
+        if (canvas_buf != nullptr) {
+            lv_canvas_set_buffer(preview_canvas, canvas_buf, 640, 480, LV_COLOR_FORMAT_RGB565);
+        }
+        lv_obj_set_size(preview_canvas, 640, 480);
+        lv_obj_center(preview_canvas);
+
+        if (bottom_bar != nullptr) {
+            lv_obj_set_size(bottom_bar, lv_pct(100), 80);
+            lv_obj_align(bottom_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+        }
+    }
+    lv_obj_invalidate(camera_scr);
 }
 
 void ui_camera_on_open(void)
 {
     ESP_LOGI(TAG, "abrindo app Câmera");
+    ui_camera_apply_layout();
     camera_mgr_start_preview(on_camera_frame, nullptr);
 }
 

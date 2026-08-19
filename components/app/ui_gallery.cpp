@@ -161,7 +161,7 @@ bool decode_bmp(FILE *fp, uint8_t *dst_rgb565, int max_w, int max_h)
     return true;
 }
 
-bool decode_jpeg_to_canvas(const char *filepath, uint8_t *dst_rgb565, int max_w, int max_h)
+bool decode_jpeg_to_canvas(const char *filepath, uint8_t *dst_rgb565, int *out_w, int *out_h)
 {
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
@@ -173,6 +173,8 @@ bool decode_jpeg_to_canvas(const char *filepath, uint8_t *dst_rgb565, int max_w,
     if (fread(magic, 1, 2, fp) < 2 || magic[0] != 0xFF || magic[1] != 0xD8) {
         /* Se nao for JPEG valido, tenta decodificar como BMP */
         fseek(fp, 0, SEEK_SET);
+        int max_w = (out_w && *out_w > 0) ? *out_w : 640;
+        int max_h = (out_h && *out_h > 0) ? *out_h : 640;
         bool res = decode_bmp(fp, dst_rgb565, max_w, max_h);
         fclose(fp);
         return res;
@@ -186,14 +188,40 @@ bool decode_jpeg_to_canvas(const char *filepath, uint8_t *dst_rgb565, int max_w,
         return false;
     }
 
-    JpegDecodeContext ctx = {fp, (uint16_t *)dst_rgb565, max_w, max_h};
-    memset(dst_rgb565, 0, max_w * max_h * 2);
+    JpegDecodeContext ctx = {fp, (uint16_t *)dst_rgb565, 640, 640};
 
     JDEC jdec;
     JRESULT res = jd_prepare(&jdec, tjpgd_infunc, pool, pool_size, &ctx);
     if (res == JDR_OK) {
-        jd_decomp(&jdec, tjpgd_outfunc, 0);
-        ESP_LOGI(TAG, "foto decodificada com sucesso (%ux%u): %s", jdec.width, jdec.height, filepath);
+        uint8_t scale = 0;
+        int dec_w = (int)jdec.width;
+        int dec_h = (int)jdec.height;
+        if (dec_w > 640 || dec_h > 640) {
+            scale = 1; /* 1/2 escala */
+            dec_w >>= 1;
+            dec_h >>= 1;
+        }
+        if (dec_w > 640 || dec_h > 640) {
+            scale = 2; /* 1/4 escala */
+            dec_w >>= 1;
+            dec_h >>= 1;
+        }
+
+        ctx.max_w = dec_w;
+        ctx.max_h = dec_h;
+        memset(dst_rgb565, 0, (size_t)dec_w * dec_h * 2);
+
+        res = jd_decomp(&jdec, tjpgd_outfunc, scale);
+        if (res == JDR_OK) {
+            if (out_w)
+                *out_w = dec_w;
+            if (out_h)
+                *out_h = dec_h;
+            ESP_LOGI(TAG, "foto decodificada com sucesso (%dx%d, orig=%ux%u): %s", dec_w, dec_h, (unsigned)jdec.width,
+                     (unsigned)jdec.height, filepath);
+        } else {
+            ESP_LOGW(TAG, "erro na descompactacao JPEG (jd_decomp res=%d): %s", (int)res, filepath);
+        }
     } else {
         ESP_LOGW(TAG, "erro ao descompactar JPEG (jd_prepare res=%d): %s", (int)res, filepath);
     }
@@ -265,7 +293,8 @@ void image_event_cb(lv_event_t *e)
     } else if (code == LV_EVENT_CLICKED) {
         lv_point_t point;
         lv_indev_get_point(lv_indev_active(), &point);
-        if (point.x < 360) {
+        int32_t screen_w = lv_display_get_horizontal_resolution(lv_display_get_default());
+        if (point.x < (screen_w / 2)) {
             prev_photo();
         } else {
             next_photo();
@@ -392,8 +421,15 @@ void load_and_display_current_photo(void)
     ui_app_bar_set_title(&gallery_app_bar, header_str);
 
     if (gallery_canvas_buf != nullptr && image_canvas != nullptr) {
-        decode_jpeg_to_canvas(photo.fullpath.c_str(), gallery_canvas_buf, GALLERY_VIEW_W, GALLERY_VIEW_H);
-        lv_obj_invalidate(image_canvas);
+        int img_w = 640, img_h = 480;
+        if (decode_jpeg_to_canvas(photo.fullpath.c_str(), gallery_canvas_buf, &img_w, &img_h)) {
+            lv_canvas_set_buffer(image_canvas, gallery_canvas_buf, img_w, img_h, LV_COLOR_FORMAT_RGB565);
+            lv_obj_set_size(image_canvas, img_w, img_h);
+            lv_obj_set_size(image_container, img_w, img_h);
+            lv_obj_center(image_canvas);
+            ui_gallery_apply_layout();
+            lv_obj_invalidate(image_canvas);
+        }
     }
 }
 
@@ -460,9 +496,9 @@ void scan_directory(const std::string &dir_path)
         }
     }
 
-    /* Ordenacao: fotos mais recentes no disco primeiro (mtime decrescente) */
+    /* Ordenacao: fotos mais recentes no disco primeiro (mtime decrescente, desempate por filename decrescente) */
     std::sort(s_photos.begin(), s_photos.end(), [](const PhotoItem &a, const PhotoItem &b) {
-        if (a.mtime != b.mtime) {
+        if (a.mtime != b.mtime && a.mtime > 1000000 && b.mtime > 1000000) {
             return a.mtime > b.mtime;
         }
         return a.filename > b.filename;
@@ -528,7 +564,7 @@ lv_obj_t *ui_gallery_create(void)
     /* Area Central da Imagem */
     image_container = lv_obj_create(gallery_scr);
     lv_obj_set_size(image_container, GALLERY_VIEW_W, GALLERY_VIEW_H);
-    lv_obj_align(image_container, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT * 2 + 16);
+    lv_obj_align(image_container, LV_ALIGN_CENTER, 0, 15);
     lv_obj_set_style_bg_color(image_container, lv_color_black(), 0);
     lv_obj_set_style_border_width(image_container, 0, 0);
     lv_obj_set_style_pad_all(image_container, 0, 0);
@@ -538,7 +574,7 @@ lv_obj_t *ui_gallery_create(void)
     lv_obj_add_event_cb(image_container, image_event_cb, LV_EVENT_GESTURE, nullptr);
     lv_obj_add_event_cb(image_container, image_event_cb, LV_EVENT_CLICKED, nullptr);
 
-    size_t c_size = GALLERY_VIEW_W * GALLERY_VIEW_H * 2;
+    size_t c_size = (size_t)640 * 640 * 2;
     gallery_canvas_buf = (uint8_t *)heap_caps_malloc(c_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!gallery_canvas_buf) {
         gallery_canvas_buf = (uint8_t *)malloc(c_size);
@@ -557,7 +593,7 @@ lv_obj_t *ui_gallery_create(void)
     /* Botao Navegacao Anterior [<] */
     prev_btn = lv_obj_create(gallery_scr);
     lv_obj_set_size(prev_btn, 48, 64);
-    lv_obj_align(prev_btn, LV_ALIGN_LEFT_MID, 8, UI_BAR_HEIGHT);
+    lv_obj_align(prev_btn, LV_ALIGN_LEFT_MID, 12, 15);
     lv_obj_set_style_radius(prev_btn, 8, 0);
     lv_obj_set_style_border_width(prev_btn, 1, 0);
     lv_obj_set_style_bg_opa(prev_btn, LV_OPA_80, 0);
@@ -571,7 +607,7 @@ lv_obj_t *ui_gallery_create(void)
     /* Botao Navegacao Proxima [>] */
     next_btn = lv_obj_create(gallery_scr);
     lv_obj_set_size(next_btn, 48, 64);
-    lv_obj_align(next_btn, LV_ALIGN_RIGHT_MID, -8, UI_BAR_HEIGHT);
+    lv_obj_align(next_btn, LV_ALIGN_RIGHT_MID, -12, 15);
     lv_obj_set_style_radius(next_btn, 8, 0);
     lv_obj_set_style_border_width(next_btn, 1, 0);
     lv_obj_set_style_bg_opa(next_btn, LV_OPA_80, 0);
@@ -602,7 +638,17 @@ lv_obj_t *ui_gallery_create(void)
     lv_obj_set_style_text_align(empty_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_pad_top(empty_label, 12, 0);
 
+    /* Reage a mudanca de rotacao */
+    lv_obj_add_event_cb(
+        gallery_scr,
+        [](lv_event_t *e) {
+            (void)e;
+            ui_gallery_apply_layout();
+        },
+        LV_EVENT_SIZE_CHANGED, nullptr);
+
     apply_gallery_theme();
+    ui_gallery_apply_layout();
     return gallery_scr;
 }
 
@@ -613,15 +659,40 @@ void ui_gallery_refresh_theme(void)
 
 void ui_gallery_apply_layout(void)
 {
-    if (gallery_scr != nullptr) {
-        lv_obj_invalidate(gallery_scr);
+    if (gallery_scr == nullptr || image_container == nullptr) {
+        return;
     }
+
+    lv_display_t *disp = lv_display_get_default();
+    lv_disp_rotation_t rot = disp ? lv_display_get_rotation(disp) : LV_DISPLAY_ROTATION_0;
+    bool is_portrait = (rot == LV_DISPLAY_ROTATION_0 || rot == LV_DISPLAY_ROTATION_180);
+
+    if (is_portrait) {
+        lv_obj_align(image_container, LV_ALIGN_CENTER, 0, 15);
+        if (prev_btn)
+            lv_obj_align(prev_btn, LV_ALIGN_LEFT_MID, 10, 15);
+        if (next_btn)
+            lv_obj_align(next_btn, LV_ALIGN_RIGHT_MID, -10, 15);
+    } else {
+        lv_obj_align(image_container, LV_ALIGN_CENTER, 0, 15);
+        if (prev_btn)
+            lv_obj_align(prev_btn, LV_ALIGN_LEFT_MID, 16, 15);
+        if (next_btn)
+            lv_obj_align(next_btn, LV_ALIGN_RIGHT_MID, -16, 15);
+    }
+    lv_obj_invalidate(gallery_scr);
 }
 
 void ui_gallery_open_file(const char *filepath)
 {
+    if (camera_mgr_is_saving()) {
+        ESP_LOGI(TAG, "aguardando foto em gravacao finalizar antes de abrir...");
+        camera_mgr_wait_save_done(3500);
+    }
+
     if (filepath == nullptr) {
         scan_directory("/sdcard/imagens");
+        s_current_index = s_photos.empty() ? -1 : 0;
         load_and_display_current_photo();
         return;
     }
@@ -632,29 +703,25 @@ void ui_gallery_open_file(const char *filepath)
         (last_slash != std::string::npos && last_slash > 0) ? path_str.substr(0, last_slash) : "/sdcard/imagens";
     std::string fname = (last_slash != std::string::npos) ? path_str.substr(last_slash + 1) : path_str;
 
-    if (camera_mgr_is_saving()) {
-        ESP_LOGI(TAG, "aguardando foto em gravacao finalizar antes de abrir...");
-        camera_mgr_wait_save_done(2500);
-    }
-
-    scan_directory(dir);
-
-    /* Encontra o indice da foto aberta (com retry rapido se necessario) */
+    /* Encontra o indice da foto aberta com retry para garantir visibilidade no VFS */
     s_current_index = -1;
-    for (int retry = 0; retry < 5; retry++) {
+    for (int retry = 0; retry < 10; retry++) {
+        scan_directory(dir);
         for (size_t i = 0; i < s_photos.size(); i++) {
             if (s_photos[i].filename == fname || s_photos[i].fullpath == path_str) {
                 s_current_index = (int)i;
                 break;
             }
         }
-        if (s_current_index >= 0)
+        if (s_current_index >= 0) {
+            ESP_LOGI(TAG, "foto encontrada no indice %d: %s", s_current_index, fname.c_str());
             break;
+        }
         vTaskDelay(pdMS_TO_TICKS(100));
-        scan_directory(dir);
     }
 
     if (s_current_index < 0 && !s_photos.empty()) {
+        ESP_LOGW(TAG, "foto %s nao encontrada; exibindo foto mais recente", fname.c_str());
         s_current_index = 0;
     }
 
@@ -666,9 +733,10 @@ void ui_gallery_on_open(void)
     ESP_LOGI(TAG, "abrindo app Galeria");
     if (camera_mgr_is_saving()) {
         ESP_LOGI(TAG, "aguardando foto em gravacao finalizar antes de abrir galeria...");
-        camera_mgr_wait_save_done(1500);
+        camera_mgr_wait_save_done(3500);
     }
     scan_directory("/sdcard/imagens");
+    s_current_index = s_photos.empty() ? -1 : 0;
     load_and_display_current_photo();
 }
 

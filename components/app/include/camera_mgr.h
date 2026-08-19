@@ -64,6 +64,26 @@ esp_err_t camera_mgr_start_preview(camera_frame_cb_t frame_cb, void *user_data);
 esp_err_t camera_mgr_stop_preview(void);
 
 /**
+ * @brief Funções de rotação de buffers RGB565 para adaptação de orientação.
+ */
+void camera_mgr_rotate_rgb565_90(const uint16_t *src, int w, int h, uint16_t *dst);
+void camera_mgr_rotate_rgb565_180(const uint16_t *src, int w, int h, uint16_t *dst);
+void camera_mgr_rotate_rgb565_270(const uint16_t *src, int w, int h, uint16_t *dst);
+
+/**
+ * @brief Captura um snapshot com base no frame atual e grava como JPEG no microSD de forma assíncrona com rotação.
+ *
+ * @param out_filepath Buffer opcional para receber o caminho do arquivo salvo.
+ * @param max_len Tamanho máximo do buffer out_filepath.
+ * @param rotation Rotação do display (0=Retrato, 1=Paisagem 90, 2=Retrato 180, 3=Paisagem 270).
+ * @param done_cb Callback opcional invocado ao concluir a gravação no SD.
+ * @param user_data Ponteiro de contexto passado ao callback.
+ * @return ESP_OK se o disparo foi enfileirado com sucesso.
+ */
+esp_err_t camera_mgr_capture_photo_with_rotation_async(char *out_filepath, size_t max_len, int rotation,
+                                                       camera_capture_done_cb_t done_cb, void *user_data);
+
+/**
  * @brief Captura um snapshot com base no frame atual e grava como JPEG no microSD de forma assíncrona.
  *
  * Não bloqueia a thread de UI / LVGL.

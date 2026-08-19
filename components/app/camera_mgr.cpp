@@ -14,6 +14,7 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
@@ -66,10 +67,48 @@ struct SaveRequest {
     uint8_t *frame_copy;
     int width;
     int height;
+    int rotation;
     char filepath[128];
     camera_capture_done_cb_t done_cb;
     void *user_data;
 };
+
+} // namespace
+
+void camera_mgr_rotate_rgb565_90(const uint16_t *src, int w, int h, uint16_t *dst)
+{
+    for (int dy = 0; dy < w; dy++) {
+        int sx = dy;
+        for (int dx = 0; dx < h; dx++) {
+            int sy = h - 1 - dx;
+            dst[dy * h + dx] = src[sy * w + sx];
+        }
+    }
+}
+
+void camera_mgr_rotate_rgb565_180(const uint16_t *src, int w, int h, uint16_t *dst)
+{
+    for (int dy = 0; dy < h; dy++) {
+        int sy = h - 1 - dy;
+        for (int dx = 0; dx < w; dx++) {
+            int sx = w - 1 - dx;
+            dst[dy * w + dx] = src[sy * w + sx];
+        }
+    }
+}
+
+void camera_mgr_rotate_rgb565_270(const uint16_t *src, int w, int h, uint16_t *dst)
+{
+    for (int dy = 0; dy < w; dy++) {
+        int sx = w - 1 - dy;
+        for (int dx = 0; dx < h; dx++) {
+            int sy = dx;
+            dst[dy * h + dx] = src[sy * w + sx];
+        }
+    }
+}
+
+namespace {
 
 /* =========================================================================
  * Codificador JPEG Baseline AAN com Aritmetica de Ponto Fixo (Ultra Rapido)
@@ -466,15 +505,55 @@ void save_task_func(void *param)
     while (true) {
         if (xQueueReceive(s_save_queue, &req, portMAX_DELAY) == pdTRUE) {
             s_is_saving = true;
-            ESP_LOGI(TAG, "iniciando gravacao assincrona em %s...", req.filepath);
+            ESP_LOGI(TAG, "iniciando gravacao assincrona em %s (rot=%d)...", req.filepath, req.rotation);
             bool ok = false;
             if (req.frame_copy != nullptr) {
                 char tmp_path[160];
                 snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", req.filepath);
-                ok = save_rgb565_as_jpeg(tmp_path, req.frame_copy, req.width, req.height);
+
+                uint8_t *save_buf = req.frame_copy;
+                int save_w = req.width;
+                int save_h = req.height;
+                uint8_t *rotated_buf = nullptr;
+
+                if (req.rotation == 0) {
+                    /* Retrato padrao (0): sensor rotaciona 90 CW -> 480x640 */
+                    rotated_buf = (uint8_t *)malloc((size_t)req.width * req.height * 2);
+                    if (rotated_buf) {
+                        camera_mgr_rotate_rgb565_90((const uint16_t *)req.frame_copy, req.width, req.height,
+                                                    (uint16_t *)rotated_buf);
+                        save_buf = rotated_buf;
+                        save_w = req.height;
+                        save_h = req.width;
+                    }
+                } else if (req.rotation == 2) {
+                    /* Retrato invertido (180): sensor rotaciona 270 CW -> 480x640 */
+                    rotated_buf = (uint8_t *)malloc((size_t)req.width * req.height * 2);
+                    if (rotated_buf) {
+                        camera_mgr_rotate_rgb565_270((const uint16_t *)req.frame_copy, req.width, req.height,
+                                                     (uint16_t *)rotated_buf);
+                        save_buf = rotated_buf;
+                        save_w = req.height;
+                        save_h = req.width;
+                    }
+                } else if (req.rotation == 3) {
+                    /* Paisagem B (270): sensor rotaciona 180 -> 640x480 */
+                    rotated_buf = (uint8_t *)malloc((size_t)req.width * req.height * 2);
+                    if (rotated_buf) {
+                        camera_mgr_rotate_rgb565_180((const uint16_t *)req.frame_copy, req.width, req.height,
+                                                     (uint16_t *)rotated_buf);
+                        save_buf = rotated_buf;
+                    }
+                }
+
+                ok = save_rgb565_as_jpeg(tmp_path, save_buf, save_w, save_h);
+                if (rotated_buf != nullptr) {
+                    free(rotated_buf);
+                }
+
                 if (ok) {
                     rename(tmp_path, req.filepath);
-                    ESP_LOGI(TAG, "foto salva e renomeada com sucesso: %s", req.filepath);
+                    ESP_LOGI(TAG, "foto salva e renomeada com sucesso: %s (%dx%d)", req.filepath, save_w, save_h);
                 } else {
                     unlink(tmp_path);
                     ESP_LOGE(TAG, "falha ao salvar JPEG temporario: %s", tmp_path);
@@ -717,7 +796,7 @@ esp_err_t camera_mgr_init(void)
 
     if (s_save_queue == nullptr) {
         s_save_queue = xQueueCreate(4, sizeof(SaveRequest));
-        xTaskCreatePinnedToCore(save_task_func, "cam_save", 4096, nullptr, 2, &s_save_task_handle, 1);
+        xTaskCreatePinnedToCore(save_task_func, "cam_save", 8192, nullptr, 5, &s_save_task_handle, 1);
     }
 
     size_t buf_size = CAM_PREVIEW_WIDTH * CAM_PREVIEW_HEIGHT * 2;
@@ -784,8 +863,7 @@ esp_err_t camera_mgr_stop_preview(void)
     return ESP_OK;
 }
 
-esp_err_t camera_mgr_capture_photo_async(char *out_filepath, size_t max_len, camera_capture_done_cb_t done_cb,
-                                         void *user_data)
+static void generate_next_photo_filepath(char *out_path, size_t max_len)
 {
     mkdir("/sdcard/imagens", 0777);
 
@@ -793,15 +871,54 @@ esp_err_t camera_mgr_capture_photo_async(char *out_filepath, size_t max_len, cam
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
 
-    char filename[128];
-    if (timeinfo.tm_year + 1900 < 2024) {
-        static uint32_t s_photo_id = 1;
-        snprintf(filename, sizeof(filename), "/sdcard/imagens/IMG_%04lu.jpg", (unsigned long)s_photo_id++);
+    if (timeinfo.tm_year + 1900 >= 2024) {
+        char base[128];
+        snprintf(base, sizeof(base), "/sdcard/imagens/IMG_%04d%02d%02d_%02d%02d%02d", timeinfo.tm_year + 1900,
+                 timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+        snprintf(out_path, max_len, "%s.jpg", base);
+
+        /* Se ja existir um arquivo com o mesmo segundo, incrementa sufixo */
+        int seq = 1;
+        while (access(out_path, F_OK) == 0 && seq < 100) {
+            snprintf(out_path, max_len, "%s_%d.jpg", base, seq++);
+        }
     } else {
-        snprintf(filename, sizeof(filename), "/sdcard/imagens/IMG_%04d%02d%02d_%02d%02d%02d.jpg",
-                 timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min,
-                 timeinfo.tm_sec);
+        /* Relogio RTC sem sync: encontra o maior ID existente em /sdcard/imagens */
+        static uint32_t s_next_id = 0;
+        if (s_next_id == 0) {
+            DIR *d = opendir("/sdcard/imagens");
+            if (d) {
+                struct dirent *entry;
+                uint32_t max_id = 0;
+                while ((entry = readdir(d)) != nullptr) {
+                    if (strncmp(entry->d_name, "IMG_", 4) == 0) {
+                        unsigned long id = 0;
+                        if (sscanf(entry->d_name, "IMG_%04lu.jpg", &id) == 1 ||
+                            sscanf(entry->d_name, "IMG_%lu.jpg", &id) == 1) {
+                            if (id > max_id) {
+                                max_id = id;
+                            }
+                        }
+                    }
+                }
+                closedir(d);
+                s_next_id = max_id + 1;
+            } else {
+                s_next_id = 1;
+            }
+        }
+        snprintf(out_path, max_len, "/sdcard/imagens/IMG_%04lu.jpg", (unsigned long)s_next_id++);
+        while (access(out_path, F_OK) == 0) {
+            snprintf(out_path, max_len, "/sdcard/imagens/IMG_%04lu.jpg", (unsigned long)s_next_id++);
+        }
     }
+}
+
+esp_err_t camera_mgr_capture_photo_with_rotation_async(char *out_filepath, size_t max_len, int rotation,
+                                                       camera_capture_done_cb_t done_cb, void *user_data)
+{
+    char filename[128] = {0};
+    generate_next_photo_filepath(filename, sizeof(filename));
 
     if (out_filepath != nullptr && max_len > 0) {
         strncpy(out_filepath, filename, max_len - 1);
@@ -829,6 +946,7 @@ esp_err_t camera_mgr_capture_photo_async(char *out_filepath, size_t max_len, cam
     req.frame_copy = copy;
     req.width = CAM_PREVIEW_WIDTH;
     req.height = CAM_PREVIEW_HEIGHT;
+    req.rotation = rotation;
     strncpy(req.filepath, filename, sizeof(req.filepath) - 1);
     req.filepath[sizeof(req.filepath) - 1] = '\0';
     req.done_cb = done_cb;
@@ -843,6 +961,12 @@ esp_err_t camera_mgr_capture_photo_async(char *out_filepath, size_t max_len, cam
     s_is_saving = false;
     free(copy);
     return ESP_FAIL;
+}
+
+esp_err_t camera_mgr_capture_photo_async(char *out_filepath, size_t max_len, camera_capture_done_cb_t done_cb,
+                                         void *user_data)
+{
+    return camera_mgr_capture_photo_with_rotation_async(out_filepath, max_len, 1, done_cb, user_data);
 }
 
 esp_err_t camera_mgr_capture_photo(char *out_filepath, size_t max_len)

@@ -923,9 +923,12 @@ components/app/
   - Botão de disparo centralizado na barra inferior e atalho direto para a Galeria de Fotos.
   - **Salvamento Automático no microSD**:
     - Criação automática do diretório `/sdcard/imagens/` (se inexistente).
-    - Nomenclatura no formato ISO/Americano: `IMG_YYYYMMDD_HHMMSS.jpg` (ex: `IMG_20260816_195500.jpg`), garantindo **ordenação natural cronológica**.
+    - Nomenclatura no formato ISO/Americano: `IMG_YYYYMMDD_HHMMSS.jpg` (ex: `IMG_20260816_195500.jpg`), garantindo **ordenação natural cronológica** ou numeração sequencial monotônica caso o relógio RTC esteja sem sincronização.
+    - **Orientação Adaptativa (Retrato / Paisagem)**: O preview da Câmera adapta a rotação dos frames RGB565 em tempo real (480×640 em modo Retrato e 640×480 em modo Paisagem) e grava os arquivos JPEG com a orientação física correta correspondente à tela do dispositivo.
 - **Aplicativo "Galeria" (`ui_gallery`)**:
   - Leitura e listagem de fotos de `/sdcard/imagens/` ordenadas da **mais recente para a mais antiga**.
+  - **Sincronização Estrita de Gravação**: Ao abrir a Galeria diretamente ou pelo atalho da Câmera, o sistema aguarda qualquer gravação assíncrona em andamento finalizar completamente no cartão SD (`camera_mgr_wait_save_done`) antes de escanear o diretório, garantindo que a última foto tirada seja sempre indexada e exibida de imediato.
+  - **Decodificação Dinâmica com TJpgDec**: Adaptação do canvas para imagens verticais ($480 \times 640$) e horizontais ($640 \times 480$) com centralização responsiva na tela e suporte a `LV_EVENT_SIZE_CHANGED`.
   - Exibição da imagem em tela cheia com cabeçalho contendo nome do arquivo, data/hora e contador de fotos (`1 de N`).
   - **Navegação Intuitiva por Gestos e Toque**:
     - **Próxima imagem (mais antiga)**: Gesto de arrastar (swipe) da **direita para a esquerda** (`LV_DIR_LEFT`) OU toque simples na **metade direita** da tela.
@@ -944,12 +947,14 @@ components/app/
 | # | Decisão | Escolha | Justificativa |
 |---|---|---|---|
 | D1 | Subsistema de Câmera | `esp_video` (V4L2) via MIPI-CSI / `bsp_camera_start()` | Padrão oficial de captura de alta performance no ESP32-P4 |
-| D2 | Diretório e Nomes | `/sdcard/imagens/` + `IMG_YYYYMMDD_HHMMSS.jpg` | Ordenação lexicográfica idêntica à ordem cronológica |
-| D3 | Ordenação na Galeria | Varredura de diretório com ordenação reversa (decrescente) | Prioriza as fotos mais recentes imediatamente ao abrir |
-| D4 | Controles de Navegação | `LV_EVENT_GESTURE` (swipe) + detecção de quadrante no `LV_EVENT_CLICKED` | Ergonomia tátil moderna e natural sem depender de botões minúsculos |
-| D5 | Exclusão de Fotos | Botão `LV_SYMBOL_TRASH` + diálogo de confirmação | Previne remoção acidental e atualiza a galeria em tempo real |
-| D6 | Associação no SO | Registro de `.jpg`/`.jpeg`/`.png`/`.bmp` em `file_assoc` | Abertura nativa e transparente a partir do app "Arquivos" |
-| D7 | Lançadores no Desktop | Tiles dedicados "Câmera" e "Galeria" no `ui_desktop.cpp` | Acesso direto da tela principal com ciclo de vida no `ui_shell` |
+| D2 | Diretório e Nomes | `/sdcard/imagens/` + `IMG_YYYYMMDD_HHMMSS.jpg` / sequencial | Ordenação lexicográfica idêntica à ordem cronológica |
+| D3 | Orientação Dinâmica | Rotação adaptativa do frame RGB565 e gravação JPEG orientada | Corrige desalinhamento do sensor em modo retrato e paisagem |
+| D4 | Sincronização Câmera-Galeria | Espera bloqueante assíncrona antes do scan (`wait_save_done`) | Elimina condição de corrida e garante exibição da foto mais recente |
+| D5 | Ordenação na Galeria | Varredura de diretório com ordenação reversa (decrescente) | Prioriza as fotos mais recentes imediatamente ao abrir |
+| D6 | Controles de Navegação | `LV_EVENT_GESTURE` (swipe) + detecção de quadrante no `LV_EVENT_CLICKED` | Ergonomia tátil moderna e natural sem depender de botões minúsculos |
+| D7 | Exclusão de Fotos | Botão `LV_SYMBOL_TRASH` + diálogo de confirmação | Previne remoção acidental e atualiza a galeria em tempo real |
+| D8 | Associação no SO | Registro de `.jpg`/`.jpeg`/`.png`/`.bmp` em `file_assoc` | Abertura nativa e transparente a partir do app "Arquivos" |
+| D9 | Lançadores no Desktop | Tiles dedicados "Câmera" e "Galeria" no `ui_desktop.cpp` | Acesso direto da tela principal com ciclo de vida no `ui_shell` |
 
 ## 3. Estrutura de Arquivos & Componentes
 
