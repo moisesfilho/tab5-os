@@ -96,33 +96,29 @@ pre-commit run --all-files   # roda todos os hooks em todos os arquivos
 ```
 tab5-os/
 ├── main/
-│   └── app_main.cpp          # Boot: display, RTC, IMU, UI
+│   └── app_main.cpp          # Boot: display, RTC, IMU, UI, registro de subsistemas
 ├── components/
-│   ├── app/                  # UI + IMU + Terminal + WiFi/BT + Camera + Galeria + Servidor
-│   │   ├── ui_desktop.cpp    # Area de trabalho com grid responsivo e icones estilizados
-│   │   ├── ui_bar.cpp        # Barra superior, menu de configuracoes, relogio
-│   │   ├── ui_camera.cpp     # Aplicativo Camera com preview e obturador
-│   │   ├── camera_mgr.cpp    # Gerenciador V4L2/ISP e gravacao assincrona de fotos
-│   │   ├── ui_recorder.cpp   # Aplicativo Gravador de Voz e Player de Audio
-│   │   ├── audio_recorder.cpp # Backend I2S, codecs ES7210/ES8388 e encoder WAV
-│   │   ├── ui_gallery.cpp    # Visualizador de fotos da Galeria
-│   │   ├── tjpgd.c           # Descompressor JPEG acelerado (TJpgDec)
-│   │   ├── ui_fileserver.cpp # Aplicativo Servidor Web HTTP
-│   │   ├── http_file_server.cpp # Servidor HTTP embarcado para download de fotos
-│   │   ├── ui_screensaver.cpp # Protetor de tela anti-burn-in com relogio/data
-│   │   ├── ui_mouse.cpp      # Suporte e cursor para mouse/touchpad BLE HID
-│   │   ├── ui_terminal.cpp   # Aplicativo Terminal (console interativo)
-│   │   ├── terminal_cmd.cpp  # Motor de execucao de comandos shell
-│   │   ├── ssh_client.cpp    # Cliente SSH assincrono (task FreeRTOS + libssh)
-│   │   ├── ui_keyboard.cpp   # Teclado virtual + pagina de acentos PT-BR
-│   │   ├── ui_status.cpp     # Badge de orientacao
-│   │   ├── ui_theme.cpp      # Paletas claro/escuro
-│   │   ├── imu_reader.cpp    # Eventos do BMI270 -> alvo de rotacao
-│   │   ├── orientation.cpp   # Vetor de gravidade -> mapeamento de rotacao
-│   │   └── fonts/            # Fonte Latin-1 custom
+│   ├── os/                   # Núcleo do Sistema Operacional (Core & Shell)
+│   │   ├── core/             # Gerenciadores de sistema (app_registry, fuso horário, wifi, bt, imu)
+│   │   ├── shell/            # Interface do SO (ui_shell, desktop, barra, screensaver, teclado, tema)
+│   │   └── fonts/            # Fontes compiladas Latin-1
+│   ├── apps/                 # Aplicações de Usuário (Package by Feature)
+│   │   ├── camera/           # Câmera com preview MIPI-CSI e captura JPEG
+│   │   ├── gallery/          # Visualizador JPEG de fotos
+│   │   ├── notas/            # Bloco de Notas
+│   │   ├── recorder/         # Gravador e Player de Voz
+│   │   ├── chat/             # Chat IA com LLM
+│   │   ├── terminal/         # Shell interativo e cliente SSH
+│   │   ├── fileserver/       # Servidor Web de Arquivos HTTP
+│   │   ├── files/            # Gerenciador de Arquivos microSD
+│   │   ├── wifi/             # Configurações de Wi-Fi
+│   │   └── bluetooth/        # Configurações de Bluetooth
 │   ├── m5stack_tab5/         # BSP local (override do oficial)
 │   └── rtc_rx8130/           # Driver do RTC RX8130CE
-├── .github/workflows/        # CI: build + lint (ci.yml) e CodeQL (codeql.yml)
+├── tools/
+│   └── ci/                   # Scripts de validação local de qualidade (clang-tidy, cppcheck, idf.py)
+├── docs/                     # Documentação técnica e guias de desenvolvimento
+├── .github/workflows/        # CI: Quality Gate (build + lint) e CodeQL
 ├── .clang-format             # Estilo C/C++ do projeto
 ├── .clang-tidy               # Checkers de lint estático
 ├── .pre-commit-config.yaml   # Hooks locais de qualidade

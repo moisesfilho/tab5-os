@@ -96,39 +96,29 @@ pre-commit run --all-files   # run all hooks on all files
 ```
 tab5-os/
 ├── main/
-│   └── app_main.cpp          # Boot: display, RTC, IMU, UI
+│   └── app_main.cpp          # Boot: display, RTC, IMU, UI, subsystem registrations
 ├── components/
-│   ├── app/                  # UI + IMU + Terminal + WiFi/BT + Camera + Gallery + Server + Chat AI
-│   │   ├── app_registry.cpp  # Modular OS app registry and dynamic manifests
-│   │   ├── ui_app_bar.cpp    # Standardized application title bar component
-│   │   ├── ui_desktop.cpp    # Responsive desktop grid with dynamic app discovery
-│   │   ├── ui_bar.cpp        # Top bar, settings menu, clock
-│   │   ├── ui_chat.cpp       # Chat AI client application (DeepSeek/OpenAI API)
-│   │   ├── ai_client.cpp     # HTTPS SSE client engine for AI LLM completions
-│   │   ├── ui_camera.cpp     # Camera app with preview and shutter button
-│   │   ├── camera_mgr.cpp    # V4L2/ISP manager and async photo capture
-│   │   ├── ui_recorder.cpp   # Voice Recorder and Audio Player app
-│   │   ├── audio_recorder.cpp # I2S audio backend, ES7210/ES8388 codecs, and WAV encoder
-│   │   ├── ui_gallery.cpp    # Gallery photo viewer
-│   │   ├── tjpgd.c           # Hardware/optimized JPEG decompressor (TJpgDec)
-│   │   ├── ui_fileserver.cpp # HTTP File Server control app
-│   │   ├── http_file_server.cpp # Embedded HTTP server for photo downloads
-│   │   ├── ui_screensaver.cpp # Anti-burn-in screensaver with clock/date
-│   │   ├── ui_mouse.cpp      # BLE HID mouse/touchpad support & cursor
-│   │   ├── ui_terminal.cpp   # Terminal app (interactive console)
-│   │   ├── terminal_cmd.cpp  # Shell command execution engine
-│   │   ├── ssh_client.cpp    # Asynchronous SSH client (FreeRTOS task + libssh)
-│   │   ├── ui_keyboard.cpp   # Virtual keyboard + PT-BR accents page
-│   │   ├── ui_status.cpp     # Network/BT status indicators and orientation badge
-│   │   ├── ui_theme.cpp      # Light/dark palettes
-│   │   ├── imu_reader.cpp    # BMI270 events -> rotation target
-│   │   ├── orientation.cpp   # Gravity vector -> rotation mapping
-│   │   └── fonts/            # Custom Latin-1 font
+│   ├── os/                   # Operating System Core & Shell Subsystem
+│   │   ├── core/             # System managers (app_registry, timezone, wifi, bt, imu)
+│   │   ├── shell/            # OS graphical interface (ui_shell, desktop, bar, screensaver, keyboard, theme)
+│   │   └── fonts/            # Compiled Latin-1 fonts
+│   ├── apps/                 # User Applications (Package by Feature)
+│   │   ├── camera/           # Camera app with MIPI-CSI preview & JPEG capture
+│   │   ├── gallery/          # JPEG Photo Viewer
+│   │   ├── notas/            # Text & Notepad editor
+│   │   ├── recorder/         # Voice Recorder & Audio Player
+│   │   ├── chat/             # AI LLM Chat Client
+│   │   ├── terminal/         # Interactive Shell & SSH Client
+│   │   ├── fileserver/       # HTTP Web File Server
+│   │   ├── files/            # MicroSD File Explorer
+│   │   ├── wifi/             # Wi-Fi Settings
+│   │   └── bluetooth/        # Bluetooth Settings
 │   ├── m5stack_tab5/         # Local BSP (override of the official one)
 │   └── rtc_rx8130/           # RX8130CE RTC driver
+├── tools/
+│   └── ci/                   # Local quality check scripts (clang-tidy, cppcheck, idf.py)
 ├── docs/                     # Technical documentation & developer guides
-│   └── APP_DEVELOPMENT.md    # Application Development & Integration Guide
-├── .github/workflows/        # CI: build + lint (ci.yml) and CodeQL (codeql.yml)
+├── .github/workflows/        # CI: Quality Gate (build + lint) and CodeQL
 ├── .clang-format             # Project C/C++ style
 ├── .clang-tidy               # Static lint checkers
 ├── .pre-commit-config.yaml   # Local quality hooks
