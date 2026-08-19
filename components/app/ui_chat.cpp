@@ -472,7 +472,7 @@ void open_config_modal(void)
     lv_obj_set_flex_align(cfg_card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     cfg_title = lv_label_create(cfg_card);
-    lv_label_set_text(cfg_title, "Configuracoes da IA (OpenCode Go / OpenAI)");
+    lv_label_set_text(cfg_title, "Configurações da IA (OpenCode Go / OpenAI)");
     lv_obj_set_style_text_font(cfg_title, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(cfg_title, lv_color_hex(pal->text), 0);
     lv_obj_set_style_margin_bottom(cfg_title, 8, 0);

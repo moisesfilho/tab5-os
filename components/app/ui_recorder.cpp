@@ -173,7 +173,7 @@ void modal_btn_cb(lv_event_t *event)
                 (st.state == AUDIO_RECORDER_STATE_PLAYING || st.state == AUDIO_RECORDER_STATE_PAUSED)) {
                 audio_recorder_stop_playback();
                 s_active_file.clear();
-                lv_label_set_text(play_file_label, "Nenhum audio em reproducao");
+                lv_label_set_text(play_file_label, "Nenhum áudio em reprodução");
             }
             unlink(s_file_to_delete.c_str());
             ESP_LOGI(TAG, "Arquivo excluido: %s", s_file_to_delete.c_str());
@@ -205,7 +205,7 @@ void show_delete_modal(const std::string &filepath, const std::string &filename)
     lv_obj_set_flex_align(confirm_modal, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_t *title = lv_label_create(confirm_modal);
-    lv_label_set_text(title, "Excluir Gravacao?");
+    lv_label_set_text(title, "Excluir Gravação?");
     lv_obj_set_style_text_font(title, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(pal->text), 0);
 
@@ -215,6 +215,7 @@ void show_delete_modal(const std::string &filepath, const std::string &filename)
     char buf[128];
     snprintf(buf, sizeof(buf), "Deseja excluir \"%s\"?", filename.c_str());
     lv_label_set_text(msg, buf);
+    lv_obj_set_style_text_font(msg, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(msg, lv_color_hex(pal->text_muted), 0);
 
     lv_obj_t *btn_row = lv_obj_create(confirm_modal);
@@ -306,12 +307,13 @@ void render_recordings_list(void)
     const ui_palette_t *pal = ui_theme_get();
 
     char count_buf[64];
-    snprintf(count_buf, sizeof(count_buf), "Gravacoes Salvas (%zu)", s_recordings.size());
+    snprintf(count_buf, sizeof(count_buf), "Gravações Salvas (%zu)", s_recordings.size());
     lv_label_set_text(list_title_label, count_buf);
 
     if (s_recordings.empty()) {
         empty_label = lv_label_create(list_container);
-        lv_label_set_text(empty_label, "Nenhuma gravacao em /sdcard/gravacoes/");
+        lv_label_set_text(empty_label, "Nenhuma gravação em /sdcard/gravacoes/");
+        lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_14_latin1, 0);
         lv_obj_set_style_text_color(empty_label, lv_color_hex(pal->text_muted), 0);
         lv_obj_set_style_pad_all(empty_label, 12, 0);
         return;
@@ -575,7 +577,8 @@ lv_obj_t *ui_recorder_create(void)
     lv_obj_set_flex_align(rec_card, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     rec_title_label = lv_label_create(rec_card);
-    lv_label_set_text(rec_title_label, "GRAVACAO DE VOZ (MICROFONE)");
+    lv_label_set_text(rec_title_label, "GRAVAÇÃO DE VOZ (MICROFONE)");
+    lv_obj_set_style_text_font(rec_title_label, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(rec_title_label, lv_color_hex(pal->text_muted), 0);
 
     rec_time_label = lv_label_create(rec_card);
@@ -590,11 +593,13 @@ lv_obj_t *ui_recorder_create(void)
     lv_obj_add_event_cb(rec_action_btn, rec_action_btn_cb, LV_EVENT_CLICKED, nullptr);
     rec_action_label = lv_label_create(rec_action_btn);
     lv_label_set_text(rec_action_label, LV_SYMBOL_AUDIO "  Gravar");
+    lv_obj_set_style_text_font(rec_action_label, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(rec_action_label, lv_color_white(), 0);
     lv_obj_center(rec_action_label);
 
     rec_info_label = lv_label_create(rec_card);
     lv_label_set_text(rec_info_label, "ES7210 - 16 kHz 16-bit WAV - Limite auto 5 min");
+    lv_obj_set_style_text_font(rec_info_label, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(rec_info_label, lv_color_hex(pal->text_muted), 0);
 
     /* Card 2: Player de Audio */
@@ -611,7 +616,7 @@ lv_obj_t *ui_recorder_create(void)
     lv_obj_set_flex_align(play_card, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     play_file_label = lv_label_create(play_card);
-    lv_label_set_text(play_file_label, "Nenhum audio em reproducao");
+    lv_label_set_text(play_file_label, "Nenhum áudio em reprodução");
     lv_label_set_long_mode(play_file_label, LV_LABEL_LONG_DOT);
     lv_obj_set_width(play_file_label, lv_pct(95));
     lv_obj_set_style_text_font(play_file_label, &lv_font_montserrat_14_latin1, 0);
@@ -666,6 +671,7 @@ lv_obj_t *ui_recorder_create(void)
 
     play_time_label = lv_label_create(play_ctrl_row);
     lv_label_set_text(play_time_label, "00:00 / 00:00");
+    lv_obj_set_style_text_font(play_time_label, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(play_time_label, lv_color_hex(pal->text_muted), 0);
 
     /* Card 3: Lista de Gravacoes */
@@ -683,7 +689,7 @@ lv_obj_t *ui_recorder_create(void)
     lv_obj_set_flex_align(list_card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     list_title_label = lv_label_create(list_card);
-    lv_label_set_text(list_title_label, "Gravacoes Salvas (0)");
+    lv_label_set_text(list_title_label, "Gravações Salvas (0)");
     lv_obj_set_style_text_font(list_title_label, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(list_title_label, lv_color_hex(pal->text), 0);
 
