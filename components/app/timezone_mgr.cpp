@@ -119,7 +119,6 @@ esp_err_t timezone_mgr_init(void)
         int sd_offset = 0;
         if (load_sd_tz(&sd_offset)) {
             offset = sd_offset;
-            loaded = true;
             ESP_LOGI(TAG, "Fuso horário carregado do SD: %d", offset);
         }
     }

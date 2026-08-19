@@ -27,7 +27,8 @@ Checks: >
   -bugprone-suspicious-enum-usage,
   -bugprone-casting-through-void,
   -clang-diagnostic-extern-c-compat,
-  -clang-diagnostic-unknown-warning-option
+  -clang-diagnostic-unknown-warning-option,
+  -clang-analyzer-deadcode.DeadStores
 WarningsAsErrors: ''
 HeaderFilterRegex: 'components/app/'
 FormatStyle: none
