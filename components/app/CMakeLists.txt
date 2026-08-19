@@ -1,6 +1,8 @@
 idf_component_register(
     SRCS
         "ui_shell.cpp"
+        "ui_app_bar.cpp"
+        "app_registry.cpp"
         "ui_desktop.cpp"
         "ui_notas.cpp"
         "ui_wifi.cpp"
@@ -29,6 +31,9 @@ idf_component_register(
         "ui_fileserver.cpp"
         "audio_recorder.cpp"
         "ui_recorder.cpp"
+        "ai_storage.cpp"
+        "ai_client.cpp"
+        "ui_chat.cpp"
         "tjpgd.c"
         "http_file_server.cpp"
         "fonts/lv_font_montserrat_14_latin1.c"
@@ -36,7 +41,7 @@ idf_component_register(
     INCLUDE_DIRS "." "include"
     REQUIRES lvgl m5stack_tab5 sensor_hub nvs_flash esp_wifi esp_netif esp_event
             fatfs sdmmc bt libssh esp_video espressif__esp_cam_sensor
-            esp_http_server esp_codec_dev
+            esp_http_server esp_codec_dev esp_http_client json esp-tls mbedtls
 )
 
 target_link_libraries(

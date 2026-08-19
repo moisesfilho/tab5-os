@@ -326,6 +326,7 @@ static lv_obj_t *find_textarea_recursive(lv_obj_t *parent)
 void ui_keyboard_inject_char(char c)
 {
     if (bsp_display_lock(pdMS_TO_TICKS(50))) {
+        lv_display_trigger_activity(NULL);
         if (ui_screensaver_is_active()) {
             ui_screensaver_wake_up();
         }
@@ -361,6 +362,7 @@ void ui_keyboard_inject_char(char c)
 void ui_keyboard_inject_key(uint32_t key)
 {
     if (bsp_display_lock(pdMS_TO_TICKS(50))) {
+        lv_display_trigger_activity(NULL);
         if (ui_screensaver_is_active()) {
             ui_screensaver_wake_up();
         }

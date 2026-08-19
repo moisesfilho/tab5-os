@@ -1,6 +1,8 @@
 #include "ui_fileserver.h"
+#include "app_registry.h"
 #include "http_file_server.h"
 #include "ui_bar.h"
+#include "ui_app_bar.h"
 #include "ui_font.h"
 #include "ui_shell.h"
 #include "ui_theme.h"
@@ -21,10 +23,7 @@ static const char *TAG = "tab5_ui_fileserver";
 namespace {
 
 lv_obj_t *fileserver_scr = nullptr;
-lv_obj_t *top_bar = nullptr;
-lv_obj_t *title_label = nullptr;
-lv_obj_t *close_btn = nullptr;
-lv_obj_t *close_label = nullptr;
+ui_app_bar_t fileserver_app_bar = {};
 
 lv_obj_t *content_container = nullptr;
 
@@ -173,21 +172,7 @@ void apply_fileserver_theme(void)
     lv_obj_set_style_bg_color(fileserver_scr, lv_color_hex(pal->background), 0);
 
     /* Barra Superior */
-    if (top_bar != nullptr) {
-        lv_obj_set_style_bg_color(top_bar, lv_color_hex(pal->surface_alt), 0);
-        lv_obj_set_style_border_color(top_bar, lv_color_hex(pal->border), 0);
-    }
-    if (title_label != nullptr) {
-        lv_obj_set_style_text_color(title_label, lv_color_hex(pal->text), 0);
-    }
-    if (close_btn != nullptr) {
-        lv_obj_set_style_bg_opa(close_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(close_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(close_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (close_label != nullptr) {
-        lv_obj_set_style_text_color(close_label, lv_color_hex(pal->text), 0);
-    }
+    ui_app_bar_refresh_theme(&fileserver_app_bar);
 
     /* Cards */
     lv_obj_t *cards[] = {card_status, card_network, card_stats};
@@ -227,35 +212,8 @@ lv_obj_t *ui_fileserver_create(void)
     fileserver_scr = lv_obj_create(NULL);
     lv_obj_clear_flag(fileserver_scr, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Barra Superior */
-    top_bar = lv_obj_create(fileserver_scr);
-    lv_obj_set_size(top_bar, lv_pct(100), UI_BAR_HEIGHT);
-    lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT);
-    lv_obj_set_style_bg_opa(top_bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_side(top_bar, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_width(top_bar, 1, 0);
-    lv_obj_set_style_radius(top_bar, 0, 0);
-    lv_obj_set_style_pad_hor(top_bar, 16, 0);
-    lv_obj_set_style_pad_ver(top_bar, 0, 0);
-    lv_obj_clear_flag(top_bar, LV_OBJ_FLAG_SCROLLABLE);
-
-    title_label = lv_label_create(top_bar);
-    lv_label_set_text(title_label, LV_SYMBOL_WIFI "  Servidor de Arquivos");
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_align(title_label, LV_ALIGN_LEFT_MID, 0, 0);
-
-    close_btn = lv_button_create(top_bar);
-    lv_obj_set_size(close_btn, 32, 32);
-    lv_obj_align(close_btn, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_style_radius(close_btn, 8, 0);
-    lv_obj_set_style_border_width(close_btn, 1, 0);
-    lv_obj_set_style_pad_all(close_btn, 0, 0);
-    lv_obj_add_event_cb(close_btn, close_click_cb, LV_EVENT_CLICKED, nullptr);
-
-    close_label = lv_label_create(close_btn);
-    lv_label_set_text(close_label, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(close_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(close_label);
+    /* Barra Superior padronizada */
+    fileserver_app_bar = ui_app_bar_create(fileserver_scr, "Servidor de Arquivos", close_click_cb, nullptr);
 
     /* Container de Conteudo com Scroll */
     content_container = lv_obj_create(fileserver_scr);
@@ -395,4 +353,19 @@ void ui_fileserver_apply_layout(void)
     if (fileserver_scr != nullptr) {
         lv_obj_invalidate(fileserver_scr);
     }
+}
+
+void ui_fileserver_register(void)
+{
+    static const app_desc_t s_fileserver_desc = {
+        .id = "fileserver",
+        .name = "Servidor",
+        .icon_symbol = LV_SYMBOL_DRIVE,
+        .icon_builder = nullptr,
+        .icon_theme_refresh = nullptr,
+        .on_launch = ui_shell_open_fileserver,
+        .file_extensions = nullptr,
+        .on_open_file = nullptr,
+    };
+    app_registry_register(&s_fileserver_desc);
 }

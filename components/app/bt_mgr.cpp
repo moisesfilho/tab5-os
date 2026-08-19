@@ -478,14 +478,58 @@ static int handle_gap_connect(struct ble_gap_event *event)
         ESP_LOGI(TAG, "GAP Conectado com sucesso! conn_handle=%d", event->connect.conn_handle);
         s_curr_conn_handle = event->connect.conn_handle;
 
+        struct ble_gap_conn_desc desc = {};
+        char mac_str[18] = {0};
+        if (ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
+            format_mac_addr(desc.peer_ota_addr.val, mac_str, sizeof(mac_str));
+            ESP_LOGI(TAG, "GAP Peer MAC: %s (type=%d)", mac_str, (int)desc.peer_ota_addr.type);
+        }
+
         if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            bool slot_found = false;
             for (int i = 0; i < s_active_count; i++) {
-                s_active_conns[i].conn_handle = event->connect.conn_handle;
-                s_active_conns[i].connected = true;
+                if (mac_str[0] != '\0' && strcasecmp(s_active_conns[i].mac, mac_str) == 0) {
+                    s_active_conns[i].conn_handle = event->connect.conn_handle;
+                    s_active_conns[i].connected = true;
+                    slot_found = true;
+                    break;
+                } else if (mac_str[0] == '\0') {
+                    s_active_conns[i].conn_handle = event->connect.conn_handle;
+                    s_active_conns[i].connected = true;
+                    slot_found = true;
+                }
             }
+
+            if (!slot_found) {
+                if (s_active_count < MAX_ACTIVE_CONNS) {
+                    int idx = s_active_count++;
+                    s_active_conns[idx].conn_handle = event->connect.conn_handle;
+                    s_active_conns[idx].connected = true;
+                    if (mac_str[0] != '\0') {
+                        snprintf(s_active_conns[idx].mac, sizeof(s_active_conns[idx].mac), "%s", mac_str);
+                        bt_saved_device_t saved = {};
+                        if (bt_storage_find(mac_str, &saved)) {
+                            snprintf(s_active_conns[idx].name, sizeof(s_active_conns[idx].name), "%s", saved.name);
+                            s_active_conns[idx].type = saved.type;
+                        } else {
+                            snprintf(s_active_conns[idx].name, sizeof(s_active_conns[idx].name),
+                                     "Dispositivo Bluetooth");
+                            s_active_conns[idx].type = BT_DEV_TYPE_GENERIC;
+                        }
+                        s_active_conns[idx].addr_type = desc.peer_ota_addr.type;
+                    } else {
+                        snprintf(s_active_conns[idx].name, sizeof(s_active_conns[idx].name), "Dispositivo Bluetooth");
+                        s_active_conns[idx].type = BT_DEV_TYPE_GENERIC;
+                    }
+                } else if (s_active_count > 0) {
+                    s_active_conns[0].conn_handle = event->connect.conn_handle;
+                    s_active_conns[0].connected = true;
+                }
+            }
+
             for (int i = 0; i < s_discovered_count; i++) {
                 for (int j = 0; j < s_active_count; j++) {
-                    if (strcasecmp(s_discovered[i].mac, s_active_conns[j].mac) == 0) {
+                    if (s_active_conns[j].connected && strcasecmp(s_discovered[i].mac, s_active_conns[j].mac) == 0) {
                         s_discovered[i].connected = true;
                         s_discovered[i].paired = true;
                     }
@@ -1308,6 +1352,12 @@ esp_err_t bt_mgr_get_status(bt_status_t *status)
                 status->audio_connected = true;
             }
         }
+    }
+
+    /* Fallback garantido: se ha conexao fisica ativa no host NimBLE */
+    if (!status->any_connected && s_curr_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        status->any_connected = true;
+        status->connected_count = (status->connected_count == 0) ? 1 : status->connected_count;
     }
 
     if (s_bt_mutex != nullptr) {

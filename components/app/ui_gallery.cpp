@@ -1,5 +1,7 @@
 #include "ui_gallery.h"
+#include "app_registry.h"
 #include "ui_bar.h"
+#include "ui_app_bar.h"
 #include "ui_font.h"
 #include "ui_shell.h"
 #include "ui_theme.h"
@@ -34,10 +36,7 @@ struct PhotoItem {
 };
 
 lv_obj_t *gallery_scr = nullptr;
-lv_obj_t *top_bar = nullptr;
-lv_obj_t *back_btn = nullptr;
-lv_obj_t *back_label = nullptr;
-lv_obj_t *title_label = nullptr;
+ui_app_bar_t gallery_app_bar = {};
 lv_obj_t *trash_btn = nullptr;
 lv_obj_t *trash_label = nullptr;
 lv_obj_t *camera_btn = nullptr;
@@ -359,7 +358,7 @@ void load_and_display_current_photo(void)
     if (s_photos.empty() || s_current_index < 0 || s_current_index >= (int)s_photos.size()) {
         lv_obj_add_flag(image_container, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(empty_container, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(title_label, "Galeria (0/0)");
+        ui_app_bar_set_title(&gallery_app_bar, "Galeria (0/0)");
         if (prev_btn)
             lv_obj_add_flag(prev_btn, LV_OBJ_FLAG_HIDDEN);
         if (next_btn)
@@ -388,9 +387,9 @@ void load_and_display_current_photo(void)
 
     const PhotoItem &photo = s_photos[s_current_index];
     char header_str[128];
-    snprintf(header_str, sizeof(header_str), "%s (%d/%d)", photo.filename.c_str(), s_current_index + 1,
+    snprintf(header_str, sizeof(header_str), "Galeria - %s (%d/%d)", photo.filename.c_str(), s_current_index + 1,
              (int)s_photos.size());
-    lv_label_set_text(title_label, header_str);
+    ui_app_bar_set_title(&gallery_app_bar, header_str);
 
     if (gallery_canvas_buf != nullptr && image_canvas != nullptr) {
         decode_jpeg_to_canvas(photo.fullpath.c_str(), gallery_canvas_buf, GALLERY_VIEW_W, GALLERY_VIEW_H);
@@ -488,35 +487,7 @@ void apply_gallery_theme(void)
     lv_obj_set_style_bg_color(gallery_scr, lv_color_hex(pal->background), 0);
 
     /* Barra Superior */
-    if (top_bar != nullptr) {
-        lv_obj_set_style_bg_color(top_bar, lv_color_hex(pal->surface_alt), 0);
-        lv_obj_set_style_border_color(top_bar, lv_color_hex(pal->border), 0);
-    }
-    if (title_label != nullptr) {
-        lv_obj_set_style_text_color(title_label, lv_color_hex(pal->text), 0);
-    }
-    if (trash_btn != nullptr) {
-        lv_obj_set_style_bg_color(trash_btn, lv_color_hex(pal->surface), 0);
-        lv_obj_set_style_border_color(trash_btn, lv_color_hex(pal->border), 0);
-    }
-    if (trash_label != nullptr) {
-        lv_obj_set_style_text_color(trash_label, lv_color_hex(pal->accent), 0);
-    }
-    if (camera_btn != nullptr) {
-        lv_obj_set_style_bg_color(camera_btn, lv_color_hex(pal->surface), 0);
-        lv_obj_set_style_border_color(camera_btn, lv_color_hex(pal->border), 0);
-    }
-    if (camera_label != nullptr) {
-        lv_obj_set_style_text_color(camera_label, lv_color_hex(pal->accent), 0);
-    }
-    if (back_btn != nullptr) {
-        lv_obj_set_style_bg_opa(back_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(back_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(back_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (back_label != nullptr) {
-        lv_obj_set_style_text_color(back_label, lv_color_hex(pal->text), 0);
-    }
+    ui_app_bar_refresh_theme(&gallery_app_bar);
 
     if (empty_icon != nullptr) {
         lv_obj_set_style_text_color(empty_icon, lv_color_hex(pal->text_muted), 0);
@@ -548,67 +519,11 @@ lv_obj_t *ui_gallery_create(void)
     gallery_scr = lv_obj_create(NULL);
     lv_obj_clear_flag(gallery_scr, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Barra Superior (posicionada abaixo da barra de status do SO) */
-    top_bar = lv_obj_create(gallery_scr);
-    lv_obj_set_size(top_bar, lv_pct(100), UI_BAR_HEIGHT);
-    lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT);
-    lv_obj_set_style_bg_opa(top_bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_side(top_bar, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_width(top_bar, 1, 0);
-    lv_obj_set_style_radius(top_bar, 0, 0);
-    lv_obj_set_style_pad_hor(top_bar, 12, 0);
-    lv_obj_set_style_pad_ver(top_bar, 0, 0);
-    lv_obj_clear_flag(top_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(top_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(top_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    /* Titulo com nome do arquivo e contador à esquerda */
-    title_label = lv_label_create(top_bar);
-    lv_label_set_text(title_label, "Galeria");
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_set_flex_grow(title_label, 1);
-
-    /* Botao Excluir */
-    trash_btn = lv_obj_create(top_bar);
-    lv_obj_set_size(trash_btn, 36, 36);
-    lv_obj_set_style_radius(trash_btn, 8, 0);
-    lv_obj_set_style_border_width(trash_btn, 1, 0);
-    lv_obj_set_style_margin_right(trash_btn, 6, 0);
-    lv_obj_clear_flag(trash_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(trash_btn, trash_click_cb, LV_EVENT_CLICKED, nullptr);
-
-    trash_label = lv_label_create(trash_btn);
-    lv_label_set_text(trash_label, LV_SYMBOL_TRASH);
-    lv_obj_set_style_text_font(trash_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(trash_label);
-
-    /* Botao Atalho Câmera */
-    camera_btn = lv_obj_create(top_bar);
-    lv_obj_set_size(camera_btn, 36, 36);
-    lv_obj_set_style_radius(camera_btn, 8, 0);
-    lv_obj_set_style_border_width(camera_btn, 1, 0);
-    lv_obj_set_style_margin_right(camera_btn, 6, 0);
-    lv_obj_clear_flag(camera_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(camera_btn, camera_click_cb, LV_EVENT_CLICKED, nullptr);
-
-    camera_label = lv_label_create(camera_btn);
-    lv_label_set_text(camera_label, LV_SYMBOL_IMAGE);
-    lv_obj_set_style_text_font(camera_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(camera_label);
-
-    /* Botao Fechar [X] à direita */
-    back_btn = lv_obj_create(top_bar);
-    lv_obj_set_size(back_btn, 36, 36);
-    lv_obj_set_style_radius(back_btn, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(back_btn, 1, 0);
-    lv_obj_set_style_margin_right(back_btn, 6, 0);
-    lv_obj_clear_flag(back_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(back_btn, back_click_cb, LV_EVENT_CLICKED, nullptr);
-
-    back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(back_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(back_label);
+    /* Barra padronizada do app com acoes de Excluir e Atalho para Camera */
+    gallery_app_bar = ui_app_bar_create(gallery_scr, "Galeria", back_click_cb, nullptr);
+    trash_btn = ui_app_bar_add_action_button(&gallery_app_bar, LV_SYMBOL_TRASH, trash_click_cb, nullptr, &trash_label);
+    camera_btn =
+        ui_app_bar_add_action_button(&gallery_app_bar, LV_SYMBOL_IMAGE, camera_click_cb, nullptr, &camera_label);
 
     /* Area Central da Imagem */
     image_container = lv_obj_create(gallery_scr);
@@ -764,4 +679,20 @@ void ui_gallery_on_close(void)
         lv_obj_delete(confirm_modal);
         confirm_modal = nullptr;
     }
+}
+
+void ui_gallery_register(void)
+{
+    static const char *s_gallery_extensions[] = {"jpg", "jpeg", "png", "bmp", nullptr};
+    static const app_desc_t s_gallery_desc = {
+        .id = "gallery",
+        .name = "Galeria",
+        .icon_symbol = LV_SYMBOL_IMAGE,
+        .icon_builder = nullptr,
+        .icon_theme_refresh = nullptr,
+        .on_launch = ui_shell_open_gallery,
+        .file_extensions = s_gallery_extensions,
+        .on_open_file = ui_shell_open_gallery_with_file,
+    };
+    app_registry_register(&s_gallery_desc);
 }

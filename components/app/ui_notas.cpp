@@ -1,8 +1,10 @@
 #include "ui_notas.h"
+#include "app_registry.h"
 #include "ui_shell.h"
 #include "ui_keyboard.h"
 #include "ui_theme.h"
 #include "ui_bar.h"
+#include "ui_app_bar.h"
 #include "ui_font.h"
 #include "wifi_storage.h"
 
@@ -21,14 +23,11 @@ static const char *TAG = "tab5_notas";
 namespace {
 
 lv_obj_t *notas_scr = nullptr;
-lv_obj_t *notas_bar = nullptr;
-lv_obj_t *notas_title = nullptr;
+ui_app_bar_t notas_app_bar = {};
 lv_obj_t *notas_new_btn = nullptr;
 lv_obj_t *notas_new_label = nullptr;
 lv_obj_t *notas_save_btn = nullptr;
 lv_obj_t *notas_save_label = nullptr;
-lv_obj_t *notas_close = nullptr;
-lv_obj_t *notas_close_label = nullptr;
 lv_obj_t *notas_ta = nullptr;
 lv_group_t *notas_group = nullptr;
 lv_timer_t *notas_cursor_timer = nullptr;
@@ -56,17 +55,17 @@ void ensure_notas_dir(void)
 
 void update_title(void)
 {
-    if (notas_title == nullptr) {
+    if (notas_app_bar.title_label == nullptr) {
         return;
     }
     if (current_note_path.empty()) {
-        lv_label_set_text(notas_title, "Notas (Sem título)");
+        ui_app_bar_set_title(&notas_app_bar, "Notas - Sem título");
     } else {
         size_t last_slash = current_note_path.find_last_of('/');
         std::string filename =
             (last_slash != std::string::npos) ? current_note_path.substr(last_slash + 1) : current_note_path;
-        std::string title = "Notas (" + filename + ")";
-        lv_label_set_text(notas_title, title.c_str());
+        std::string title = "Notas - " + filename;
+        ui_app_bar_set_title(&notas_app_bar, title.c_str());
     }
 }
 
@@ -337,8 +336,8 @@ void apply_notas_layout(void)
     int32_t h = lv_display_get_vertical_resolution(NULL);
     int32_t kb_h = ui_keyboard_is_visible() ? ui_keyboard_get_height() : 0;
 
-    if (notas_bar != nullptr) {
-        lv_obj_set_width(notas_bar, w);
+    if (notas_app_bar.bar != nullptr) {
+        lv_obj_set_width(notas_app_bar.bar, w);
     }
 
     lv_obj_set_width(notas_ta, w);
@@ -380,42 +379,8 @@ void apply_notas_theme(void)
 
     lv_obj_set_style_bg_color(notas_scr, lv_color_hex(pal->background), 0);
 
-    /* Barra do app (surface_alt) */
-    lv_obj_set_style_bg_color(notas_bar, lv_color_hex(pal->surface_alt), 0);
-    lv_obj_set_style_border_color(notas_bar, lv_color_hex(pal->border), 0);
-    lv_obj_set_style_text_color(notas_title, lv_color_hex(pal->text), 0);
-
-    /* Botao Novo */
-    if (notas_new_btn != nullptr) {
-        lv_obj_set_style_bg_opa(notas_new_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(notas_new_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(notas_new_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (notas_new_label != nullptr) {
-        lv_obj_set_style_text_color(notas_new_label, lv_color_hex(pal->text), 0);
-    }
-
-    /* Botao Salvar */
-    if (notas_save_btn != nullptr) {
-        lv_obj_set_style_bg_opa(notas_save_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(notas_save_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(notas_save_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (notas_save_label != nullptr) {
-        lv_obj_set_style_text_color(notas_save_label, lv_color_hex(pal->text), 0);
-    }
-
-    /* Botao Fechar */
-    if (notas_close != nullptr) {
-        lv_obj_set_style_bg_opa(notas_close, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(notas_close, 1, 0);
-        lv_obj_set_style_border_color(notas_close, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_opa(notas_close, LV_OPA_COVER, LV_STATE_PRESSED);
-        lv_obj_set_style_bg_color(notas_close, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (notas_close_label != nullptr) {
-        lv_obj_set_style_text_color(notas_close_label, lv_color_hex(pal->text), 0);
-    }
+    /* Barra do app */
+    ui_app_bar_refresh_theme(&notas_app_bar);
 
     lv_obj_set_style_bg_color(notas_ta, lv_color_hex(pal->surface), 0);
     lv_obj_set_style_text_color(notas_ta, lv_color_hex(pal->text), 0);
@@ -434,67 +399,12 @@ lv_obj_t *ui_notas_create(void)
 {
     notas_scr = lv_obj_create(NULL);
 
-    /* Barra propria do app com layout flex row */
-    notas_bar = lv_obj_create(notas_scr);
-    lv_obj_set_size(notas_bar, lv_pct(100), UI_BAR_HEIGHT);
-    lv_obj_align(notas_bar, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT);
-    lv_obj_set_style_bg_opa(notas_bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(notas_bar, 1, 0);
-    lv_obj_set_style_border_side(notas_bar, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_radius(notas_bar, 0, 0);
-    lv_obj_set_style_shadow_width(notas_bar, 0, 0);
-    lv_obj_set_style_pad_left(notas_bar, 12, 0);
-    lv_obj_set_style_pad_right(notas_bar, 8, 0);
-    lv_obj_set_style_pad_top(notas_bar, 0, 0);
-    lv_obj_set_style_pad_bottom(notas_bar, 0, 0);
-    lv_obj_clear_flag(notas_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(notas_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(notas_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    notas_title = lv_label_create(notas_bar);
-    lv_label_set_text(notas_title, "Notas");
-    lv_label_set_long_mode(notas_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(notas_title, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_set_flex_grow(notas_title, 1);
-
-    /* Botao Novo */
-    notas_new_btn = lv_obj_create(notas_bar);
-    lv_obj_set_size(notas_new_btn, 36, 36);
-    lv_obj_set_style_radius(notas_new_btn, 8, 0);
-    lv_obj_set_style_border_width(notas_new_btn, 1, 0);
-    lv_obj_set_style_margin_right(notas_new_btn, 6, 0);
-    lv_obj_clear_flag(notas_new_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(notas_new_btn, new_note_cb, LV_EVENT_CLICKED, nullptr);
-    notas_new_label = lv_label_create(notas_new_btn);
-    lv_label_set_text(notas_new_label, LV_SYMBOL_PLUS);
-    lv_obj_set_style_text_font(notas_new_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(notas_new_label);
-
-    /* Botao Salvar */
-    notas_save_btn = lv_obj_create(notas_bar);
-    lv_obj_set_size(notas_save_btn, 36, 36);
-    lv_obj_set_style_radius(notas_save_btn, 8, 0);
-    lv_obj_set_style_border_width(notas_save_btn, 1, 0);
-    lv_obj_set_style_margin_right(notas_save_btn, 6, 0);
-    lv_obj_clear_flag(notas_save_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(notas_save_btn, save_note_cb, LV_EVENT_CLICKED, nullptr);
-    notas_save_label = lv_label_create(notas_save_btn);
-    lv_label_set_text(notas_save_label, LV_SYMBOL_SAVE);
-    lv_obj_set_style_text_font(notas_save_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(notas_save_label);
-
-    /* Botao Fechar */
-    notas_close = lv_obj_create(notas_bar);
-    lv_obj_set_size(notas_close, 36, 36);
-    lv_obj_set_style_radius(notas_close, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(notas_close, 1, 0);
-    lv_obj_clear_flag(notas_close, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(notas_close, close_cb, LV_EVENT_CLICKED, nullptr);
-
-    notas_close_label = lv_label_create(notas_close);
-    lv_label_set_text(notas_close_label, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(notas_close_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(notas_close_label);
+    /* Barra padronizada do app */
+    notas_app_bar = ui_app_bar_create(notas_scr, "Notas", close_cb, nullptr);
+    notas_new_btn =
+        ui_app_bar_add_action_button(&notas_app_bar, LV_SYMBOL_PLUS, new_note_cb, nullptr, &notas_new_label);
+    notas_save_btn =
+        ui_app_bar_add_action_button(&notas_app_bar, LV_SYMBOL_SAVE, save_note_cb, nullptr, &notas_save_label);
 
     /* Area de digitacao maximizada */
     notas_ta = lv_textarea_create(notas_scr);
@@ -601,4 +511,20 @@ bool ui_notas_save_current(void)
     }
 
     return perform_save_to_file(current_note_path);
+}
+
+void ui_notas_register(void)
+{
+    static const char *s_notas_extensions[] = {"txt", "cfg", nullptr};
+    static const app_desc_t s_notas_desc = {
+        .id = "notas",
+        .name = "Notas",
+        .icon_symbol = LV_SYMBOL_EDIT,
+        .icon_builder = nullptr,
+        .icon_theme_refresh = nullptr,
+        .on_launch = ui_shell_open_notas,
+        .file_extensions = s_notas_extensions,
+        .on_open_file = ui_shell_open_notas_with_file,
+    };
+    app_registry_register(&s_notas_desc);
 }

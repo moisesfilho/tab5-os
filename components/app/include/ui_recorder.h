@@ -10,6 +10,7 @@ extern "C" {
  * @brief Cria a tela do aplicativo Gravador de Voz e Player.
  * @return Ponteiro para o objeto de tela LVGL criado.
  */
+void ui_recorder_register(void);
 lv_obj_t *ui_recorder_create(void);
 
 /**

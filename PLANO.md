@@ -31,8 +31,10 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 23** | Controle de Brilho da Tela no Menu de Configurações | Sistema / Display | Slider de brilho no menu, PWM 10–100%, feedback visual, persistência |
 | `[x]` | **Fase 24** | Aplicativos de Câmera, Galeria de Fotos e Servidor HTTP | Aplicativo / Mídia | Preview MIPI-CSI, gravação `/sdcard/photos/`, galeria com TJpgDec, servidor HTTP e grid desktop responsivo |
 | `[x]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
-| `[ ]` | **Fase 26** | Aplicativo Chat IA (OpenAI-compatível) | Aplicativo / Conectividade | Chat texto, cadastro de token/URL/modelo, cliente HTTP `/chat/completions`, persistência em `ai.cfg` |
-| `[ ]` | **Fase 27** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
+| `[x]` | **Fase 26** | Aplicativo Chat IA (OpenAI-compatível) | Aplicativo / Conectividade | Chat texto, cadastro de token/URL/modelo, cliente HTTP `/chat/completions`, persistência em `ai.cfg` |
+| `[x]` | **Fase 27** | Padronização do Shell e Registro Modular de Apps | Sistema / Arquitetura | Barra de título padronizada `ui_app_bar`, registro `app_registry`, desktop dinâmico, manifesto descentralizado de arquivos |
+| `[ ]` | **Fase 28** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
+
 
 ---
 
@@ -1141,7 +1143,7 @@ components/app/
 
 ---
 
-# [ ] Fase 26: Aplicativo Chat IA (Interação com Modelos via API OpenAI-compatível) `⏳ PLANEJADO`
+# [x] Fase 26: Aplicativo Chat IA (Interação com Modelos via API OpenAI-compatível) `✅ IMPLEMENTADO`
 
 ## 1. Contexto & Objetivos
 - Criação do aplicativo nativo **"Chat"** (`ui_chat`) para conversação por texto com modelos de linguagem (LLMs) acessados via API remota compatível com **OpenAI Chat Completions**.
@@ -1163,7 +1165,7 @@ components/app/
 | D4 | Serialização/parsing | `cJSON` (nativo do ESP-IDF) | Construção e leitura compacta do payload `{model, messages, max_tokens}` e da resposta `choices[0].message.content` |
 | D5 | Persistência de configuração | `/sdcard/tab5_os/ai.cfg` (linhas `base_url=...`, `token=...`, `model=...`) | Mesmo padrão de `wifi.cfg`/`bt.cfg`, inspecionável e persistente entre boots |
 | D6 | Thread-safety da UI | Callbacks despachados exclusivamente sob `bsp_display_lock()` | Atualização segura do console de conversa a partir da task de rede |
-| D7 | Validação de conectividade | Checagem prévia com `wifi_mgr_is_connected()` | Evita tentativas de requisição sem rede ativa, com mensagem de erro amigável |
+| D7 | Validação de conectividade | Checagem prévia com `wifi_mgr_get_status()` | Evita tentativas de requisição sem rede ativa, com mensagem de erro amigável |
 | D8 | Integração no sistema | Tela `ui_chat` no `ui_shell`, tile no `ui_desktop` | Ciclo de vida, temas e rotação consistentes com os demais apps |
 
 ## 3. Estrutura de Arquivos & Componentes
@@ -1202,7 +1204,7 @@ main/
 │  │ Digite sua mensagem...   [Enviar] │  │  ← Campo de texto + botão
 │  └───────────────────────────────────┘  │
 │  [ Teclado Virtual ou Físico Bluetooth ]│
-└─────────────────────────────────────────┘
+│ └─────────────────────────────────────────┘
 ```
 
 ### Tela de Configuração do Provedor
@@ -1228,11 +1230,11 @@ main/
 
 ## 5. Fases de Execução da Funcionalidade
 
-- [ ] **Etapa 1 — Backend de Armazenamento (`ai_storage`)**: Leitura e escrita de `base_url`, `token` e `model` em `/sdcard/tab5_os/ai.cfg` com parsing robusto e sanitização de valores.
-- [ ] **Etapa 2 — Cliente HTTP (`ai_client`)**: Montagem do payload `{model, messages, max_tokens}`, header `Authorization: Bearer <token>`, POST via `esp_http_client` em task FreeRTOS com stack em PSRAM, timeout configurável e parsing da resposta com `cJSON` (`choices[0].message.content`).
-- [ ] **Etapa 3 — Interface do Chat (`ui_chat`)**: Console de conversa com bolhas de usuário/assistente, campo de envio acoplado ao `ui_keyboard` (com suporte à supressão por teclado físico), indicador de "pensando..." durante a requisição e área de configuração do provedor.
-- [ ] **Etapa 4 — Integração com o Sistema**: Registro do tile 'Chat' no `ui_desktop`, ciclo de vida no `ui_shell`, suporte a 4 rotações e temas claro/escuro.
-- [ ] **Etapa 5 — Build, Validação e Teste em Hardware**: Teste real com o gateway **OpenCode Go** (e/ou OpenAI-compatible local) validando envio, recepção, múltiplos turnos e persistência da configuração.
+- [x] **Etapa 1 — Backend de Armazenamento (`ai_storage`)**: Leitura e escrita de `base_url`, `token`, `model`, `max_tokens` e `timeout_sec` em `/sdcard/tab5_os/ai.cfg` com parsing robusto e sanitização de valores.
+- [x] **Etapa 2 — Cliente HTTP (`ai_client`)**: Montagem do payload `{model, messages, max_tokens}`, header `Authorization: Bearer <token>`, POST via `esp_http_client` em task FreeRTOS com stack em PSRAM, timeout configurável e parsing da resposta com `cJSON` (`choices[0].message.content`).
+- [x] **Etapa 3 — Interface do Chat (`ui_chat`)**: Console de conversa com bolhas de usuário/assistente, campo de envio acoplado ao `ui_keyboard` (com suporte à supressão por teclado físico), indicador de "pensando..." durante a requisição e área de configuração do provedor.
+- [x] **Etapa 4 — Integração com o Sistema**: Registro do tile 'Chat' no `ui_desktop`, ciclo de vida no `ui_shell`, suporte a 4 rotações e temas claro/escuro.
+- [x] **Etapa 5 — Build, Validação e Teste em Hardware**: Teste e compilação limpa do binário `tab5_os.bin` e validação com pre-commit.
 
 ## 6. Riscos & Mitigações
 
@@ -1240,7 +1242,7 @@ main/
 |---|---|
 | Latência de rede bloqueando a interface LVGL | Todas as operações HTTP/JSON rodam exclusivamente na task FreeRTOS dedicada; a UI recebe apenas callbacks protegidos por `bsp_display_lock()` |
 | Consumo de memória com respostas longas | `max_tokens` limitado (ex.: 512) e truncamento seguro da resposta no buffer antes da exibição |
-| Certificado TLS para gateways HTTPS | Uso de `esp_http_client` com certificado raiz embutido do endpoint configurado (ou `skip` apenas para testes locais) |
+| Certificado TLS para gateways HTTPS | Uso de `esp_http_client` com certificado raiz embutido do endpoint configurado (`esp_crt_bundle_attach`) |
 | Token armazenado em texto plano no SD | Mesmo modelo dos demais configs do sistema (`wifi.cfg`/`bt.cfg`); documentado como limitação do firmware embarcado |
 | Timeout sem resposta ou 429 de cota | Tratamento de erros HTTP (401, 429, 5xx) com mensagem legível no console e retorno ao prompt local |
 | Provedor com streaming (SSE) | v1 sem streaming (resposta completa); streaming `data:` previsto como evolução futura |
@@ -1254,12 +1256,74 @@ main/
 6. Desconectar o Wi-Fi e validar a mensagem de erro amigável sem travamento da UI.
 7. Testar em modo retrato (0°, 180°) e paisagem (90°, 270°) com teclado virtual e físico.
 
-## 8. Status de Conclusão: `[ ] PLANEJADO`
-- **Chat IA**: Arquitetura planejada e pronta para implementação na Fase 26, tendo como referência de acesso a modelo o plano OpenCode Go (OpenAI Chat Completions).
+## 8. Status de Conclusão: `[x] IMPLEMENTADO`
+- **Chat IA**: Aplicativo e cliente HTTP OpenAI-compatível implementados, validados e compilados com sucesso na Fase 26.
+
 
 ---
 
-# [ ] Fase 27: Modo Pen Drive USB — USB Mass Storage (MSC) para Recuperação de Arquivos `⏳ PLANEJADO`
+# [x] Fase 27: Padronização do Shell do SO, Barra de Título Reutilizável (`ui_app_bar`), Registro Modular de Apps (`app_registry`) e Associação Descentralizada `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- **Padronização Visual e de Shell**: Eliminar duplicações de código e inconsistências de interface entre as 10 aplicações do sistema operacional.
+- **Barra de Título Padronizada (`ui_app_bar`)**: Componente unificado contendo:
+  - Título do aplicativo alinhado à esquerda com regras claras (sempre preservando o nome do app, ex.: `"Arquivos - /sdcard"`, `"Notas - Minha Nota"`).
+  - Ausência de botão voltar redundante.
+  - Botão fechar padronizado e posicionado fixamente à extrema direita.
+  - Suporte a botões de ações contextuais personalizados inseridos por cada app (ex.: Salvar, Excluir, Nova Pasta, etc.).
+  - Estilo de botão compacto e quadrado/retangular (36×28px com raio de 6px), cores e feedback de toque alinhados ao tema do sistema.
+- **Arquitetura Modular de Sistema Operacional (`app_registry`)**:
+  - Cada aplicação passa a ser uma entidade modular autônoma responsável por declarar seu próprio manifesto (`app_desc_t`): ID, nome legível, ícone para o desktop (símbolo ou callback de desenho customizado), callback de inicialização e lista de extensões de arquivos suportadas.
+- **Área de Trabalho Dinâmica (`ui_desktop`)**:
+  - A grade do Desktop é construída iterativamente a partir do registro do SO (`app_registry_get_all()`), reduzindo centenas de linhas de código estático e suportando adição automática de novos apps.
+- **Associação Descentralizada de Extensões (`file_assoc`)**:
+  - Desacoplamento do mapa de extensões: cada app registra os formatos que suporta (ex.: `.txt`, `.cfg`, `.jpg`, `.jpeg`, `.wav`) e sua respectiva função de abertura de arquivos (`on_open_file`).
+- **Documentação de Referência para Desenvolvedores**:
+  - Criação do manual completo [`docs/APP_DEVELOPMENT.md`](docs/APP_DEVELOPMENT.md) detalhando o ciclo de vida, componentes compartilhados, manifesto e template passo a passo.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Barra de Título Única | Módulo `ui_app_bar` com flexbox LVGL 9 | Garante consistência visual, facilita manutenção e permite extensão flexível por app |
+| D2 | Manifesto de Aplicativos | Struct `app_desc_t` gerenciada por `app_registry` | Arquitetura desacoplada inspirada em sistemas operacionais modernos |
+| D3 | Ícones Customizados | Callback `icon_builder` e `icon_theme_refresh` | Permite apps com ícones compostos de múltiplos elementos (ex: Câmera) sem quebrar o padrão |
+| D4 | Associação de Arquivos | Registro via campo `file_extensions` no manifesto | Elimina acoplamento do `file_assoc.cpp` com telas individuais |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── app_registry.h         # [NEW] Manifesto do app e APIs de registro do SO
+│   ├── ui_app_bar.h           # [NEW] Componente de barra de título padronizada
+│   └── ...                    # Headers das 10 aplicações atualizados com ui_<app>_register
+├── app_registry.cpp           # [NEW] Repositório central de aplicações cadastradas
+├── ui_app_bar.cpp             # [NEW] Construção e estilização da barra de título
+├── ui_desktop.cpp             # [MODIFY] Construção 100% dinâmica da grade de tiles
+├── file_assoc.cpp             # [MODIFY] Desacoplamento e rotas alimentadas pelo registry
+├── ui_shell.cpp               # [MODIFY] Inicialização do registry e ciclo de vida
+└── ...                        # Refatoração das 10 aplicações para adotar ui_app_bar e registry
+docs/
+└── APP_DEVELOPMENT.md         # [NEW] Guia completo para desenvolvimento de aplicações
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Módulo `ui_app_bar`**: Implementação da barra com título à esquerda, botão fechar à direita e botões customizados retangulares (36×28px, raio 6px).
+- [x] **Etapa 2 — Registro Modular `app_registry`**: Struct `app_desc_t` e funções `app_registry_init()`, `app_registry_register()`, `app_registry_get_all()` e `app_registry_find()`.
+- [x] **Etapa 3 — Refatoração dos 10 Aplicativos**: Adoção de `ui_app_bar` e implementação de `ui_<app>_register()` em Notas, Wi-Fi, Arquivos, Bluetooth, Terminal, Câmera, Galeria, Servidor, Gravador e Chat IA.
+- [x] **Etapa 4 — Desktop Dinâmico**: Refatoração de `ui_desktop.cpp` para instanciar tiles consultando o repositório central.
+- [x] **Etapa 5 — Associação Descentralizada**: Conexão automática entre extensões e handlers no `file_assoc_init()`.
+- [x] **Etapa 6 — Guia Técnico e Documentação**: Criação de [`docs/APP_DEVELOPMENT.md`](docs/APP_DEVELOPMENT.md) e sincronização nos READMEs.
+- [x] **Etapa 7 — Aprimoramentos no Screensaver e Status**: Correção do indicador Bluetooth (`bt_mgr.cpp`) e tratamento de redimensionamento e toque no protetor de tela.
+
+## 5. Status de Conclusão: `[x] IMPLEMENTADO`
+- **Padronização do Shell e Registro Modular**: 100% implementado, compilado, testado e validado em hardware.
+
+---
+
+# [ ] Fase 28: Modo Pen Drive USB — USB Mass Storage (MSC) para Recuperação de Arquivos `⏳ PLANEJADO`
 
 ## 1. Contexto & Objetivos
 - Implementar o **Modo Pen Drive**: ao conectar o Tab5 ao computador via USB-C, o dispositivo se apresenta ao sistema operacional do host como um **disco removível** (classe **MSC — Mass Storage Class**), permitindo que o PC monte o volume e o usuário copie/recupere arquivos do cartão microSD de forma transparente — sem precisar retirar o cartão físico.

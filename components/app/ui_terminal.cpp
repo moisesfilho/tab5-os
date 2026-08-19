@@ -1,8 +1,10 @@
 #include "ui_terminal.h"
+#include "app_registry.h"
 #include "ui_shell.h"
 #include "ui_keyboard.h"
 #include "ui_theme.h"
 #include "ui_bar.h"
+#include "ui_app_bar.h"
 #include "ui_font.h"
 #include "terminal_cmd.h"
 #include "ssh_client.h"
@@ -18,15 +20,9 @@ enum TermMode { TERM_MODE_LOCAL = 0, TERM_MODE_SSH_PASSWORD, TERM_MODE_SSH_SESSI
 TermMode s_term_mode = TERM_MODE_LOCAL;
 
 lv_obj_t *term_scr = nullptr;
-lv_obj_t *term_bar = nullptr;
-lv_obj_t *term_back_btn = nullptr;
-lv_obj_t *term_back_label = nullptr;
-lv_obj_t *term_title = nullptr;
+ui_app_bar_t term_app_bar = {};
 lv_obj_t *term_clear_btn = nullptr;
 lv_obj_t *term_clear_label = nullptr;
-lv_obj_t *term_close_btn = nullptr;
-lv_obj_t *term_close_label = nullptr;
-
 lv_obj_t *term_ta = nullptr;
 
 std::string current_cwd = "/sdcard";
@@ -373,37 +369,7 @@ void apply_terminal_theme(void)
     const ui_palette_t *pal = ui_theme_get();
     lv_obj_set_style_bg_color(term_scr, lv_color_hex(pal->background), 0);
 
-    if (term_bar != nullptr) {
-        lv_obj_set_style_bg_color(term_bar, lv_color_hex(pal->surface_alt), 0);
-        lv_obj_set_style_border_color(term_bar, lv_color_hex(pal->border), 0);
-    }
-    if (term_back_btn != nullptr) {
-        lv_obj_set_style_bg_opa(term_back_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(term_back_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(term_back_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (term_back_label != nullptr) {
-        lv_obj_set_style_text_color(term_back_label, lv_color_hex(pal->text), 0);
-    }
-    if (term_title != nullptr) {
-        lv_obj_set_style_text_color(term_title, lv_color_hex(pal->text), 0);
-    }
-    if (term_clear_btn != nullptr) {
-        lv_obj_set_style_bg_opa(term_clear_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(term_clear_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(term_clear_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (term_clear_label != nullptr) {
-        lv_obj_set_style_text_color(term_clear_label, lv_color_hex(pal->text), 0);
-    }
-    if (term_close_btn != nullptr) {
-        lv_obj_set_style_bg_opa(term_close_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(term_close_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(term_close_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (term_close_label != nullptr) {
-        lv_obj_set_style_text_color(term_close_label, lv_color_hex(pal->text), 0);
-    }
+    ui_app_bar_refresh_theme(&term_app_bar);
 
     if (term_ta != nullptr) {
         lv_obj_set_style_bg_color(term_ta, lv_color_hex(pal->surface), 0);
@@ -456,72 +422,10 @@ lv_obj_t *ui_terminal_create(void)
 {
     term_scr = lv_obj_create(NULL);
 
-    /* Barra do Terminal */
-    term_bar = lv_obj_create(term_scr);
-    lv_obj_set_size(term_bar, lv_pct(100), UI_BAR_HEIGHT);
-    lv_obj_align(term_bar, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT);
-    lv_obj_set_style_bg_opa(term_bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(term_bar, 1, 0);
-    lv_obj_set_style_border_side(term_bar, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_radius(term_bar, 0, 0);
-    lv_obj_set_style_shadow_width(term_bar, 0, 0);
-    lv_obj_set_style_pad_left(term_bar, 8, 0);
-    lv_obj_set_style_pad_right(term_bar, 8, 0);
-    lv_obj_set_style_pad_top(term_bar, 0, 0);
-    lv_obj_set_style_pad_bottom(term_bar, 0, 0);
-    lv_obj_clear_flag(term_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(term_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(term_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    /* Botão Voltar */
-    term_back_btn = lv_button_create(term_bar);
-    lv_obj_set_size(term_back_btn, 32, 28);
-    lv_obj_set_style_radius(term_back_btn, 6, 0);
-    lv_obj_set_style_border_width(term_back_btn, 1, 0);
-    lv_obj_set_style_shadow_width(term_back_btn, 0, 0);
-    lv_obj_set_style_pad_all(term_back_btn, 0, 0);
-    lv_obj_add_event_cb(term_back_btn, close_btn_click_cb, LV_EVENT_CLICKED, nullptr);
-
-    term_back_label = lv_label_create(term_back_btn);
-    lv_label_set_text(term_back_label, LV_SYMBOL_PREV);
-    lv_obj_set_style_text_font(term_back_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(term_back_label);
-
-    /* Título */
-    term_title = lv_label_create(term_bar);
-    lv_label_set_text(term_title, "Terminal");
-    lv_obj_set_style_text_font(term_title, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_set_style_pad_left(term_title, 8, 0);
-    lv_obj_set_flex_grow(term_title, 1);
-
-    /* Botão Limpar */
-    term_clear_btn = lv_button_create(term_bar);
-    lv_obj_set_size(term_clear_btn, 32, 28);
-    lv_obj_set_style_radius(term_clear_btn, 6, 0);
-    lv_obj_set_style_border_width(term_clear_btn, 1, 0);
-    lv_obj_set_style_shadow_width(term_clear_btn, 0, 0);
-    lv_obj_set_style_pad_all(term_clear_btn, 0, 0);
-    lv_obj_add_event_cb(term_clear_btn, clear_btn_click_cb, LV_EVENT_CLICKED, nullptr);
-
-    term_clear_label = lv_label_create(term_clear_btn);
-    lv_label_set_text(term_clear_label, LV_SYMBOL_TRASH);
-    lv_obj_set_style_text_font(term_clear_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(term_clear_label);
-
-    /* Botão Fechar */
-    term_close_btn = lv_button_create(term_bar);
-    lv_obj_set_size(term_close_btn, 32, 28);
-    lv_obj_set_style_radius(term_close_btn, 6, 0);
-    lv_obj_set_style_border_width(term_close_btn, 1, 0);
-    lv_obj_set_style_shadow_width(term_close_btn, 0, 0);
-    lv_obj_set_style_pad_all(term_close_btn, 0, 0);
-    lv_obj_set_style_margin_left(term_close_btn, 6, 0);
-    lv_obj_add_event_cb(term_close_btn, close_btn_click_cb, LV_EVENT_CLICKED, nullptr);
-
-    term_close_label = lv_label_create(term_close_btn);
-    lv_label_set_text(term_close_label, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(term_close_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(term_close_label);
+    /* Barra padronizada do Terminal com acao de Limpar */
+    term_app_bar = ui_app_bar_create(term_scr, "Terminal", close_btn_click_cb, nullptr);
+    term_clear_btn =
+        ui_app_bar_add_action_button(&term_app_bar, LV_SYMBOL_TRASH, clear_btn_click_cb, nullptr, &term_clear_label);
 
     /* Console Interativo Único (Textarea Fullscreen) */
     term_ta = lv_textarea_create(term_scr);
@@ -538,4 +442,19 @@ lv_obj_t *ui_terminal_create(void)
     ui_terminal_apply_layout();
 
     return term_scr;
+}
+
+void ui_terminal_register(void)
+{
+    static const app_desc_t s_terminal_desc = {
+        .id = "terminal",
+        .name = "Terminal",
+        .icon_symbol = ">_",
+        .icon_builder = nullptr,
+        .icon_theme_refresh = nullptr,
+        .on_launch = ui_shell_open_terminal,
+        .file_extensions = nullptr,
+        .on_open_file = nullptr,
+    };
+    app_registry_register(&s_terminal_desc);
 }

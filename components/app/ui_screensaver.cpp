@@ -167,6 +167,7 @@ void screensaver_click_cb(lv_event_t *event)
 void ui_screensaver_init(void)
 {
     load_nvs_timeout();
+    s_prev_scr = lv_disp_get_scr_act(NULL);
 
     s_screensaver_scr = lv_obj_create(NULL);
     lv_obj_set_size(s_screensaver_scr, lv_pct(100), lv_pct(100));
@@ -176,7 +177,15 @@ void ui_screensaver_init(void)
     lv_obj_set_style_pad_all(s_screensaver_scr, 0, 0);
     lv_obj_clear_flag(s_screensaver_scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_screensaver_scr, screensaver_click_cb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_add_event_cb(s_screensaver_scr, screensaver_click_cb, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(
+        s_screensaver_scr,
+        [](lv_event_t *e) {
+            (void)e;
+            if (s_is_active) {
+                relocate_box();
+            }
+        },
+        LV_EVENT_SIZE_CHANGED, nullptr);
 
     s_box = lv_obj_create(s_screensaver_scr);
     lv_obj_set_size(s_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);

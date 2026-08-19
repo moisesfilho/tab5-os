@@ -1,5 +1,7 @@
 #include "ui_wifi.h"
+#include "app_registry.h"
 #include "ui_bar.h"
+#include "ui_app_bar.h"
 #include "ui_font.h"
 #include "ui_keyboard.h"
 #include "ui_shell.h"
@@ -23,10 +25,7 @@ struct network_item_t {
 };
 
 lv_obj_t *wifi_scr = nullptr;
-lv_obj_t *wifi_bar = nullptr;
-lv_obj_t *wifi_title = nullptr;
-lv_obj_t *wifi_close = nullptr;
-lv_obj_t *wifi_close_label = nullptr;
+ui_app_bar_t wifi_app_bar = {};
 lv_obj_t *scan_button = nullptr;
 lv_obj_t *scan_label = nullptr;
 lv_obj_t *network_list = nullptr;
@@ -237,23 +236,8 @@ void apply_wifi_theme(void)
     const ui_palette_t *pal = ui_theme_get();
     lv_obj_set_style_bg_color(wifi_scr, lv_color_hex(pal->background), 0);
 
-    if (wifi_bar != nullptr) {
-        lv_obj_set_style_bg_color(wifi_bar, lv_color_hex(pal->surface_alt), 0);
-        lv_obj_set_style_border_color(wifi_bar, lv_color_hex(pal->border), 0);
-    }
-    if (wifi_title != nullptr) {
-        lv_obj_set_style_text_color(wifi_title, lv_color_hex(pal->text), 0);
-    }
-    if (wifi_close != nullptr) {
-        lv_obj_set_style_bg_opa(wifi_close, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(wifi_close, 1, 0);
-        lv_obj_set_style_border_color(wifi_close, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_opa(wifi_close, LV_OPA_COVER, LV_STATE_PRESSED);
-        lv_obj_set_style_bg_color(wifi_close, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (wifi_close_label != nullptr) {
-        lv_obj_set_style_text_color(wifi_close_label, lv_color_hex(pal->text), 0);
-    }
+    ui_app_bar_refresh_theme(&wifi_app_bar);
+
     if (scan_button != nullptr) {
         lv_obj_set_style_bg_color(scan_button, lv_color_hex(pal->accent_soft), 0);
         lv_obj_set_style_bg_color(scan_button, lv_color_hex(pal->accent), LV_STATE_PRESSED);
@@ -598,38 +582,7 @@ void close_cb(lv_event_t *event)
 lv_obj_t *ui_wifi_create(void)
 {
     wifi_scr = lv_obj_create(nullptr);
-    wifi_bar = lv_obj_create(wifi_scr);
-    lv_obj_set_size(wifi_bar, lv_pct(100), UI_BAR_HEIGHT);
-    lv_obj_align(wifi_bar, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT);
-    lv_obj_set_style_bg_opa(wifi_bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(wifi_bar, 1, 0);
-    lv_obj_set_style_border_side(wifi_bar, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_radius(wifi_bar, 0, 0);
-    lv_obj_set_style_shadow_width(wifi_bar, 0, 0);
-    lv_obj_set_style_pad_left(wifi_bar, 12, 0);
-    lv_obj_set_style_pad_right(wifi_bar, 8, 0);
-    lv_obj_set_style_pad_top(wifi_bar, 0, 0);
-    lv_obj_set_style_pad_bottom(wifi_bar, 0, 0);
-    lv_obj_clear_flag(wifi_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(wifi_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(wifi_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    wifi_title = lv_label_create(wifi_bar);
-    lv_label_set_text(wifi_title, "WiFi");
-    lv_obj_set_style_text_font(wifi_title, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_set_flex_grow(wifi_title, 1);
-
-    wifi_close = lv_obj_create(wifi_bar);
-    lv_obj_set_size(wifi_close, 36, 36);
-    lv_obj_set_style_radius(wifi_close, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(wifi_close, 1, 0);
-    lv_obj_set_style_shadow_width(wifi_close, 0, 0);
-    lv_obj_clear_flag(wifi_close, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(wifi_close, close_cb, LV_EVENT_CLICKED, nullptr);
-    wifi_close_label = lv_label_create(wifi_close);
-    lv_label_set_text(wifi_close_label, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(wifi_close_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(wifi_close_label);
+    wifi_app_bar = ui_app_bar_create(wifi_scr, "WiFi", close_cb, nullptr);
 
     scan_button = lv_obj_create(wifi_scr);
     lv_obj_set_height(scan_button, 38);
@@ -739,4 +692,19 @@ void ui_wifi_refresh_theme(void)
 void ui_wifi_apply_layout(void)
 {
     apply_wifi_layout();
+}
+
+void ui_wifi_register(void)
+{
+    static const app_desc_t s_wifi_desc = {
+        .id = "wifi",
+        .name = "WiFi",
+        .icon_symbol = LV_SYMBOL_WIFI,
+        .icon_builder = nullptr,
+        .icon_theme_refresh = nullptr,
+        .on_launch = ui_shell_open_wifi,
+        .file_extensions = nullptr,
+        .on_open_file = nullptr,
+    };
+    app_registry_register(&s_wifi_desc);
 }

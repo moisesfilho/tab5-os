@@ -118,6 +118,7 @@ void mouse_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     }
 
     if (dx != 0 || dy != 0 || btn || click_now) {
+        lv_display_trigger_activity(NULL);
         if (ui_screensaver_is_active()) {
             ui_screensaver_wake_up();
         }

@@ -98,9 +98,13 @@ tab5-os/
 ├── main/
 │   └── app_main.cpp          # Boot: display, RTC, IMU, UI
 ├── components/
-│   ├── app/                  # UI + IMU + Terminal + WiFi/BT + Camera + Gallery + Server
-│   │   ├── ui_desktop.cpp    # Responsive desktop grid and styled app icons
+│   ├── app/                  # UI + IMU + Terminal + WiFi/BT + Camera + Gallery + Server + Chat AI
+│   │   ├── app_registry.cpp  # Modular OS app registry and dynamic manifests
+│   │   ├── ui_app_bar.cpp    # Standardized application title bar component
+│   │   ├── ui_desktop.cpp    # Responsive desktop grid with dynamic app discovery
 │   │   ├── ui_bar.cpp        # Top bar, settings menu, clock
+│   │   ├── ui_chat.cpp       # Chat AI client application (DeepSeek/OpenAI API)
+│   │   ├── ai_client.cpp     # HTTPS SSE client engine for AI LLM completions
 │   │   ├── ui_camera.cpp     # Camera app with preview and shutter button
 │   │   ├── camera_mgr.cpp    # V4L2/ISP manager and async photo capture
 │   │   ├── ui_recorder.cpp   # Voice Recorder and Audio Player app
@@ -115,13 +119,15 @@ tab5-os/
 │   │   ├── terminal_cmd.cpp  # Shell command execution engine
 │   │   ├── ssh_client.cpp    # Asynchronous SSH client (FreeRTOS task + libssh)
 │   │   ├── ui_keyboard.cpp   # Virtual keyboard + PT-BR accents page
-│   │   ├── ui_status.cpp     # Orientation badge
+│   │   ├── ui_status.cpp     # Network/BT status indicators and orientation badge
 │   │   ├── ui_theme.cpp      # Light/dark palettes
 │   │   ├── imu_reader.cpp    # BMI270 events -> rotation target
 │   │   ├── orientation.cpp   # Gravity vector -> rotation mapping
 │   │   └── fonts/            # Custom Latin-1 font
 │   ├── m5stack_tab5/         # Local BSP (override of the official one)
 │   └── rtc_rx8130/           # RX8130CE RTC driver
+├── docs/                     # Technical documentation & developer guides
+│   └── APP_DEVELOPMENT.md    # Application Development & Integration Guide
 ├── .github/workflows/        # CI: build + lint (ci.yml) and CodeQL (codeql.yml)
 ├── .clang-format             # Project C/C++ style
 ├── .clang-tidy               # Static lint checkers
@@ -135,6 +141,10 @@ tab5-os/
 - Rotation uses a ~27° tilt threshold (0.45 G plane magnitude) to avoid oscillation; decisive tilts always rotate.
 - `sw_rotate=true` is required (LVGL 9 + DSI).
 - The custom font is generated from the same `Montserrat-Medium.ttf` used by the LVGL built-ins, adding the Latin-1 supplement range (`0xA0–0xFF`).
+
+## Developing New Applications
+
+To learn how to create, register, and integrate new applications into the operating system, with support for app manifests, desktop icons, standardized title bars, and file extension associations, see the [Application Development Guide](docs/APP_DEVELOPMENT.md).
 
 ## Planning & Roadmap
 

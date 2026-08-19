@@ -9,9 +9,10 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
-#include "bsp/esp-bsp.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "esp_sntp.h"
+#include "bsp/esp-bsp.h"
 
 static const char *TAG = "tab5_wifi";
 
@@ -127,6 +128,14 @@ static void ip_event_handler(void *arg, esp_event_base_t base, int32_t event_id,
     if (event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "IP obtido: " IPSTR, IP2STR(&event->ip_info.ip));
+
+        if (!esp_sntp_enabled()) {
+            esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+            esp_sntp_setservername(0, "pool.ntp.org");
+            esp_sntp_setservername(1, "time.google.com");
+            esp_sntp_init();
+            ESP_LOGI(TAG, "SNTP iniciado para sincronizacao de relogio TLS");
+        }
     }
 }
 

@@ -11,9 +11,11 @@
 #include "ui_gallery.h"
 #include "ui_fileserver.h"
 #include "ui_recorder.h"
+#include "ui_chat.h"
 #include "ui_screensaver.h"
 #include "ui_theme.h"
 #include "ui_font.h"
+#include "app_registry.h"
 #include "file_assoc.h"
 
 namespace {
@@ -31,6 +33,8 @@ lv_obj_t *gallery_caller_scr = nullptr;
 lv_obj_t *fileserver_scr = nullptr;
 lv_obj_t *recorder_scr = nullptr;
 lv_obj_t *recorder_caller_scr = nullptr;
+lv_obj_t *chat_scr = nullptr;
+lv_obj_t *chat_caller_scr = nullptr;
 lv_obj_t *splash = nullptr;
 lv_obj_t *splash_label = nullptr;
 
@@ -81,8 +85,23 @@ void ui_shell_init(void)
     ui_bar_init(lv_layer_top());
     ui_keyboard_create(lv_layer_top());
 
+    /* Inicializa subsistemas de registro e associacao de arquivos */
+    app_registry_init();
     file_assoc_init();
 
+    /* Cada aplicacao registra seu manifesto (icone, launch, extensoes) no SO */
+    ui_notas_register();
+    ui_wifi_register();
+    ui_files_register();
+    ui_bluetooth_register();
+    ui_terminal_register();
+    ui_camera_register();
+    ui_gallery_register();
+    ui_fileserver_register();
+    ui_recorder_register();
+    ui_chat_register();
+
+    /* Cria a area de trabalho dinamicamente a partir dos apps registrados */
     ui_desktop_create(desktop_scr);
     notas_scr = ui_notas_create();
     wifi_scr = ui_wifi_create();
@@ -93,6 +112,7 @@ void ui_shell_init(void)
     gallery_scr = ui_gallery_create();
     fileserver_scr = ui_fileserver_create();
     recorder_scr = ui_recorder_create();
+    chat_scr = ui_chat_create();
     ui_screensaver_init();
 
     lv_timer_create(inactivity_timer_cb, 1000, nullptr);
@@ -259,6 +279,23 @@ void ui_shell_close_recorder(void)
     lv_disp_load_scr(target);
 }
 
+void ui_shell_open_chat(void)
+{
+    ui_keyboard_hide();
+    chat_caller_scr = desktop_scr;
+    lv_disp_load_scr(chat_scr);
+    ui_chat_on_open();
+}
+
+void ui_shell_close_chat(void)
+{
+    ui_chat_on_close();
+    ui_keyboard_hide();
+    lv_obj_t *target = (chat_caller_scr != nullptr) ? chat_caller_scr : desktop_scr;
+    chat_caller_scr = nullptr;
+    lv_disp_load_scr(target);
+}
+
 void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
@@ -271,6 +308,7 @@ void ui_shell_refresh_theme(void)
     ui_gallery_refresh_theme();
     ui_fileserver_refresh_theme();
     ui_recorder_refresh_theme();
+    ui_chat_refresh_theme();
 
     if (splash != nullptr) {
         lv_obj_set_style_bg_color(splash, lv_color_hex(ui_theme_get()->background), 0);
@@ -299,5 +337,7 @@ void ui_shell_notify_keyboard_layout(void)
         ui_fileserver_apply_layout();
     } else if (act == recorder_scr) {
         ui_recorder_apply_layout();
+    } else if (act == chat_scr) {
+        ui_chat_apply_layout();
     }
 }

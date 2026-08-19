@@ -1,5 +1,7 @@
 #include "ui_bluetooth.h"
+#include "app_registry.h"
 #include "ui_bar.h"
+#include "ui_app_bar.h"
 #include "ui_font.h"
 #include "ui_keyboard.h"
 #include "ui_shell.h"
@@ -16,10 +18,7 @@ namespace {
 constexpr int MAX_DEVICES = BT_SCAN_MAX_DEVICES;
 
 lv_obj_t *bt_scr = nullptr;
-lv_obj_t *bt_bar = nullptr;
-lv_obj_t *bt_title = nullptr;
-lv_obj_t *bt_close = nullptr;
-lv_obj_t *bt_close_label = nullptr;
+ui_app_bar_t bt_app_bar = {};
 lv_obj_t *scan_button = nullptr;
 lv_obj_t *scan_label = nullptr;
 lv_obj_t *device_list = nullptr;
@@ -195,18 +194,7 @@ void apply_bt_theme(void)
 
     lv_obj_set_style_bg_color(bt_scr, lv_color_hex(pal->background), 0);
 
-    if (bt_bar != nullptr) {
-        lv_obj_set_style_bg_color(bt_bar, lv_color_hex(pal->surface), 0);
-        lv_obj_set_style_border_color(bt_bar, lv_color_hex(pal->border), 0);
-    }
-
-    if (bt_title != nullptr) {
-        lv_obj_set_style_text_color(bt_title, lv_color_hex(pal->text), 0);
-    }
-
-    if (bt_close_label != nullptr) {
-        lv_obj_set_style_text_color(bt_close_label, lv_color_hex(pal->text), 0);
-    }
+    ui_app_bar_refresh_theme(&bt_app_bar);
 
     if (scan_button != nullptr) {
         lv_obj_set_style_bg_color(scan_button, lv_color_hex(pal->accent_soft), 0);
@@ -585,36 +573,8 @@ lv_obj_t *ui_bluetooth_create(void)
     lv_obj_set_size(bt_scr, lv_pct(100), lv_pct(100));
     lv_obj_clear_flag(bt_scr, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Barra do app */
-    bt_bar = lv_obj_create(bt_scr);
-    lv_obj_set_size(bt_bar, lv_pct(100), UI_BAR_HEIGHT);
-    lv_obj_set_pos(bt_bar, 0, UI_BAR_HEIGHT);
-    lv_obj_set_style_border_width(bt_bar, 1, 0);
-    lv_obj_set_style_border_side(bt_bar, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_radius(bt_bar, 0, 0);
-    lv_obj_set_style_pad_left(bt_bar, 12, 0);
-    lv_obj_set_style_pad_right(bt_bar, 12, 0);
-    lv_obj_set_style_pad_top(bt_bar, 0, 0);
-    lv_obj_set_style_pad_bottom(bt_bar, 0, 0);
-    lv_obj_clear_flag(bt_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(bt_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(bt_bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    bt_title = lv_label_create(bt_bar);
-    lv_label_set_text(bt_title, "Bluetooth");
-    lv_obj_set_style_text_font(bt_title, &lv_font_montserrat_14_latin1, 0);
-
-    bt_close = lv_obj_create(bt_bar);
-    lv_obj_set_size(bt_close, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(bt_close, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(bt_close, 0, 0);
-    lv_obj_set_style_pad_all(bt_close, 6, 0);
-    lv_obj_clear_flag(bt_close, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(bt_close, close_button_cb, LV_EVENT_CLICKED, nullptr);
-
-    bt_close_label = lv_label_create(bt_close);
-    lv_label_set_text(bt_close_label, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(bt_close_label, &lv_font_montserrat_14_latin1, 0);
+    /* Barra padronizada do app */
+    bt_app_bar = ui_app_bar_create(bt_scr, "Bluetooth", close_button_cb, nullptr);
 
     /* Botão Buscar */
     scan_button = lv_obj_create(bt_scr);
@@ -700,4 +660,19 @@ void ui_bluetooth_refresh_theme(void)
 void ui_bluetooth_apply_layout(void)
 {
     apply_bt_layout();
+}
+
+void ui_bluetooth_register(void)
+{
+    static const app_desc_t s_bluetooth_desc = {
+        .id = "bluetooth",
+        .name = "Bluetooth",
+        .icon_symbol = LV_SYMBOL_BLUETOOTH,
+        .icon_builder = nullptr,
+        .icon_theme_refresh = nullptr,
+        .on_launch = ui_shell_open_bluetooth,
+        .file_extensions = nullptr,
+        .on_open_file = nullptr,
+    };
+    app_registry_register(&s_bluetooth_desc);
 }

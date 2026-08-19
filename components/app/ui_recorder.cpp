@@ -1,6 +1,8 @@
 #include "ui_recorder.h"
+#include "app_registry.h"
 #include "audio_recorder.h"
 #include "ui_bar.h"
+#include "ui_app_bar.h"
 #include "ui_font.h"
 #include "ui_shell.h"
 #include "ui_theme.h"
@@ -28,14 +30,9 @@ struct AudioFileItem {
 };
 
 lv_obj_t *recorder_scr = nullptr;
-lv_obj_t *top_bar = nullptr;
-lv_obj_t *back_btn = nullptr;
-lv_obj_t *back_label = nullptr;
-lv_obj_t *title_label = nullptr;
+ui_app_bar_t recorder_app_bar = {};
 lv_obj_t *refresh_btn = nullptr;
 lv_obj_t *refresh_label = nullptr;
-lv_obj_t *close_btn = nullptr;
-lv_obj_t *close_label = nullptr;
 
 lv_obj_t *main_container = nullptr;
 
@@ -468,7 +465,7 @@ void resolution_cb(lv_event_t *event)
 
 void apply_recorder_layout(void)
 {
-    if (recorder_scr == nullptr || main_container == nullptr || top_bar == nullptr) {
+    if (recorder_scr == nullptr || main_container == nullptr || recorder_app_bar.bar == nullptr) {
         return;
     }
 
@@ -478,8 +475,8 @@ void apply_recorder_layout(void)
     }
 
     int32_t top = UI_BAR_HEIGHT;
-    lv_obj_set_size(top_bar, lv_pct(100), UI_BAR_HEIGHT);
-    lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, top);
+    lv_obj_set_size(recorder_app_bar.bar, lv_pct(100), UI_BAR_HEIGHT);
+    lv_obj_align(recorder_app_bar.bar, LV_ALIGN_TOP_MID, 0, top);
 
     int32_t content_top = top + UI_BAR_HEIGHT;
     int32_t container_h = std::max<int32_t>(height - content_top, 100);
@@ -495,27 +492,9 @@ void apply_recorder_theme(void)
     }
 
     const ui_palette_t *pal = ui_theme_get();
-
     lv_obj_set_style_bg_color(recorder_scr, lv_color_hex(pal->background), 0);
 
-    if (top_bar) {
-        lv_obj_set_style_bg_color(top_bar, lv_color_hex(pal->surface_alt), 0);
-        lv_obj_set_style_border_color(top_bar, lv_color_hex(pal->border), 0);
-    }
-    if (back_btn)
-        lv_obj_set_style_bg_color(back_btn, lv_color_hex(pal->surface), 0);
-    if (back_label)
-        lv_obj_set_style_text_color(back_label, lv_color_hex(pal->text), 0);
-    if (title_label)
-        lv_obj_set_style_text_color(title_label, lv_color_hex(pal->text), 0);
-    if (refresh_btn)
-        lv_obj_set_style_bg_color(refresh_btn, lv_color_hex(pal->surface), 0);
-    if (refresh_label)
-        lv_obj_set_style_text_color(refresh_label, lv_color_hex(pal->text), 0);
-    if (close_btn)
-        lv_obj_set_style_bg_color(close_btn, lv_color_hex(pal->surface), 0);
-    if (close_label)
-        lv_obj_set_style_text_color(close_label, lv_color_hex(pal->text), 0);
+    ui_app_bar_refresh_theme(&recorder_app_bar);
 
     if (rec_card) {
         lv_obj_set_style_bg_color(rec_card, lv_color_hex(pal->surface), 0);
@@ -569,67 +548,10 @@ lv_obj_t *ui_recorder_create(void)
     lv_obj_set_style_bg_color(recorder_scr, lv_color_hex(pal->background), 0);
     lv_obj_set_style_pad_all(recorder_scr, 0, 0);
 
-    /* 1. Top Bar */
-    top_bar = lv_obj_create(recorder_scr);
-    lv_obj_set_size(top_bar, lv_pct(100), UI_BAR_HEIGHT);
-    lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT);
-    lv_obj_set_style_bg_color(top_bar, lv_color_hex(pal->surface_alt), 0);
-    lv_obj_set_style_border_color(top_bar, lv_color_hex(pal->border), 0);
-    lv_obj_set_style_border_width(top_bar, 1, 0);
-    lv_obj_set_style_radius(top_bar, 0, 0);
-    lv_obj_set_style_pad_hor(top_bar, 8, 0);
-    lv_obj_set_style_pad_ver(top_bar, 0, 0);
-    lv_obj_clear_flag(top_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(top_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(top_bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    /* Voltar */
-    back_btn = lv_button_create(top_bar);
-    lv_obj_set_size(back_btn, 36, 28);
-    lv_obj_set_style_bg_color(back_btn, lv_color_hex(pal->surface), 0);
-    lv_obj_set_style_radius(back_btn, 6, 0);
-    lv_obj_add_event_cb(back_btn, back_btn_cb, LV_EVENT_CLICKED, nullptr);
-    back_label = lv_label_create(back_btn);
-    lv_label_set_text(back_label, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_color(back_label, lv_color_hex(pal->text), 0);
-    lv_obj_center(back_label);
-
-    /* Titulo */
-    title_label = lv_label_create(top_bar);
-    lv_label_set_text(title_label, "Gravador de Voz");
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_set_style_text_color(title_label, lv_color_hex(pal->text), 0);
-
-    /* Botoes da Direita */
-    lv_obj_t *top_right = lv_obj_create(top_bar);
-    lv_obj_set_size(top_right, LV_SIZE_CONTENT, lv_pct(100));
-    lv_obj_set_style_bg_opa(top_right, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(top_right, 0, 0);
-    lv_obj_set_style_pad_all(top_right, 0, 0);
-    lv_obj_clear_flag(top_right, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(top_right, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(top_right, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    refresh_btn = lv_button_create(top_right);
-    lv_obj_set_size(refresh_btn, 36, 28);
-    lv_obj_set_style_bg_color(refresh_btn, lv_color_hex(pal->surface), 0);
-    lv_obj_set_style_radius(refresh_btn, 6, 0);
-    lv_obj_add_event_cb(refresh_btn, refresh_btn_cb, LV_EVENT_CLICKED, nullptr);
-    refresh_label = lv_label_create(refresh_btn);
-    lv_label_set_text(refresh_label, LV_SYMBOL_REFRESH);
-    lv_obj_set_style_text_color(refresh_label, lv_color_hex(pal->text), 0);
-    lv_obj_center(refresh_label);
-
-    close_btn = lv_button_create(top_right);
-    lv_obj_set_size(close_btn, 36, 28);
-    lv_obj_set_style_bg_color(close_btn, lv_color_hex(pal->surface), 0);
-    lv_obj_set_style_radius(close_btn, 6, 0);
-    lv_obj_set_style_margin_left(close_btn, 6, 0);
-    lv_obj_add_event_cb(close_btn, back_btn_cb, LV_EVENT_CLICKED, nullptr);
-    close_label = lv_label_create(close_btn);
-    lv_label_set_text(close_label, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_color(close_label, lv_color_hex(pal->text), 0);
-    lv_obj_center(close_label);
+    /* 1. Barra padronizada do Gravador com acao de Atualizar Lista */
+    recorder_app_bar = ui_app_bar_create(recorder_scr, "Gravador de Voz", back_btn_cb, nullptr);
+    refresh_btn =
+        ui_app_bar_add_action_button(&recorder_app_bar, LV_SYMBOL_REFRESH, refresh_btn_cb, nullptr, &refresh_label);
 
     /* 2. Container Principal Rolavel */
     main_container = lv_obj_create(recorder_scr);
@@ -831,4 +753,20 @@ void ui_recorder_refresh_theme(void)
 void ui_recorder_apply_layout(void)
 {
     apply_recorder_layout();
+}
+
+void ui_recorder_register(void)
+{
+    static const char *s_recorder_extensions[] = {"wav", "pcm", nullptr};
+    static const app_desc_t s_recorder_desc = {
+        .id = "recorder",
+        .name = "Gravador",
+        .icon_symbol = LV_SYMBOL_AUDIO,
+        .icon_builder = nullptr,
+        .icon_theme_refresh = nullptr,
+        .on_launch = ui_shell_open_recorder,
+        .file_extensions = s_recorder_extensions,
+        .on_open_file = ui_shell_open_recorder_with_file,
+    };
+    app_registry_register(&s_recorder_desc);
 }

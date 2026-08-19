@@ -1,5 +1,7 @@
 #include "ui_files.h"
+#include "app_registry.h"
 #include "ui_bar.h"
+#include "ui_app_bar.h"
 #include "ui_font.h"
 #include "ui_shell.h"
 #include "ui_theme.h"
@@ -32,14 +34,9 @@ struct FileEntry {
 };
 
 lv_obj_t *files_scr = nullptr;
-lv_obj_t *files_bar = nullptr;
-lv_obj_t *files_back_btn = nullptr;
-lv_obj_t *files_back_label = nullptr;
-lv_obj_t *files_path_label = nullptr;
+ui_app_bar_t files_app_bar = {};
 lv_obj_t *files_view_btn = nullptr;
 lv_obj_t *files_view_label = nullptr;
-lv_obj_t *files_close_btn = nullptr;
-lv_obj_t *files_close_label = nullptr;
 
 lv_obj_t *files_container = nullptr;
 lv_obj_t *empty_label = nullptr;
@@ -77,52 +74,24 @@ void format_file_date(time_t mtime, char *buf, size_t buf_len)
     std::strftime(buf, buf_len, "%d/%m/%Y %H:%M", &timeinfo);
 }
 
-void back_click_cb(lv_event_t *event)
-{
-    (void)event;
-    if (current_path == "/sdcard" || current_path == "/sdcard/") {
-        return;
-    }
-
-    size_t last_slash = current_path.find_last_of('/');
-    if (last_slash != std::string::npos && last_slash > 0) {
-        std::string parent = current_path.substr(0, last_slash);
-        if (parent.length() < 7) { /* menor que /sdcard */
-            parent = "/sdcard";
-        }
-        load_directory(parent);
-    } else {
-        load_directory("/sdcard");
-    }
-}
-
-void toggle_view_click_cb(lv_event_t *event)
-{
-    (void)event;
-    if (current_view_mode == ViewMode::ICONS) {
-        current_view_mode = ViewMode::LIST;
-        if (files_view_label != nullptr) {
-            lv_label_set_text(files_view_label, LV_SYMBOL_IMAGE);
-        }
-    } else {
-        current_view_mode = ViewMode::ICONS;
-        if (files_view_label != nullptr) {
-            lv_label_set_text(files_view_label, LV_SYMBOL_LIST);
-        }
-    }
-    render_content();
-}
-
-void close_click_cb(lv_event_t *event)
-{
-    (void)event;
-    ui_shell_close_files();
-}
-
 void item_click_cb(lv_event_t *event)
 {
     const char *name = static_cast<const char *>(lv_event_get_user_data(event));
     if (name == nullptr) {
+        return;
+    }
+
+    if (std::strcmp(name, "..") == 0) {
+        size_t last_slash = current_path.find_last_of('/');
+        if (last_slash != std::string::npos && last_slash > 0) {
+            std::string parent = current_path.substr(0, last_slash);
+            if (parent.length() < 7) { /* menor que /sdcard */
+                parent = "/sdcard";
+            }
+            load_directory(parent);
+        } else {
+            load_directory("/sdcard");
+        }
         return;
     }
 
@@ -184,9 +153,18 @@ void load_directory(const std::string &path)
         return a.name < b.name;
     });
 
-    if (files_path_label != nullptr) {
-        lv_label_set_text(files_path_label, current_path.c_str());
+    /* Se estiver em um subdiretorio, insere entrada ".." no inicio para retorno */
+    if (current_path != "/sdcard" && current_path != "/sdcard/") {
+        FileEntry parent_fe;
+        parent_fe.name = "..";
+        parent_fe.is_dir = true;
+        parent_fe.size = 0;
+        parent_fe.mtime = 0;
+        entries.insert(entries.begin(), parent_fe);
     }
+
+    std::string app_title = "Arquivos - " + current_path;
+    ui_app_bar_set_title(&files_app_bar, app_title.c_str());
 
     render_content();
 }
@@ -200,37 +178,8 @@ void apply_files_theme(void)
     const ui_palette_t *pal = ui_theme_get();
     lv_obj_set_style_bg_color(files_scr, lv_color_hex(pal->background), 0);
 
-    if (files_bar != nullptr) {
-        lv_obj_set_style_bg_color(files_bar, lv_color_hex(pal->surface_alt), 0);
-        lv_obj_set_style_border_color(files_bar, lv_color_hex(pal->border), 0);
-    }
-    if (files_back_btn != nullptr) {
-        lv_obj_set_style_bg_opa(files_back_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(files_back_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(files_back_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (files_back_label != nullptr) {
-        lv_obj_set_style_text_color(files_back_label, lv_color_hex(pal->text), 0);
-    }
-    if (files_path_label != nullptr) {
-        lv_obj_set_style_text_color(files_path_label, lv_color_hex(pal->text), 0);
-    }
-    if (files_view_btn != nullptr) {
-        lv_obj_set_style_bg_opa(files_view_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(files_view_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(files_view_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (files_view_label != nullptr) {
-        lv_obj_set_style_text_color(files_view_label, lv_color_hex(pal->text), 0);
-    }
-    if (files_close_btn != nullptr) {
-        lv_obj_set_style_bg_opa(files_close_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(files_close_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(files_close_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (files_close_label != nullptr) {
-        lv_obj_set_style_text_color(files_close_label, lv_color_hex(pal->text), 0);
-    }
+    ui_app_bar_refresh_theme(&files_app_bar);
+
     if (files_container != nullptr) {
         lv_obj_set_style_bg_color(files_container, lv_color_hex(pal->background), 0);
     }
@@ -251,8 +200,8 @@ void apply_files_layout(void)
     lv_obj_set_size(files_container, width, container_h);
     lv_obj_set_pos(files_container, 0, top);
 
-    if (files_bar != nullptr) {
-        lv_obj_set_width(files_bar, width);
+    if (files_app_bar.bar != nullptr) {
+        lv_obj_set_width(files_app_bar.bar, width);
     }
 }
 
@@ -382,71 +331,40 @@ void render_content(void)
     }
 }
 
+void toggle_view_click_cb(lv_event_t *event)
+{
+    (void)event;
+    if (current_view_mode == ViewMode::ICONS) {
+        current_view_mode = ViewMode::LIST;
+        if (files_view_label != nullptr) {
+            lv_label_set_text(files_view_label, LV_SYMBOL_IMAGE);
+        }
+    } else {
+        current_view_mode = ViewMode::ICONS;
+        if (files_view_label != nullptr) {
+            lv_label_set_text(files_view_label, LV_SYMBOL_LIST);
+        }
+    }
+    render_content();
+}
+
+void close_click_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_shell_close_files();
+}
+
 } // namespace
 
 lv_obj_t *ui_files_create(void)
 {
     files_scr = lv_obj_create(nullptr);
 
-    files_bar = lv_obj_create(files_scr);
-    lv_obj_set_size(files_bar, lv_pct(100), UI_BAR_HEIGHT);
-    lv_obj_align(files_bar, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT);
-    lv_obj_set_style_bg_opa(files_bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(files_bar, 1, 0);
-    lv_obj_set_style_border_side(files_bar, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_radius(files_bar, 0, 0);
-    lv_obj_set_style_shadow_width(files_bar, 0, 0);
-    lv_obj_set_style_pad_all(files_bar, 0, 0);
-    lv_obj_clear_flag(files_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(files_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(files_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    /* Botao Voltar */
-    files_back_btn = lv_obj_create(files_bar);
-    lv_obj_set_size(files_back_btn, 36, 36);
-    lv_obj_set_style_radius(files_back_btn, 8, 0);
-    lv_obj_set_style_border_width(files_back_btn, 1, 0);
-    lv_obj_set_style_margin_left(files_back_btn, 6, 0);
-    lv_obj_set_style_margin_right(files_back_btn, 6, 0);
-    lv_obj_clear_flag(files_back_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(files_back_btn, back_click_cb, LV_EVENT_CLICKED, nullptr);
-    files_back_label = lv_label_create(files_back_btn);
-    lv_label_set_text(files_back_label, LV_SYMBOL_PREV);
-    lv_obj_set_style_text_font(files_back_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(files_back_label);
-
-    /* Caminho Atual (flex grow) */
-    files_path_label = lv_label_create(files_bar);
-    lv_label_set_text(files_path_label, current_path.c_str());
-    lv_label_set_long_mode(files_path_label, LV_LABEL_LONG_DOT);
-    lv_obj_set_flex_grow(files_path_label, 1);
-    lv_obj_set_style_text_font(files_path_label, &lv_font_montserrat_14_latin1, 0);
-
-    /* Botao Alternar Modo de Exibicao */
-    files_view_btn = lv_obj_create(files_bar);
-    lv_obj_set_size(files_view_btn, 36, 36);
-    lv_obj_set_style_radius(files_view_btn, 8, 0);
-    lv_obj_set_style_border_width(files_view_btn, 1, 0);
-    lv_obj_set_style_margin_right(files_view_btn, 6, 0);
-    lv_obj_clear_flag(files_view_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(files_view_btn, toggle_view_click_cb, LV_EVENT_CLICKED, nullptr);
-    files_view_label = lv_label_create(files_view_btn);
-    lv_label_set_text(files_view_label, LV_SYMBOL_LIST);
-    lv_obj_set_style_text_font(files_view_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(files_view_label);
-
-    /* Botao Fechar */
-    files_close_btn = lv_obj_create(files_bar);
-    lv_obj_set_size(files_close_btn, 36, 36);
-    lv_obj_set_style_radius(files_close_btn, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(files_close_btn, 1, 0);
-    lv_obj_set_style_margin_right(files_close_btn, 6, 0);
-    lv_obj_clear_flag(files_close_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(files_close_btn, close_click_cb, LV_EVENT_CLICKED, nullptr);
-    files_close_label = lv_label_create(files_close_btn);
-    lv_label_set_text(files_close_label, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(files_close_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(files_close_label);
+    /* Barra padronizada do app com acao de alternar modo de exibicao */
+    std::string init_title = "Arquivos - " + current_path;
+    files_app_bar = ui_app_bar_create(files_scr, init_title.c_str(), close_click_cb, nullptr);
+    files_view_btn =
+        ui_app_bar_add_action_button(&files_app_bar, LV_SYMBOL_LIST, toggle_view_click_cb, nullptr, &files_view_label);
 
     /* Container de conteudo (pastas e arquivos) */
     files_container = lv_obj_create(files_scr);
@@ -476,4 +394,19 @@ void ui_files_apply_layout(void)
 void ui_files_open_path(const char *path)
 {
     load_directory(path != nullptr ? path : "/sdcard");
+}
+
+void ui_files_register(void)
+{
+    static const app_desc_t s_files_desc = {
+        .id = "files",
+        .name = "Arquivos",
+        .icon_symbol = LV_SYMBOL_DIRECTORY,
+        .icon_builder = nullptr,
+        .icon_theme_refresh = nullptr,
+        .on_launch = ui_shell_open_files,
+        .file_extensions = nullptr,
+        .on_open_file = nullptr,
+    };
+    app_registry_register(&s_files_desc);
 }

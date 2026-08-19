@@ -16,6 +16,7 @@
 #include "display_storage.h"
 #include "camera_mgr.h"
 #include "http_file_server.h"
+#include "ai_storage.h"
 
 static const char *TAG = "tab5_poc";
 
@@ -36,7 +37,7 @@ extern "C" void app_main(void)
     /* Semeia o relogio do sistema a partir do RTC RX8130CE (I2C do BSP) */
     rtc_rx8130_init();
 
-    /* Monta o SD para restaurar configs persistidas (display e wifi) */
+    /* Monta o SD para restaurar configs persistidas (display, wifi e ai) */
     if (wifi_storage_mount() == ESP_OK) {
         wifi_cfg_t cfg;
         if (wifi_storage_load(&cfg) == ESP_OK) {
@@ -45,6 +46,11 @@ extern "C" void app_main(void)
             memset(&cfg, 0, sizeof(cfg));
             wifi_storage_save(&cfg);
             ESP_LOGW(TAG, "wifi.cfg nao existia - criado vazio");
+        }
+
+        ai_cfg_t ai_cfg;
+        if (ai_storage_load(&ai_cfg) == ESP_OK) {
+            ESP_LOGI(TAG, "ai.cfg: model=\"%s\" base_url=\"%s\"", ai_cfg.model, ai_cfg.base_url);
         }
     }
 

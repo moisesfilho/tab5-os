@@ -1,6 +1,8 @@
 #include "ui_camera.h"
+#include "app_registry.h"
 #include "camera_mgr.h"
 #include "ui_bar.h"
+#include "ui_app_bar.h"
 #include "ui_font.h"
 #include "ui_shell.h"
 #include "ui_theme.h"
@@ -22,10 +24,7 @@ namespace {
 static std::string s_last_saved_filepath;
 
 lv_obj_t *camera_scr = nullptr;
-lv_obj_t *top_bar = nullptr;
-lv_obj_t *title_label = nullptr;
-lv_obj_t *close_btn = nullptr;
-lv_obj_t *close_label = nullptr;
+ui_app_bar_t camera_app_bar = {};
 
 lv_obj_t *preview_container = nullptr;
 lv_obj_t *preview_canvas = nullptr;
@@ -157,21 +156,7 @@ void apply_camera_theme(void)
     lv_obj_set_style_bg_color(camera_scr, lv_color_hex(pal->background), 0);
 
     /* Barra Superior */
-    if (top_bar != nullptr) {
-        lv_obj_set_style_bg_color(top_bar, lv_color_hex(pal->surface_alt), 0);
-        lv_obj_set_style_border_color(top_bar, lv_color_hex(pal->border), 0);
-    }
-    if (title_label != nullptr) {
-        lv_obj_set_style_text_color(title_label, lv_color_hex(pal->text), 0);
-    }
-    if (close_btn != nullptr) {
-        lv_obj_set_style_bg_opa(close_btn, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_color(close_btn, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(close_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
-    }
-    if (close_label != nullptr) {
-        lv_obj_set_style_text_color(close_label, lv_color_hex(pal->text), 0);
-    }
+    ui_app_bar_refresh_theme(&camera_app_bar);
 
     /* Barra Inferior */
     if (bottom_bar != nullptr) {
@@ -212,39 +197,8 @@ lv_obj_t *ui_camera_create(void)
     camera_scr = lv_obj_create(NULL);
     lv_obj_clear_flag(camera_scr, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Barra superior do app (padrao com os outros apps do Tab5 OS) */
-    top_bar = lv_obj_create(camera_scr);
-    lv_obj_set_size(top_bar, lv_pct(100), UI_BAR_HEIGHT);
-    lv_obj_align(top_bar, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT);
-    lv_obj_set_style_bg_opa(top_bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_side(top_bar, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_width(top_bar, 1, 0);
-    lv_obj_set_style_radius(top_bar, 0, 0);
-    lv_obj_set_style_pad_hor(top_bar, 12, 0);
-    lv_obj_set_style_pad_ver(top_bar, 0, 0);
-    lv_obj_clear_flag(top_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_flex_flow(top_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(top_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    /* Titulo à esquerda */
-    title_label = lv_label_create(top_bar);
-    lv_label_set_text(title_label, "Câmera");
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_set_flex_grow(title_label, 1);
-
-    /* Botao Fechar [X] à direita (padrao do sistema) */
-    close_btn = lv_obj_create(top_bar);
-    lv_obj_set_size(close_btn, 36, 36);
-    lv_obj_set_style_radius(close_btn, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(close_btn, 1, 0);
-    lv_obj_set_style_margin_right(close_btn, 6, 0);
-    lv_obj_clear_flag(close_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(close_btn, close_click_cb, LV_EVENT_CLICKED, nullptr);
-
-    close_label = lv_label_create(close_btn);
-    lv_label_set_text(close_label, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(close_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_center(close_label);
+    /* Barra superior padronizada do app */
+    camera_app_bar = ui_app_bar_create(camera_scr, "Câmera", close_click_cb, nullptr);
 
     /* Container Central de Preview */
     preview_container = lv_obj_create(camera_scr);
@@ -365,4 +319,116 @@ void ui_camera_on_close(void)
         lv_timer_delete(toast_timer);
         toast_timer = nullptr;
     }
+}
+
+static void ui_camera_build_icon(lv_obj_t *icon_box)
+{
+    const ui_palette_t *pal = ui_theme_get();
+    lv_obj_clear_flag(icon_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(icon_box, LV_SCROLLBAR_MODE_OFF);
+
+    /* Corpo da camera fotografica */
+    lv_obj_t *cam_body = lv_obj_create(icon_box);
+    lv_obj_set_size(cam_body, 44, 30);
+    lv_obj_align(cam_body, LV_ALIGN_CENTER, 0, 3);
+    lv_obj_set_style_radius(cam_body, 6, 0);
+    lv_obj_set_style_border_width(cam_body, 0, 0);
+    lv_obj_set_style_pad_all(cam_body, 0, 0);
+    lv_obj_set_style_bg_color(cam_body, lv_color_hex(pal->accent), 0);
+    lv_obj_clear_flag(cam_body, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(cam_body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(cam_body, LV_SCROLLBAR_MODE_OFF);
+
+    lv_obj_t *cam_bump = lv_obj_create(icon_box);
+    lv_obj_set_size(cam_bump, 14, 6);
+    lv_obj_align(cam_bump, LV_ALIGN_CENTER, -6, -13);
+    lv_obj_set_style_radius(cam_bump, 2, 0);
+    lv_obj_set_style_border_width(cam_bump, 0, 0);
+    lv_obj_set_style_bg_color(cam_bump, lv_color_hex(pal->accent), 0);
+    lv_obj_clear_flag(cam_bump, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(cam_bump, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(cam_bump, LV_SCROLLBAR_MODE_OFF);
+
+    lv_obj_t *cam_flash = lv_obj_create(icon_box);
+    lv_obj_set_size(cam_flash, 5, 5);
+    lv_obj_align(cam_flash, LV_ALIGN_CENTER, 12, -12);
+    lv_obj_set_style_radius(cam_flash, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(cam_flash, 0, 0);
+    lv_obj_set_style_bg_color(cam_flash, lv_color_hex(pal->accent), 0);
+    lv_obj_clear_flag(cam_flash, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(cam_flash, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(cam_flash, LV_SCROLLBAR_MODE_OFF);
+
+    lv_obj_t *cam_lens = lv_obj_create(cam_body);
+    lv_obj_set_size(cam_lens, 20, 20);
+    lv_obj_align(cam_lens, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_radius(cam_lens, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(cam_lens, 2, 0);
+    lv_obj_set_style_border_color(cam_lens, lv_color_hex(pal->surface), 0);
+    lv_obj_set_style_bg_color(cam_lens, lv_color_hex(pal->accent), 0);
+    lv_obj_set_style_pad_all(cam_lens, 0, 0);
+    lv_obj_clear_flag(cam_lens, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(cam_lens, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(cam_lens, LV_SCROLLBAR_MODE_OFF);
+
+    lv_obj_t *cam_pupil = lv_obj_create(cam_lens);
+    lv_obj_set_size(cam_pupil, 8, 8);
+    lv_obj_align(cam_pupil, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_radius(cam_pupil, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(cam_pupil, 0, 0);
+    lv_obj_set_style_bg_color(cam_pupil, lv_color_hex(pal->surface), 0);
+    lv_obj_clear_flag(cam_pupil, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(cam_pupil, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(cam_pupil, LV_SCROLLBAR_MODE_OFF);
+}
+
+static void ui_camera_theme_icon(lv_obj_t *icon_box)
+{
+    const ui_palette_t *pal = ui_theme_get();
+    if (icon_box == nullptr) {
+        return;
+    }
+    uint32_t count = lv_obj_get_child_count(icon_box);
+    for (uint32_t i = 0; i < count; i++) {
+        lv_obj_t *c = lv_obj_get_child(icon_box, i);
+        if (c == nullptr) {
+            continue;
+        }
+        if (lv_obj_get_width(c) == 44) {
+            lv_obj_set_style_bg_color(c, lv_color_hex(pal->accent), 0);
+            uint32_t inner_count = lv_obj_get_child_count(c);
+            for (uint32_t j = 0; j < inner_count; j++) {
+                lv_obj_t *inner = lv_obj_get_child(c, j);
+                if (inner == nullptr) {
+                    continue;
+                }
+                lv_obj_set_style_bg_color(inner, lv_color_hex(pal->accent), 0);
+                lv_obj_set_style_border_color(inner, lv_color_hex(pal->surface), 0);
+                uint32_t p_count = lv_obj_get_child_count(inner);
+                for (uint32_t k = 0; k < p_count; k++) {
+                    lv_obj_t *pupil = lv_obj_get_child(inner, k);
+                    if (pupil != nullptr) {
+                        lv_obj_set_style_bg_color(pupil, lv_color_hex(pal->surface), 0);
+                    }
+                }
+            }
+        } else {
+            lv_obj_set_style_bg_color(c, lv_color_hex(pal->accent), 0);
+        }
+    }
+}
+
+void ui_camera_register(void)
+{
+    static const app_desc_t s_camera_desc = {
+        .id = "camera",
+        .name = "Câmera",
+        .icon_symbol = nullptr,
+        .icon_builder = ui_camera_build_icon,
+        .icon_theme_refresh = ui_camera_theme_icon,
+        .on_launch = ui_shell_open_camera,
+        .file_extensions = nullptr,
+        .on_open_file = nullptr,
+    };
+    app_registry_register(&s_camera_desc);
 }
