@@ -1075,6 +1075,7 @@ components/app/
 | D5 | Player e Barra de Progresso | Task I2S assíncrona despachando progresso percentual para `lv_bar` | Reprodução suave sem bloquear a thread gráfica da interface |
 | D6 | Associação no SO | Registro de `.wav` em `file_assoc` -> `ui_shell_open_recorder_with_file` | Permite reproduzir áudios diretamente a partir do app "Arquivos" |
 | D7 | Lançador no Desktop | Tile "Gravador" no `ui_desktop.cpp` | Acesso direto da tela principal com ciclo de vida no `ui_shell` |
+| D8 | Tipografia e Ortografia | Fonte Latin-1 global (`lv_theme_default_init`) + ortografia PT-BR completa | Elimina caracteres desconhecidos (tofu) e padroniza acentuação na UI |
 
 ## 3. Estrutura de Arquivos & Componentes
 

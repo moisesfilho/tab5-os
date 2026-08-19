@@ -151,8 +151,13 @@ lv_obj_set_style_text_color(meu_label, lv_color_hex(pal->text), 0);
 ### 4.3. Tipografia e Fontes (`ui_font`)
 
 Localizado em [`ui_font.h`](file:///home/moises/Projetos/tab5-os/components/app/include/ui_font.h):
-- `lv_font_montserrat_14_latin1`: Fonte padrão para textos, rótulos e botões (com suporte completo a acentos em português: á, é, í, ó, ú, ç, ã, etc.).
-- `lv_font_montserrat_28_latin1`: Fonte grande para ícones do desktop e cabeçalhos de destaque.
+- `lv_font_montserrat_14_latin1`: Fonte padrão do sistema configurada globalmente no tema do display (`lv_theme_default_init`). Possui suporte completo ao range Latin-1 (`0x20-0x7F`, `0xA0-0xFF`: á, é, í, ó, ú, ç, ã, õ, etc.) + símbolos do LVGL.
+- `lv_font_montserrat_28_latin1`: Fonte grande para ícones do desktop, contadores e cabeçalhos de destaque.
+
+> [!TIP]
+> **Herança e Ortografia PT-BR:**
+> - Como `lv_font_montserrat_14_latin1` é a fonte padrão do tema do sistema operacional, qualquer widget criado herda nativamente a capacidade de renderizar caracteres acentuados sem gerar caracteres desconhecidos (tofu `[]`).
+> - **Regra de Ortografia:** Sempre escreva textos da interface com a acentuação e pontuação corretas em português (ex: `"Gravação"`, `"Configurações"`, `"Áudio"`, `"Exclusão"`, `"Nenhum áudio em reprodução"`).
 
 ---
 
