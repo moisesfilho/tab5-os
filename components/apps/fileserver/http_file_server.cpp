@@ -1,8 +1,24 @@
 #include "http_file_server.h"
 #include "ai_storage.h"
+#include "wifi_mgr.h"
+#include "wifi_storage.h"
+#include "bt_mgr.h"
+#include "bt_storage.h"
+#include "display_storage.h"
+#include "bsp/display.h"
+#include "bsp/m5stack_tab5.h"
+#include "imu_reader.h"
+#include "orientation.h"
+#include "timezone_mgr.h"
+#include "ui_screensaver.h"
+#include "ui_theme.h"
+#include "ui_status.h"
 #include "esp_log.h"
 #include "esp_http_server.h"
+#include "esp_netif.h"
 #include "cJSON.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -11,13 +27,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <sstream>
 #include <vector>
+#include <algorithm>
 
 static const char *TAG = "tab5_http_server";
 static httpd_handle_t s_server = nullptr;
 
+/* Helpers para decodificação e parsing de formulários / JSON */
 static std::string url_decode(const std::string &src)
 {
     std::string ret;
@@ -38,6 +57,578 @@ static std::string url_decode(const std::string &src)
     }
     return ret;
 }
+
+static std::string get_query_param(const char *query, const char *key)
+{
+    if (!query || !key) {
+        return "";
+    }
+    char val[256] = {0};
+    if (httpd_query_key_value(query, key, val, sizeof(val)) == ESP_OK) {
+        return url_decode(val);
+    }
+    return "";
+}
+
+static std::string read_req_body(httpd_req_t *req)
+{
+    int total_len = req->content_len;
+    if (total_len <= 0 || total_len > 8192) {
+        return "";
+    }
+    std::vector<char> buf(total_len + 1, 0);
+    int cur_len = 0;
+    while (cur_len < total_len) {
+        int received = httpd_req_recv(req, buf.data() + cur_len, total_len - cur_len);
+        if (received <= 0) {
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue;
+            }
+            return "";
+        }
+        cur_len += received;
+    }
+    buf[total_len] = '\0';
+    return std::string(buf.data(), total_len);
+}
+
+/* Sanitização segura de caminhos do cartão SD */
+static bool is_safe_sd_path(const std::string &path)
+{
+    if (path.empty() || path.find("/sdcard") != 0) {
+        return false;
+    }
+    if (path.find("..") != std::string::npos) {
+        return false;
+    }
+    return true;
+}
+
+/* ========================================================================= */
+/* Handlers do Explorador de Arquivos e Downloads                            */
+/* ========================================================================= */
+
+struct FileItem {
+    std::string name;
+    bool is_dir;
+    size_t size;
+    time_t mtime;
+};
+
+static std::vector<FileItem> list_sd_directory(const std::string &dir_path)
+{
+    std::vector<FileItem> items;
+    DIR *d = opendir(dir_path.c_str());
+    if (!d) {
+        return items;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(d)) != nullptr) {
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        std::string full_path = dir_path;
+        if (full_path.back() != '/') {
+            full_path += "/";
+        }
+        full_path += entry->d_name;
+
+        struct stat st;
+        FileItem item;
+        item.name = entry->d_name;
+        item.is_dir = false;
+        item.size = 0;
+        item.mtime = 0;
+
+        if (stat(full_path.c_str(), &st) == 0) {
+            item.is_dir = S_ISDIR(st.st_mode);
+            item.size = st.st_size;
+            item.mtime = st.st_mtime;
+        }
+        items.push_back(item);
+    }
+    closedir(d);
+
+    std::sort(items.begin(), items.end(), [](const FileItem &a, const FileItem &b) {
+        if (a.is_dir != b.is_dir) {
+            return a.is_dir > b.is_dir;
+        }
+        return a.name < b.name;
+    });
+
+    return items;
+}
+
+static esp_err_t api_files_handler(httpd_req_t *req)
+{
+    char query[256] = {0};
+    std::string path = "/sdcard";
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        std::string q_path = get_query_param(query, "path");
+        if (!q_path.empty() && is_safe_sd_path(q_path)) {
+            path = q_path;
+        }
+    }
+
+    std::vector<FileItem> items = list_sd_directory(path);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "path", path.c_str());
+
+    std::string parent = "/sdcard";
+    size_t last_slash = path.find_last_of('/');
+    if (last_slash != std::string::npos && last_slash > 0 && path != "/sdcard") {
+        parent = path.substr(0, last_slash);
+        if (parent.length() < 7) {
+            parent = "/sdcard";
+        }
+    }
+    cJSON_AddStringToObject(root, "parent", parent.c_str());
+
+    cJSON *arr = cJSON_CreateArray();
+    for (const auto &it : items) {
+        cJSON *obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(obj, "name", it.name.c_str());
+        cJSON_AddBoolToObject(obj, "is_dir", it.is_dir);
+        cJSON_AddNumberToObject(obj, "size", it.size);
+        cJSON_AddNumberToObject(obj, "mtime", it.mtime);
+        cJSON_AddItemToArray(arr, obj);
+    }
+    cJSON_AddItemToObject(root, "files", arr);
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!json_str) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+    free(json_str);
+    return ESP_OK;
+}
+
+static esp_err_t download_handler(httpd_req_t *req)
+{
+    char query[512] = {0};
+    std::string filepath;
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        filepath = get_query_param(query, "file");
+    }
+
+    if (filepath.empty() || !is_safe_sd_path(filepath)) {
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
+
+    FILE *fp = fopen(filepath.c_str(), "rb");
+    if (!fp) {
+        ESP_LOGE(TAG, "arquivo nao encontrado: %s", filepath.c_str());
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
+
+    const char *dot = strrchr(filepath.c_str(), '.');
+    if (dot && (strcasecmp(dot, ".jpg") == 0 || strcasecmp(dot, ".jpeg") == 0)) {
+        httpd_resp_set_type(req, "image/jpeg");
+    } else if (dot && strcasecmp(dot, ".png") == 0) {
+        httpd_resp_set_type(req, "image/png");
+    } else if (dot && strcasecmp(dot, ".wav") == 0) {
+        httpd_resp_set_type(req, "audio/wav");
+    } else if (dot && strcasecmp(dot, ".mp3") == 0) {
+        httpd_resp_set_type(req, "audio/mpeg");
+    } else if (dot && (strcasecmp(dot, ".txt") == 0 || strcasecmp(dot, ".log") == 0 || strcasecmp(dot, ".cfg") == 0)) {
+        httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    } else if (dot && strcasecmp(dot, ".json") == 0) {
+        httpd_resp_set_type(req, "application/json");
+    } else {
+        httpd_resp_set_type(req, "application/octet-stream");
+    }
+
+    char chunk[2048];
+    while (!feof(fp) && !ferror(fp)) {
+        size_t read_bytes = fread(chunk, 1, sizeof(chunk), fp);
+        if (read_bytes > 0) {
+            if (httpd_resp_send_chunk(req, chunk, read_bytes) != ESP_OK) {
+                fclose(fp);
+                return ESP_FAIL;
+            }
+        }
+        if (read_bytes < sizeof(chunk)) {
+            break;
+        }
+    }
+    fclose(fp);
+    httpd_resp_send_chunk(req, nullptr, 0);
+    return ESP_OK;
+}
+
+/* ========================================================================= */
+/* Handlers de Configurações do Sistema (Status, Display, Wi-Fi, BT, TZ)     */
+/* ========================================================================= */
+
+static esp_err_t api_system_status_handler(httpd_req_t *req)
+{
+    cJSON *root = cJSON_CreateObject();
+
+    /* Brilho */
+    int cur_brightness = DISPLAY_DEFAULT_BRIGHTNESS;
+    display_storage_load_brightness(&cur_brightness);
+    cJSON_AddNumberToObject(root, "brightness", cur_brightness);
+
+    /* Tema */
+    cJSON_AddBoolToObject(root, "theme_dark", ui_theme_is_dark());
+
+    /* Rotação */
+    cJSON_AddBoolToObject(root, "rot_enabled", imu_reader_is_rotation_enabled());
+    lv_disp_rotation_t cur_rot = LV_DISPLAY_ROTATION_0;
+    display_storage_load_rotation(&cur_rot);
+    cJSON_AddNumberToObject(root, "rotation", static_cast<int>(cur_rot));
+
+    /* Protetor de Tela */
+    cJSON_AddNumberToObject(root, "ss_timeout", ui_screensaver_get_timeout());
+
+    /* Fuso Horário */
+    int tz_offset = timezone_mgr_get_offset();
+    char tz_str[16] = {0};
+    timezone_mgr_format_offset(tz_offset, tz_str, sizeof(tz_str));
+    cJSON_AddNumberToObject(root, "tz_offset", tz_offset);
+    cJSON_AddStringToObject(root, "tz_str", tz_str);
+
+    struct tm cur_time;
+    if (timezone_mgr_get_localtime(&cur_time) != nullptr) {
+        char time_buf[64];
+        snprintf(time_buf, sizeof(time_buf), "%02d:%02d:%02d (%02d/%02d/%04d)", cur_time.tm_hour, cur_time.tm_min,
+                 cur_time.tm_sec, cur_time.tm_mday, cur_time.tm_mon + 1, cur_time.tm_year + 1900);
+        cJSON_AddStringToObject(root, "time_str", time_buf);
+    } else {
+        cJSON_AddStringToObject(root, "time_str", "--:--:--");
+    }
+
+    /* Wi-Fi */
+    cJSON *wifi_obj = cJSON_CreateObject();
+    wifi_status_t w_stat = {};
+    wifi_mgr_get_status(&w_stat);
+    cJSON_AddBoolToObject(wifi_obj, "enabled", wifi_mgr_is_enabled());
+    cJSON_AddBoolToObject(wifi_obj, "connected", w_stat.connected);
+    cJSON_AddStringToObject(wifi_obj, "ssid", w_stat.ssid);
+    cJSON_AddStringToObject(wifi_obj, "ip", w_stat.ip);
+    cJSON_AddItemToObject(root, "wifi", wifi_obj);
+
+    /* Bluetooth */
+    cJSON *bt_obj = cJSON_CreateObject();
+    bt_status_t b_stat = {};
+    bt_mgr_get_status(&b_stat);
+    cJSON_AddBoolToObject(bt_obj, "enabled", bt_mgr_is_enabled());
+    cJSON_AddBoolToObject(bt_obj, "any_connected", b_stat.any_connected);
+    cJSON_AddNumberToObject(bt_obj, "connected_count", b_stat.connected_count);
+    cJSON_AddStringToObject(bt_obj, "last_name", b_stat.last_connected_name);
+    cJSON_AddStringToObject(bt_obj, "last_mac", b_stat.last_connected_mac);
+    cJSON_AddItemToObject(root, "bluetooth", bt_obj);
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!json_str) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+    free(json_str);
+    return ESP_OK;
+}
+
+static esp_err_t api_settings_display_handler(httpd_req_t *req)
+{
+    std::string body = read_req_body(req);
+    cJSON *root = cJSON_Parse(body.c_str());
+
+    if (root) {
+        /* Brilho */
+        cJSON *j_br = cJSON_GetObjectItem(root, "brightness");
+        if (j_br && j_br->type == cJSON_Number) {
+            int br = j_br->valueint;
+            if (br < DISPLAY_MIN_BRIGHTNESS)
+                br = DISPLAY_MIN_BRIGHTNESS;
+            if (br > DISPLAY_MAX_BRIGHTNESS)
+                br = DISPLAY_MAX_BRIGHTNESS;
+            bsp_display_brightness_set(br);
+            display_storage_save_brightness(br);
+            ESP_LOGI(TAG, "Brilho atualizado via web: %d%%", br);
+        }
+
+        /* Tema */
+        cJSON *j_theme = cJSON_GetObjectItem(root, "theme");
+        if (j_theme && j_theme->valuestring) {
+            bool dark = (strcmp(j_theme->valuestring, "dark") == 0);
+            if (bsp_display_lock(pdMS_TO_TICKS(500))) {
+                ui_theme_set(dark);
+                bsp_display_unlock();
+            }
+            ESP_LOGI(TAG, "Tema atualizado via web: %s", dark ? "Escuro" : "Claro");
+        }
+
+        /* Auto-Rotação IMU */
+        cJSON *j_rot_en = cJSON_GetObjectItem(root, "rot_enabled");
+        if (j_rot_en && cJSON_IsBool(j_rot_en)) {
+            bool en = cJSON_IsTrue(j_rot_en);
+            imu_reader_set_rotation_enabled(en);
+            ESP_LOGI(TAG, "Auto-rotacao via web: %s", en ? "Ativada" : "Desativada");
+        }
+
+        /* Rotação Manual */
+        cJSON *j_rot = cJSON_GetObjectItem(root, "rotation");
+        if (j_rot && j_rot->type == cJSON_Number) {
+            int rot_val = j_rot->valueint;
+            if (rot_val >= 0 && rot_val <= 3) {
+                lv_disp_rotation_t target_rot = static_cast<lv_disp_rotation_t>(rot_val);
+                if (bsp_display_lock(pdMS_TO_TICKS(500))) {
+                    lv_display_t *disp = lv_display_get_default();
+                    if (disp) {
+                        lv_display_set_rotation(disp, target_rot);
+                    }
+                    ui_status_set_rotation(target_rot);
+                    display_storage_save_rotation(target_rot);
+                    bsp_display_unlock();
+                }
+                ESP_LOGI(TAG, "Rotacao manual atualizada via web: %d", rot_val);
+            }
+        }
+
+        /* Protetor de Tela Timeout */
+        cJSON *j_ss = cJSON_GetObjectItem(root, "ss_timeout");
+        if (j_ss && j_ss->type == cJSON_Number) {
+            uint32_t to = static_cast<uint32_t>(j_ss->valueint);
+            ui_screensaver_set_timeout(to);
+            ESP_LOGI(TAG, "Timeout protetor de tela via web: %u s", (unsigned)to);
+        }
+
+        cJSON_Delete(root);
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"success\":true}", 16);
+    return ESP_OK;
+}
+
+static esp_err_t api_settings_timezone_handler(httpd_req_t *req)
+{
+    std::string body = read_req_body(req);
+    cJSON *root = cJSON_Parse(body.c_str());
+    if (root) {
+        cJSON *j_offset = cJSON_GetObjectItem(root, "offset");
+        if (j_offset && j_offset->type == cJSON_Number) {
+            int off = j_offset->valueint;
+            if (off >= TIMEZONE_MIN_OFFSET && off <= TIMEZONE_MAX_OFFSET) {
+                timezone_mgr_set_offset(off);
+                ESP_LOGI(TAG, "Fuso horario atualizado via web: UTC%+d", off);
+            }
+        }
+        cJSON_Delete(root);
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"success\":true}", 16);
+    return ESP_OK;
+}
+
+/* Estrutura para scan assíncrono de Wi-Fi */
+struct WifiScanResult {
+    SemaphoreHandle_t sem;
+    std::vector<wifi_ap_record_t> aps;
+};
+
+static void http_wifi_scan_cb(const wifi_ap_record_t *aps, int count, void *ctx)
+{
+    auto *res = static_cast<WifiScanResult *>(ctx);
+    if (res && aps && count > 0) {
+        res->aps.assign(aps, aps + count);
+    }
+    if (res && res->sem) {
+        xSemaphoreGive(res->sem);
+    }
+}
+
+static esp_err_t api_wifi_scan_handler(httpd_req_t *req)
+{
+    if (!wifi_mgr_is_enabled()) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, "{\"success\":false,\"error\":\"Wi-Fi desativado\",\"aps\":[]}", 51);
+        return ESP_OK;
+    }
+
+    WifiScanResult res;
+    res.sem = xSemaphoreCreateBinary();
+    esp_err_t err = wifi_mgr_scan(http_wifi_scan_cb, &res);
+    if (err == ESP_OK) {
+        xSemaphoreTake(res.sem, pdMS_TO_TICKS(6000));
+    }
+    vSemaphoreDelete(res.sem);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "success", true);
+    cJSON *arr = cJSON_CreateArray();
+    for (const auto &ap : res.aps) {
+        if (ap.ssid[0] == '\0')
+            continue;
+        cJSON *obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(obj, "ssid", (const char *)ap.ssid);
+        cJSON_AddNumberToObject(obj, "rssi", ap.rssi);
+        cJSON_AddNumberToObject(obj, "auth", ap.authmode);
+        cJSON_AddNumberToObject(obj, "channel", ap.primary);
+        cJSON_AddItemToArray(arr, obj);
+    }
+    cJSON_AddItemToObject(root, "aps", arr);
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!json_str) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+    free(json_str);
+    return ESP_OK;
+}
+
+static esp_err_t api_settings_wifi_handler(httpd_req_t *req)
+{
+    std::string body = read_req_body(req);
+    cJSON *root = cJSON_Parse(body.c_str());
+    bool ok = false;
+
+    if (root) {
+        cJSON *j_act = cJSON_GetObjectItem(root, "action");
+        if (j_act && j_act->valuestring) {
+            std::string action = j_act->valuestring;
+            if (action == "enable") {
+                wifi_mgr_set_enabled(true);
+                ok = true;
+            } else if (action == "disable") {
+                wifi_mgr_set_enabled(false);
+                ok = true;
+            } else if (action == "connect") {
+                cJSON *j_ssid = cJSON_GetObjectItem(root, "ssid");
+                cJSON *j_pass = cJSON_GetObjectItem(root, "password");
+                if (j_ssid && j_ssid->valuestring) {
+                    const char *pass = (j_pass && j_pass->valuestring) ? j_pass->valuestring : "";
+                    wifi_mgr_connect(j_ssid->valuestring, pass);
+                    ok = true;
+                }
+            } else if (action == "disconnect") {
+                wifi_mgr_disconnect();
+                ok = true;
+            } else if (action == "forget") {
+                cJSON *j_ssid = cJSON_GetObjectItem(root, "ssid");
+                if (j_ssid && j_ssid->valuestring) {
+                    wifi_mgr_forget(j_ssid->valuestring);
+                    ok = true;
+                }
+            }
+        }
+        cJSON_Delete(root);
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    std::string resp = std::string("{\"success\":") + (ok ? "true" : "false") + "}";
+    httpd_resp_send(req, resp.c_str(), resp.length());
+    return ESP_OK;
+}
+
+static esp_err_t api_bluetooth_scan_handler(httpd_req_t *req)
+{
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "success", true);
+
+    /* Dispositivos salvos / conhecidos */
+    bt_saved_list_t saved_list = {};
+    bt_storage_load_all(&saved_list);
+
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < saved_list.count; i++) {
+        cJSON *obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(obj, "mac", saved_list.items[i].mac);
+        cJSON_AddStringToObject(obj, "name", saved_list.items[i].name);
+        cJSON_AddNumberToObject(obj, "type", saved_list.items[i].type);
+        cJSON_AddBoolToObject(obj, "paired", saved_list.items[i].paired);
+        cJSON_AddItemToArray(arr, obj);
+    }
+    cJSON_AddItemToObject(root, "devices", arr);
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!json_str) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+    free(json_str);
+    return ESP_OK;
+}
+
+static esp_err_t api_settings_bluetooth_handler(httpd_req_t *req)
+{
+    std::string body = read_req_body(req);
+    cJSON *root = cJSON_Parse(body.c_str());
+    bool ok = false;
+
+    if (root) {
+        cJSON *j_act = cJSON_GetObjectItem(root, "action");
+        if (j_act && j_act->valuestring) {
+            std::string action = j_act->valuestring;
+            if (action == "enable") {
+                bt_mgr_set_enabled(true);
+                ok = true;
+            } else if (action == "disable") {
+                bt_mgr_set_enabled(false);
+                ok = true;
+            } else if (action == "connect") {
+                cJSON *j_mac = cJSON_GetObjectItem(root, "mac");
+                cJSON *j_name = cJSON_GetObjectItem(root, "name");
+                cJSON *j_type = cJSON_GetObjectItem(root, "type");
+                if (j_mac && j_mac->valuestring) {
+                    const char *name = (j_name && j_name->valuestring) ? j_name->valuestring : "Dispositivo BT";
+                    int type = (j_type && j_type->type == cJSON_Number) ? j_type->valueint : 0;
+                    bt_mgr_connect(j_mac->valuestring, name, static_cast<bt_dev_type_t>(type));
+                    ok = true;
+                }
+            } else if (action == "disconnect") {
+                cJSON *j_mac = cJSON_GetObjectItem(root, "mac");
+                if (j_mac && j_mac->valuestring) {
+                    bt_mgr_disconnect(j_mac->valuestring);
+                    ok = true;
+                }
+            } else if (action == "forget") {
+                cJSON *j_mac = cJSON_GetObjectItem(root, "mac");
+                if (j_mac && j_mac->valuestring) {
+                    bt_mgr_forget(j_mac->valuestring);
+                    ok = true;
+                }
+            }
+        }
+        cJSON_Delete(root);
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    std::string resp = std::string("{\"success\":") + (ok ? "true" : "false") + "}";
+    httpd_resp_send(req, resp.c_str(), resp.length());
+    return ESP_OK;
+}
+
+/* ========================================================================= */
+/* Handlers de Chat IA (OpenAI / OpenCode Go)                                */
+/* ========================================================================= */
 
 static void parse_form_urlencoded(const std::string &body, ai_cfg_t &cfg)
 {
@@ -69,14 +660,93 @@ static void parse_form_urlencoded(const std::string &body, ai_cfg_t &cfg)
     }
 }
 
+static esp_err_t ai_save_handler(httpd_req_t *req)
+{
+    std::string body = read_req_body(req);
+    if (body.empty()) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    ai_cfg_t cfg;
+    ai_storage_load(&cfg);
+
+    if (body[0] == '{') {
+        cJSON *root = cJSON_Parse(body.c_str());
+        if (root) {
+            cJSON *json_url = cJSON_GetObjectItem(root, "base_url");
+            cJSON *json_token = cJSON_GetObjectItem(root, "token");
+            cJSON *json_model = cJSON_GetObjectItem(root, "model");
+            cJSON *json_max_tokens = cJSON_GetObjectItem(root, "max_tokens");
+            cJSON *json_timeout = cJSON_GetObjectItem(root, "timeout_sec");
+            if (json_url && json_url->valuestring)
+                snprintf(cfg.base_url, sizeof(cfg.base_url), "%s", json_url->valuestring);
+            if (json_token && json_token->valuestring)
+                snprintf(cfg.token, sizeof(cfg.token), "%s", json_token->valuestring);
+            if (json_model && json_model->valuestring)
+                snprintf(cfg.model, sizeof(cfg.model), "%s", json_model->valuestring);
+            if (json_max_tokens && json_max_tokens->valueint > 0)
+                cfg.max_tokens = json_max_tokens->valueint;
+            if (json_timeout && json_timeout->valueint > 0)
+                cfg.timeout_sec = json_timeout->valueint;
+            cJSON_Delete(root);
+        }
+    } else {
+        parse_form_urlencoded(body, cfg);
+    }
+
+    ai_storage_save(&cfg);
+    ESP_LOGI(TAG, "Configuracao de IA atualizada via web server (base_url=%s, model=%s)", cfg.base_url, cfg.model);
+
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/?tab=ai&saved=1");
+    httpd_resp_send(req, nullptr, 0);
+    return ESP_OK;
+}
+
+static esp_err_t api_ai_get_handler(httpd_req_t *req)
+{
+    ai_cfg_t cfg;
+    ai_storage_load(&cfg);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "base_url", cfg.base_url);
+    cJSON_AddStringToObject(root, "token", cfg.token);
+    cJSON_AddStringToObject(root, "model", cfg.model);
+    cJSON_AddNumberToObject(root, "max_tokens", cfg.max_tokens);
+    cJSON_AddNumberToObject(root, "timeout_sec", cfg.timeout_sec);
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!json_str) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_str, strlen(json_str));
+    free(json_str);
+    return ESP_OK;
+}
+
+/* ========================================================================= */
+/* Página Principal (Single Page Application com CSS/JS Embutidos)           */
+/* ========================================================================= */
+
 static esp_err_t index_handler(httpd_req_t *req)
 {
     char query[128] = {0};
     bool saved_alert = false;
+    std::string active_tab = "files";
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
         char val[16] = {0};
         if (httpd_query_key_value(query, "saved", val, sizeof(val)) == ESP_OK && strcmp(val, "1") == 0) {
             saved_alert = true;
+        }
+        char tab_val[32] = {0};
+        if (httpd_query_key_value(query, "tab", tab_val, sizeof(tab_val)) == ESP_OK) {
+            active_tab = tab_val;
         }
     }
 
@@ -84,70 +754,264 @@ static esp_err_t index_handler(httpd_req_t *req)
     ai_storage_load(&ai_cfg);
 
     std::ostringstream html;
-    html
-        << "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='utf-8'>"
-        << "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
-        << "<title>M5Stack Tab5 - Painel Web</title>"
-        << "<style>"
-        << "*{box-sizing:border-box;margin:0;padding:0}"
-        << "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
-        << "background:#11111b;color:#cdd6f4;padding:24px 16px;line-height:1.5}"
-        << ".container{max-width:860px;margin:0 auto}"
-        << "header{margin-bottom:24px;text-align:center}"
-        << "h1{font-size:1.8rem;color:#89b4fa;margin-bottom:6px}"
-        << "p.subtitle{color:#a6adc8;font-size:0.95rem}"
-        << ".alert{background:#1e382b;border:1px solid #a6e3a1;color:#a6e3a1;padding:12px 16px;"
-        << "border-radius:10px;margin-bottom:20px;display:flex;align-items:center;font-weight:600}"
-        << ".tabs{display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid #313244;padding-bottom:10px}"
-        << ".tab-btn{background:#181825;color:#cdd6f4;border:1px solid #313244;padding:10px 18px;"
-        << "border-radius:8px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:all .2s}"
-        << ".tab-btn.active{background:#89b4fa;color:#11111b;border-color:#89b4fa}"
-        << ".tab-btn:hover:not(.active){background:#313244}"
-        << ".card{background:#181825;border:1px solid #313244;border-radius:14px;padding:24px;box-shadow:0 8px 24px "
-           "rgba(0,0,0,0.35);margin-bottom:24px}"
-        << ".card h2{font-size:1.25rem;color:#cdd6f4;margin-bottom:16px;display:flex;align-items:center;gap:8px}"
-        << ".form-group{margin-bottom:18px}"
-        << "label{display:block;font-size:0.9rem;font-weight:600;color:#bac2de;margin-bottom:6px}"
-        << "input[type='text'],input[type='password'],input[type='number']{"
-        << "width:100%;padding:12px 14px;background:#1e1e2e;border:1px solid #45475a;border-radius:8px;"
-        << "color:#cdd6f4;font-size:0.95rem;transition:border-color .2s;outline:none}"
-        << "input:focus{border-color:#89b4fa}"
-        << ".help{font-size:0.8rem;color:#9399b2;margin-top:4px}"
-        << ".btn-row{display:flex;gap:12px;margin-top:24px;flex-wrap:wrap}"
-        << ".btn{padding:12px "
-           "24px;border-radius:8px;font-size:0.95rem;font-weight:600;cursor:pointer;border:none;transition:opacity .2s}"
-        << ".btn:hover{opacity:0.9}"
-        << ".btn-primary{background:#89b4fa;color:#11111b}"
-        << ".btn-secondary{background:#313244;color:#cdd6f4}"
-        << ".presets{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}"
-        << ".preset-btn{background:#313244;color:#cdd6f4;border:none;padding:6px "
-           "12px;border-radius:6px;font-size:0.8rem;cursor:pointer}"
-        << ".preset-btn:hover{background:#45475a}"
-        << "table{width:100%;border-collapse:collapse;margin-top:12px}"
-        << "th,td{padding:12px;text-align:left;border-bottom:1px solid #313244;font-size:0.9rem}"
-        << "th{color:#9399b2;font-weight:600}"
-        << "a.dl-link{color:#f5c2e7;text-decoration:none;font-weight:600;padding:6px "
-           "12px;background:#313244;border-radius:6px;display:inline-block}"
-        << "a.dl-link:hover{background:#45475a;text-decoration:underline}"
-        << ".token-wrap{position:relative;display:flex;align-items:center}"
-        << ".token-wrap input{padding-right:80px}"
-        << ".token-toggle{position:absolute;right:8px;background:none;border:none;color:#89b4fa;font-size:0.8rem;font-"
-           "weight:600;cursor:pointer;padding:6px}"
-        << "</style></head><body><div class='container'>"
-        << "<header><h1>⚡ M5Stack Tab5 OS</h1><p class='subtitle'>Painel de Controle e Configuração</p></header>";
+    html << "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='utf-8'>"
+         << "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+         << "<title>M5Stack Tab5 OS - Painel de Controle</title>"
+         << "<style>"
+         << "*{box-sizing:border-box;margin:0;padding:0}"
+         << "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
+         << "background:#0f111a;color:#cdd6f4;padding:16px;line-height:1.5}"
+         << ".container{max-width:960px;margin:0 auto}"
+         << "header{margin-bottom:20px;text-align:center}"
+         << "h1{font-size:1.8rem;color:#89b4fa;margin-bottom:6px;display:flex;align-items:center;justify-content:"
+            "center;gap:10px}"
+         << "p.subtitle{color:#a6adc8;font-size:0.95rem}"
+         << ".alert{background:#1e382b;border:1px solid #a6e3a1;color:#a6e3a1;padding:12px 16px;"
+         << "border-radius:10px;margin-bottom:16px;font-weight:600;display:flex;align-items:center;gap:8px}"
+         << ".status-bar{display:flex;gap:10px;justify-content:center;margin-bottom:18px;flex-wrap:wrap}"
+         << ".pill{background:#181825;border:1px solid #313244;padding:6px "
+            "12px;border-radius:20px;font-size:0.82rem;font-weight:600;display:flex;align-items:center;gap:6px}"
+         << ".pill.ok{border-color:#a6e3a1;color:#a6e3a1}"
+         << ".pill.warn{border-color:#f9e2af;color:#f9e2af}"
+         << ".tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid "
+            "#313244;padding-bottom:8px;overflow-x:auto}"
+         << ".tab-btn{background:#181825;color:#cdd6f4;border:1px solid #313244;padding:10px 16px;"
+         << "border-radius:8px;font-size:0.92rem;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap}"
+         << ".tab-btn.active{background:#89b4fa;color:#11111b;border-color:#89b4fa}"
+         << ".tab-btn:hover:not(.active){background:#313244}"
+         << ".card{background:#181825;border:1px solid #313244;border-radius:12px;padding:20px;box-shadow:0 6px 20px "
+            "rgba(0,0,0,0.3);margin-bottom:20px}"
+         << ".card "
+            "h2{font-size:1.2rem;color:#cdd6f4;margin-bottom:14px;display:flex;align-items:center;gap:8px;border-"
+            "bottom:1px solid #313244;padding-bottom:8px}"
+         << ".grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}"
+         << "@media(max-width:700px){.grid-2{grid-template-columns:1fr}}"
+         << ".form-group{margin-bottom:16px}"
+         << "label{display:block;font-size:0.88rem;font-weight:600;color:#bac2de;margin-bottom:6px}"
+         << "input[type='text'],input[type='password'],input[type='number'],select{"
+         << "width:100%;padding:10px 12px;background:#1e1e2e;border:1px solid #45475a;border-radius:8px;"
+         << "color:#cdd6f4;font-size:0.92rem;transition:border-color .2s;outline:none}"
+         << "input:focus,select:focus{border-color:#89b4fa}"
+         << "input[type='range']{width:100%;cursor:pointer;accent-color:#89b4fa}"
+         << ".help{font-size:0.78rem;color:#9399b2;margin-top:4px}"
+         << ".btn-row{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}"
+         << ".btn{padding:10px "
+            "20px;border-radius:8px;font-size:0.9rem;font-weight:600;cursor:pointer;border:none;transition:opacity "
+            ".2s;display:inline-flex;align-items:center;gap:6px}"
+         << ".btn:hover{opacity:0.85}"
+         << ".btn-sm{padding:6px 12px;font-size:0.8rem;border-radius:6px}"
+         << ".btn-primary{background:#89b4fa;color:#11111b}"
+         << ".btn-secondary{background:#313244;color:#cdd6f4}"
+         << ".btn-success{background:#a6e3a1;color:#11111b}"
+         << ".btn-danger{background:#f38ba8;color:#11111b}"
+         << ".presets{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}"
+         << ".preset-btn{background:#313244;color:#cdd6f4;border:none;padding:5px "
+            "10px;border-radius:6px;font-size:0.78rem;cursor:pointer}"
+         << ".preset-btn:hover{background:#45475a}"
+         << "table{width:100%;border-collapse:collapse;margin-top:10px}"
+         << "th,td{padding:10px;text-align:left;border-bottom:1px solid #313244;font-size:0.88rem}"
+         << "th{color:#9399b2;font-weight:600}"
+         << "tr:hover{background:#1e1e2e}"
+         << ".dl-link{color:#89b4fa;text-decoration:none;font-weight:600;padding:5px "
+            "10px;background:#313244;border-radius:6px;display:inline-block}"
+         << ".dl-link:hover{background:#45475a;color:#cdd6f4}"
+         << ".token-wrap{position:relative;display:flex;align-items:center}"
+         << ".token-wrap input{padding-right:80px}"
+         << ".token-toggle{position:absolute;right:8px;background:none;border:none;color:#89b4fa;font-size:0.8rem;font-"
+            "weight:600;cursor:pointer;padding:6px}"
+         << ".breadcrumbs{display:flex;gap:6px;align-items:center;background:#1e1e2e;padding:10px "
+            "14px;border-radius:8px;margin-bottom:14px;overflow-x:auto;font-size:0.9rem}"
+         << ".bc-link{color:#89b4fa;cursor:pointer;text-decoration:none;font-weight:600}"
+         << ".bc-link:hover{text-decoration:underline}"
+         << ".folder-link{color:#f9e2af;cursor:pointer;text-decoration:none;font-weight:600;display:inline-flex;align-"
+            "items:center;gap:6px}"
+         << ".folder-link:hover{color:#fab387;text-decoration:underline}"
+         << ".toast{position:fixed;bottom:20px;right:20px;background:#89b4fa;color:#11111b;padding:12px "
+            "20px;border-radius:8px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.5);display:none;z-index:999}"
+         << "</style></head><body><div class='container'>"
+         << "<header><h1>⚡ M5Stack Tab5 OS</h1><p class='subtitle'>Painel de Controle e Gerenciamento do "
+            "Sistema</p></header>";
 
     if (saved_alert) {
-        html << "<div class='alert'>✓ Configurações do Chat IA salvas com sucesso no cartão SD!</div>";
+        html << "<div class='alert'>✓ Configurações salvas com sucesso!</div>";
     }
 
-    html << "<div class='tabs'>"
-         << "<button class='tab-btn active' onclick='showTab(\"tab-ai\", this)'>🤖 Configuração Chat IA</button>"
-         << "<button class='tab-btn' onclick='showTab(\"tab-files\", this)'>📸 Galeria & Arquivos</button>"
+    html << "<div id='status-pill-bar' class='status-bar'>"
+         << "<div id='pill-wifi' class='pill'>🌐 Wi-Fi: Carregando...</div>"
+         << "<div id='pill-bt' class='pill'>📶 Bluetooth: Carregando...</div>"
+         << "<div id='pill-tz' class='pill'>🕒 Horário: Carregando...</div>"
          << "</div>";
 
-    // Tab 1: AI Settings
+    /* Abas de Navegação */
+    html << "<div class='tabs'>"
+         << "<button class='tab-btn" << (active_tab == "files" ? " active" : "")
+         << "' onclick='showTab(\"tab-files\", this)'>📁 Arquivos & SD Card</button>"
+         << "<button class='tab-btn" << (active_tab == "settings" ? " active" : "")
+         << "' onclick='showTab(\"tab-settings\", this)'>⚙️ Configurações do Sistema</button>"
+         << "<button class='tab-btn" << (active_tab == "ai" ? " active" : "")
+         << "' onclick='showTab(\"tab-ai\", this)'>🤖 Chat IA</button>"
+         << "<button class='tab-btn" << (active_tab == "gallery" ? " active" : "")
+         << "' onclick='showTab(\"tab-gallery\", this)'>📸 Galeria Rápida</button>"
+         << "</div>";
+
+    /* --------------------------------------------------------------------- */
+    /* TAB 1: Explorador de Arquivos MicroSD                                 */
+    /* --------------------------------------------------------------------- */
+    html << "<div id='tab-files' class='tab-content'" << (active_tab == "files" ? "" : " style='display:none'") << ">"
+         << "<div class='card'>"
+         << "<h2>📁 Explorador de Arquivos do Cartão MicroSD</h2>"
+         << "<div class='breadcrumbs' id='file-breadcrumbs'>Carregando...</div>"
+         << "<div class='btn-row' style='margin-top:0;margin-bottom:14px;'>"
+         << "<button class='btn btn-secondary btn-sm' onclick='navigateParent()'>⬆ Subir Nível</button>"
+         << "<button class='btn btn-secondary btn-sm' onclick='loadFileList(currentPath)'>🔄 Atualizar</button>"
+         << "</div>"
+         << "<div style='overflow-x:auto;'>"
+         << "<table "
+            "id='file-table'><thead><tr><th>Nome</th><th>Tipo</th><th>Tamanho</th><th>Ação</th></tr></thead><tbody "
+            "id='file-tbody'>"
+         << "<tr><td colspan='4' style='text-align:center;'>Carregando arquivos do SD...</td></tr>"
+         << "</tbody></table>"
+         << "</div>"
+         << "</div></div>";
+
+    /* --------------------------------------------------------------------- */
+    /* TAB 2: Configurações do Sistema                                       */
+    /* --------------------------------------------------------------------- */
+    html << "<div id='tab-settings' class='tab-content'" << (active_tab == "settings" ? "" : " style='display:none'")
+         << ">"
+         << "<div class='grid-2'>"
+
+         /* Card Display, Brilho & Tema */
+         << "<div class='card'>"
+         << "<h2>💡 Tela, Brilho & Tema</h2>"
+         << "<div class='form-group'>"
+         << "<label for='slider-brightness'>Brilho da Tela: <span id='val-brightness'>80</span>%</label>"
+         << "<input type='range' id='slider-brightness' min='10' max='100' value='80' "
+            "oninput='updateBrightnessLabel(this.value)' onchange='saveDisplaySettings()'>"
+         << "</div>"
+         << "<div class='form-group'>"
+         << "<label>Tema da Interface:</label>"
+         << "<div style='display:flex;gap:10px;'>"
+         << "<button class='btn btn-secondary' id='btn-theme-dark' onclick='setTheme(\"dark\")'>🌙 Tema Escuro</button>"
+         << "<button class='btn btn-secondary' id='btn-theme-light' onclick='setTheme(\"light\")'>☀️ Tema Claro</button>"
+         << "</div>"
+         << "</div>"
+         << "<div class='form-group'>"
+         << "<label>Rotação da Tela:</label>"
+         << "<div style='display:flex;align-items:center;gap:10px;margin-bottom:10px;'>"
+         << "<input type='checkbox' id='chk-autorot' onchange='saveDisplaySettings()'>"
+         << "<label for='chk-autorot' style='margin:0;cursor:pointer;'>Auto-rotação via Sensor IMU</label>"
+         << "</div>"
+         << "<div style='display:flex;gap:6px;flex-wrap:wrap;'>"
+         << "<button class='btn btn-secondary btn-sm' onclick='setRotation(0)'>0° (Padrão)</button>"
+         << "<button class='btn btn-secondary btn-sm' onclick='setRotation(1)'>90°</button>"
+         << "<button class='btn btn-secondary btn-sm' onclick='setRotation(2)'>180°</button>"
+         << "<button class='btn btn-secondary btn-sm' onclick='setRotation(3)'>270°</button>"
+         << "</div>"
+         << "</div>"
+         << "<div class='form-group'>"
+         << "<label for='sel-screensaver'>Tempo do Protetor de Tela:</label>"
+         << "<select id='sel-screensaver' onchange='saveDisplaySettings()'>"
+         << "<option value='0'>Desativado</option>"
+         << "<option value='30'>30 Segundos</option>"
+         << "<option value='60'>1 Minuto</option>"
+         << "<option value='120'>2 Minutos</option>"
+         << "<option value='300'>5 Minutos</option>"
+         << "<option value='600'>10 Minutos</option>"
+         << "</select>"
+         << "</div>"
+         << "</div>"
+
+         /* Card Fuso Horário & Data/Hora */
+         << "<div class='card'>"
+         << "<h2>🕒 Fuso Horário & Relógio</h2>"
+         << "<div class='form-group'>"
+         << "<label for='sel-timezone'>Fuso Horário (Offset UTC):</label>"
+         << "<select id='sel-timezone' onchange='saveTimezone()'>"
+         << "<option value='-12'>UTC-12:00</option><option value='-11'>UTC-11:00</option><option "
+            "value='-10'>UTC-10:00</option>"
+         << "<option value='-9'>UTC-09:00</option><option value='-8'>UTC-08:00</option><option "
+            "value='-7'>UTC-07:00</option>"
+         << "<option value='-6'>UTC-06:00</option><option value='-5'>UTC-05:00</option><option value='-4'>UTC-04:00 "
+            "(Manaus)</option>"
+         << "<option value='-3'>UTC-03:00 (Brasília / SP / Rio)</option><option value='-2'>UTC-02:00</option><option "
+            "value='-1'>UTC-01:00</option>"
+         << "<option value='0'>UTC+00:00 (GMT/Londres)</option><option value='1'>UTC+01:00 "
+            "(Paris/Berlim)</option><option value='2'>UTC+02:00</option>"
+         << "<option value='3'>UTC+03:00</option><option value='4'>UTC+04:00</option><option "
+            "value='5'>UTC+05:00</option>"
+         << "<option value='6'>UTC+06:00</option><option value='7'>UTC+07:00</option><option value='8'>UTC+08:00 "
+            "(Pequim)</option>"
+         << "<option value='9'>UTC+09:00 (Tóquio)</option><option value='10'>UTC+10:00</option><option "
+            "value='11'>UTC+11:00</option>"
+         << "<option value='12'>UTC+12:00</option><option value='13'>UTC+13:00</option><option "
+            "value='14'>UTC+14:00</option>"
+         << "</select>"
+         << "</div>"
+         << "<div class='form-group'>"
+         << "<label>Horário do Sistema:</label>"
+         << "<div id='disp-system-time' style='font-size:1.1rem;font-weight:700;color:#89b4fa;'>--:--:--</div>"
+         << "</div>"
+         << "</div>"
+
+         /* Card Wi-Fi */
+         << "<div class='card' style='grid-column:1 / -1;'>"
+         << "<h2>🌐 Conectividade Wi-Fi</h2>"
+         << "<div "
+            "style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-"
+            "bottom:14px;'>"
+         << "<div id='wifi-status-info' style='font-size:0.95rem;font-weight:600;'>Status: Carregando...</div>"
+         << "<div style='display:flex;gap:8px;'>"
+         << "<button class='btn btn-secondary btn-sm' id='btn-wifi-toggle' onclick='toggleWifi()'>Ligar / "
+            "Desligar</button>"
+         << "<button class='btn btn-primary btn-sm' onclick='scanWifi()'>🔍 Buscar Redes Wi-Fi</button>"
+         << "</div>"
+         << "</div>"
+         << "<div id='wifi-scan-results' style='display:none;margin-bottom:16px;'>"
+         << "<table id='wifi-table'><thead><tr><th>Rede "
+            "(SSID)</th><th>Sinal</th><th>Segurança</th><th>Ação</th></tr></thead><tbody "
+            "id='wifi-tbody'></tbody></table>"
+         << "</div>"
+         << "<div class='grid-2'>"
+         << "<div class='form-group'><label for='wifi-ssid'>SSID (Nome da Rede):</label><input type='text' "
+            "id='wifi-ssid' placeholder='Nome da rede'></div>"
+         << "<div class='form-group'><label for='wifi-pass'>Senha:</label><input type='password' id='wifi-pass' "
+            "placeholder='Senha do Wi-Fi'></div>"
+         << "</div>"
+         << "<div class='btn-row' style='margin-top:0;'>"
+         << "<button class='btn btn-success' onclick='connectWifi()'>🔗 Conectar à Rede</button>"
+         << "<button class='btn btn-secondary' onclick='disconnectWifi()'>Desconectar</button>"
+         << "<button class='btn btn-danger' onclick='forgetWifi()'>Esquecer Rede</button>"
+         << "</div>"
+         << "</div>"
+
+         /* Card Bluetooth */
+         << "<div class='card' style='grid-column:1 / -1;'>"
+         << "<h2>📶 Conectividade Bluetooth</h2>"
+         << "<div "
+            "style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-"
+            "bottom:14px;'>"
+         << "<div id='bt-status-info' style='font-size:0.95rem;font-weight:600;'>Status: Carregando...</div>"
+         << "<div style='display:flex;gap:8px;'>"
+         << "<button class='btn btn-secondary btn-sm' id='btn-bt-toggle' onclick='toggleBt()'>Ligar / Desligar</button>"
+         << "<button class='btn btn-primary btn-sm' onclick='scanBt()'>🔍 Listar Dispositivos</button>"
+         << "</div>"
+         << "</div>"
+         << "<div id='bt-results' style='margin-bottom:14px;'>"
+         << "<table id='bt-table'><thead><tr><th>Nome</th><th>Endereço "
+            "MAC</th><th>Tipo</th><th>Ação</th></tr></thead><tbody id='bt-tbody'>"
+         << "<tr><td colspan='4' style='text-align:center;'>Nenhum dispositivo salvo ou conectado.</td></tr>"
+         << "</tbody></table>"
+         << "</div>"
+         << "</div>"
+
+         << "</div></div>";
+
+    /* --------------------------------------------------------------------- */
+    /* TAB 3: Configuração Chat IA                                           */
+    /* --------------------------------------------------------------------- */
     html
-        << "<div id='tab-ai' class='tab-content'>"
+        << "<div id='tab-ai' class='tab-content'" << (active_tab == "ai" ? "" : " style='display:none'") << ">"
         << "<div class='card'>"
         << "<h2>🤖 Parâmetros da API OpenAI-compatível</h2>"
         << "<p style='color:#a6adc8;margin-bottom:16px;font-size:0.9rem'>Configure os dados de acesso ao modelo de IA "
@@ -179,7 +1043,7 @@ static esp_err_t index_handler(httpd_req_t *req)
         << "<input type='text' id='model' name='model' value='" << ai_cfg.model << "' required>"
         << "<div class='help'>Exemplo: deepseek-v4-pro, deepseek-v4-flash, gpt-4o-mini, kimi-k2.6</div>"
         << "</div>"
-        << "<div style='display:grid;grid-template-columns:1fr 1fr;gap:16px'>"
+        << "<div class='grid-2'>"
         << "<div class='form-group'>"
         << "<label for='max_tokens'>Max Tokens:</label>"
         << "<input type='number' id='max_tokens' name='max_tokens' value='" << ai_cfg.max_tokens
@@ -191,7 +1055,6 @@ static esp_err_t index_handler(httpd_req_t *req)
         << "<input type='number' id='timeout_sec' name='timeout_sec' value='" << ai_cfg.timeout_sec
         << "' min='5' max='300'>"
         << "<div class='help'>Tempo limite de espera (padrão: 120s)</div>"
-
         << "</div>"
         << "</div>"
         << "<div class='btn-row'>"
@@ -199,20 +1062,24 @@ static esp_err_t index_handler(httpd_req_t *req)
         << "<button type='button' class='btn btn-secondary' onclick='resetDefaults()'>↺ Restaurar Padrões</button>"
         << "</div>"
         << "</form>"
-        << "</div>"
-        << "</div>";
+        << "</div></div>";
 
-    // Tab 2: Files & Gallery
-    html << "<div id='tab-files' class='tab-content' style='display:none'>"
-         << "<div class='card'>"
-         << "<h2>📸 Fotos & Arquivos Gravados</h2>"
-         << "<p style='color:#a6adc8;margin-bottom:16px;font-size:0.9rem'>Baixe as fotos e mídias salvas no cartão "
-            "microSD do Tab5:</p>"
-         << "<table><tr><th>Arquivo</th><th>Tamanho</th><th>Ação</th></tr>";
+    /* --------------------------------------------------------------------- */
+    /* TAB 4: Galeria Rápida                                                 */
+    /* --------------------------------------------------------------------- */
+    html
+        << "<div id='tab-gallery' class='tab-content'" << (active_tab == "gallery" ? "" : " style='display:none'")
+        << ">"
+        << "<div class='card'>"
+        << "<h2>📸 Galeria de Fotos & Mídias</h2>"
+        << "<p style='color:#a6adc8;margin-bottom:14px;font-size:0.9rem'>Acesso rápido às fotos capturadas pela câmera "
+           "em /sdcard/imagens:</p>"
+        << "<table><thead><tr><th>Arquivo</th><th>Tamanho</th><th>Ação</th></tr></thead><tbody>";
 
     DIR *d = opendir("/sdcard/imagens");
     if (d) {
         struct dirent *entry;
+        bool found = false;
         while ((entry = readdir(d)) != nullptr) {
             if (entry->d_name[0] == '.')
                 continue;
@@ -221,63 +1088,290 @@ static esp_err_t index_handler(httpd_req_t *req)
             size_t sz = 0;
             if (stat(path.c_str(), &st) == 0)
                 sz = st.st_size;
-            html << "<tr><td>" << entry->d_name << "</td>"
+            found = true;
+            html << "<tr><td>🖼️ " << entry->d_name << "</td>"
                  << "<td>" << (sz / 1024) << " KB</td>"
                  << "<td><a class='dl-link' href='/download?file=/sdcard/imagens/" << entry->d_name
                  << "' target='_blank'>⬇ Baixar</a></td></tr>";
         }
         closedir(d);
-    }
-
-    DIR *d2 = opendir("/sdcard");
-    if (d2) {
-        struct dirent *entry;
-        while ((entry = readdir(d2)) != nullptr) {
-            if (entry->d_name[0] == '.')
-                continue;
-            const char *dot = strrchr(entry->d_name, '.');
-            if (dot &&
-                (strcasecmp(dot, ".jpg") == 0 || strcasecmp(dot, ".jpeg") == 0 || strcasecmp(dot, ".png") == 0)) {
-                std::string path = std::string("/sdcard/") + entry->d_name;
-                struct stat st;
-                size_t sz = 0;
-                if (stat(path.c_str(), &st) == 0)
-                    sz = st.st_size;
-                html << "<tr><td>" << entry->d_name << " (raiz)</td>"
-                     << "<td>" << (sz / 1024) << " KB</td>"
-                     << "<td><a class='dl-link' href='/download?file=/sdcard/" << entry->d_name
-                     << "' target='_blank'>⬇ Baixar</a></td></tr>";
-            }
+        if (!found) {
+            html << "<tr><td colspan='3' style='text-align:center;'>Nenhuma foto encontrada em "
+                    "/sdcard/imagens</td></tr>";
         }
-        closedir(d2);
+    } else {
+        html << "<tr><td colspan='3' style='text-align:center;'>Diretório /sdcard/imagens não encontrado.</td></tr>";
     }
 
-    html << "</table></div></div>";
+    html << "</tbody></table></div></div>";
 
-    // JavaScript
-    html << "<script>"
-         << "function showTab(tabId, btn){"
-         << "document.querySelectorAll('.tab-content').forEach(el=>el.style.display='none');"
-         << "document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));"
-         << "document.getElementById(tabId).style.display='block';"
-         << "btn.classList.add('active');"
-         << "}"
-         << "function toggleToken(){"
-         << "var t=document.getElementById('token');"
-         << "if(t.type==='password'){t.type='text';event.target.innerText='Ocultar';}"
-         << "else{t.type='password';event.target.innerText='Mostrar';}"
-         << "}"
-         << "function setPreset(url, model){"
-         << "document.getElementById('base_url').value=url;"
-         << "document.getElementById('model').value=model;"
-         << "}"
-         << "function resetDefaults(){"
-         << "if(confirm('Restaurar parâmetros padrão do OpenCode Go?')){"
-         << "setPreset('https://opencode.ai/zen/go/v1', 'deepseek-v4-pro');"
-         << "document.getElementById('max_tokens').value=512;"
-         << "document.getElementById('timeout_sec').value=30;"
-         << "}}"
-         << "</script>";
+    /* Toast Notification Element */
+    html << "<div id='toast' class='toast'>✓ Sucesso</div>";
+
+    /* --------------------------------------------------------------------- */
+    /* JavaScript Frontend                                                   */
+    /* --------------------------------------------------------------------- */
+    html
+        << "<script>"
+        << "let currentPath = '/sdcard';"
+        << "let systemStatus = {};"
+        << "function showToast(msg){const "
+           "t=document.getElementById('toast');t.innerText=msg;t.style.display='block';setTimeout(()=>t.style.display='"
+           "none',3000);}"
+        << "function showTab(tabId, btn){"
+        << "document.querySelectorAll('.tab-content').forEach(el=>el.style.display='none');"
+        << "document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));"
+        << "document.getElementById(tabId).style.display='block';"
+        << "if(btn) btn.classList.add('active');"
+        << "if(tabId==='tab-files') loadFileList(currentPath);"
+        << "if(tabId==='tab-settings') loadSystemStatus();"
+        << "}"
+        << "function toggleToken(){"
+        << "var t=document.getElementById('token');"
+        << "if(t.type==='password'){t.type='text';event.target.innerText='Ocultar';}"
+        << "else{t.type='password';event.target.innerText='Mostrar';}"
+        << "}"
+        << "function setPreset(url, model){"
+        << "document.getElementById('base_url').value=url;"
+        << "document.getElementById('model').value=model;"
+        << "}"
+        << "function resetDefaults(){"
+        << "if(confirm('Restaurar parâmetros padrão do OpenCode Go?')){"
+        << "setPreset('https://opencode.ai/zen/go/v1', 'deepseek-v4-pro');"
+        << "document.getElementById('max_tokens').value=2048;"
+        << "document.getElementById('timeout_sec').value=120;"
+        << "}}"
+        << "function formatSize(bytes){"
+        << "if(bytes===0) return '0 B';"
+        << "if(bytes<1024) return bytes+' B';"
+        << "if(bytes<1048576) return (bytes/1024).toFixed(1)+' KB';"
+        << "return (bytes/1048576).toFixed(1)+' MB';"
+        << "}"
+        << "function loadFileList(path){"
+        << "currentPath = path;"
+        << "renderBreadcrumbs(path);"
+        << "fetch('/api/files?path='+encodeURIComponent(path))"
+        << ".then(r=>r.json())"
+        << ".then(data=>{"
+        << "const tbody = document.getElementById('file-tbody');"
+        << "tbody.innerHTML = '';"
+        << "if(!data.files || data.files.length === 0){"
+        << "tbody.innerHTML = '<tr><td colspan=\"4\" style=\"text-align:center;\">Pasta vazia</td></tr>';"
+        << "return;"
+        << "}"
+        << "data.files.forEach(f=>{"
+        << "const tr = document.createElement('tr');"
+        << "const full = (path.endsWith('/')?path:path+'/')+f.name;"
+        << "if(f.is_dir){"
+        << "tr.innerHTML = '<td><a class=\"folder-link\" onclick=\"loadFileList(\\''+full+'\\')\">📁 "
+           "'+f.name+'</a></td><td>Diretório</td><td>--</td><td><a class=\"dl-link\" "
+           "onclick=\"loadFileList(\\''+full+'\\')\">Abrir</a></td>';"
+        << "}else{"
+        << "let icon = '📄 ';"
+        << "if(/\\.(jpg|jpeg|png)$/i.test(f.name)) icon = '🖼️ ';"
+        << "else if(/\\.(wav|mp3)$/i.test(f.name)) icon = '🎵 ';"
+        << "else if(/\\.(txt|log|cfg|json)$/i.test(f.name)) icon = '📝 ';"
+        << "tr.innerHTML = '<td>'+icon+f.name+'</td><td>Arquivo</td><td>'+formatSize(f.size)+'</td><td><a "
+           "class=\"dl-link\" href=\"/download?file='+encodeURIComponent(full)+'\" target=\"_blank\">⬇ "
+           "Baixar</a></td>';"
+        << "}"
+        << "tbody.appendChild(tr);"
+        << "});"
+        << "}).catch(e=>{"
+        << "document.getElementById('file-tbody').innerHTML = '<tr><td colspan=\"4\" "
+           "style=\"text-align:center;color:#f38ba8;\">Erro ao ler pasta</td></tr>';"
+        << "});"
+        << "}"
+        << "function renderBreadcrumbs(path){"
+        << "const bc = document.getElementById('file-breadcrumbs');"
+        << "bc.innerHTML = '';"
+        << "const parts = path.split('/').filter(p=>p.length>0);"
+        << "let acc = '';"
+        << "const home = document.createElement('a');"
+        << "home.className = 'bc-link';"
+        << "home.innerText = '💾 Raiz SD';"
+        << "home.onclick = ()=>loadFileList('/sdcard');"
+        << "bc.appendChild(home);"
+        << "parts.forEach((p, idx)=>{"
+        << "if(idx===0) return;"
+        << "acc += '/' + p;"
+        << "const cur = '/sdcard' + acc;"
+        << "const sep = document.createElement('span');"
+        << "sep.innerText = ' / ';"
+        << "sep.style.color = '#9399b2';"
+        << "bc.appendChild(sep);"
+        << "const link = document.createElement('a');"
+        << "link.className = 'bc-link';"
+        << "link.innerText = p;"
+        << "link.onclick = ()=>loadFileList(cur);"
+        << "bc.appendChild(link);"
+        << "});"
+        << "}"
+        << "function navigateParent(){"
+        << "if(currentPath==='/sdcard') return;"
+        << "const last = currentPath.lastIndexOf('/');"
+        << "if(last>0){loadFileList(currentPath.substring(0, last));}"
+        << "else{loadFileList('/sdcard');}"
+        << "}"
+        << "function loadSystemStatus(){"
+        << "fetch('/api/system/status')"
+        << ".then(r=>r.json())"
+        << ".then(st=>{"
+        << "systemStatus = st;"
+        << "document.getElementById('slider-brightness').value = st.brightness;"
+        << "document.getElementById('val-brightness').innerText = st.brightness;"
+        << "document.getElementById('chk-autorot').checked = st.rot_enabled;"
+        << "document.getElementById('sel-screensaver').value = st.ss_timeout;"
+        << "document.getElementById('sel-timezone').value = st.tz_offset;"
+        << "document.getElementById('disp-system-time').innerText = st.time_str;"
+        << "const pw = document.getElementById('pill-wifi');"
+        << "if(st.wifi.connected){pw.className='pill ok';pw.innerText='🌐 Wi-Fi: '+st.wifi.ssid+' ('+st.wifi.ip+')';}"
+        << "else if(st.wifi.enabled){pw.className='pill warn';pw.innerText='🌐 Wi-Fi: Desconectado';}"
+        << "else{pw.className='pill';pw.innerText='🌐 Wi-Fi: Desativado';}"
+        << "const pb = document.getElementById('pill-bt');"
+        << "if(st.bluetooth.any_connected){pb.className='pill ok';pb.innerText='📶 BT: Conectado "
+           "('+st.bluetooth.last_name+')';}"
+        << "else if(st.bluetooth.enabled){pb.className='pill';pb.innerText='📶 BT: Ativo (Livre)';}"
+        << "else{pb.className='pill';pb.innerText='📶 BT: Desativado';}"
+        << "const pt = document.getElementById('pill-tz');"
+        << "pt.innerText = '🕒 '+st.tz_str+' | '+st.time_str.split(' ')[0];"
+        << "const winfo = document.getElementById('wifi-status-info');"
+        << "winfo.innerText = 'Status: ' + (st.wifi.connected ? 'Conectado a '+st.wifi.ssid+' ('+st.wifi.ip+')' : "
+           "(st.wifi.enabled ? 'Ativo (Desconectado)' : 'Desativado'));"
+        << "document.getElementById('btn-wifi-toggle').innerText = st.wifi.enabled ? 'Desligar Wi-Fi' : 'Ligar Wi-Fi';"
+        << "const binfo = document.getElementById('bt-status-info');"
+        << "binfo.innerText = 'Status: ' + (st.bluetooth.any_connected ? 'Conectado a '+st.bluetooth.last_name : "
+           "(st.bluetooth.enabled ? 'Ativo (Nenhum conectado)' : 'Desativado'));"
+        << "document.getElementById('btn-bt-toggle').innerText = st.bluetooth.enabled ? 'Desligar Bluetooth' : 'Ligar "
+           "Bluetooth';"
+        << "}).catch(console.error);"
+        << "}"
+        << "function updateBrightnessLabel(val){document.getElementById('val-brightness').innerText = val;}"
+        << "function saveDisplaySettings(){"
+        << "const body = {"
+        << "brightness: parseInt(document.getElementById('slider-brightness').value),"
+        << "rot_enabled: document.getElementById('chk-autorot').checked,"
+        << "ss_timeout: parseInt(document.getElementById('sel-screensaver').value)"
+        << "};"
+        << "fetch('/api/settings/display', {method:'POST', body:JSON.stringify(body)})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast('✓ Configurações de tela atualizadas');loadSystemStatus();});"
+        << "}"
+        << "function setTheme(t){"
+        << "fetch('/api/settings/display', {method:'POST', body:JSON.stringify({theme: t})})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast('✓ Tema '+t+' aplicado');loadSystemStatus();});"
+        << "}"
+        << "function setRotation(r){"
+        << "fetch('/api/settings/display', {method:'POST', body:JSON.stringify({rotation: r})})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast('✓ Rotação ajustada para '+(r*90)+'°');loadSystemStatus();});"
+        << "}"
+        << "function saveTimezone(){"
+        << "const off = parseInt(document.getElementById('sel-timezone').value);"
+        << "fetch('/api/settings/timezone', {method:'POST', body:JSON.stringify({offset: off})})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast('✓ Fuso horário atualizado');loadSystemStatus();});"
+        << "}"
+        << "function toggleWifi(){"
+        << "const en = !systemStatus.wifi.enabled;"
+        << "fetch('/api/settings/wifi', {method:'POST', body:JSON.stringify({action: en ? 'enable' : 'disable'})})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast(en ? '✓ Wi-Fi ativado' : '✓ Wi-Fi desativado');setTimeout(loadSystemStatus, 1000);});"
+        << "}"
+        << "function scanWifi(){"
+        << "const tbody = document.getElementById('wifi-tbody');"
+        << "document.getElementById('wifi-scan-results').style.display='block';"
+        << "tbody.innerHTML = '<tr><td colspan=\"4\" style=\"text-align:center;\">🔍 Escaneando redes... (aguarde "
+           "3-5s)</td></tr>';"
+        << "fetch('/api/wifi/scan')"
+        << ".then(r=>r.json())"
+        << ".then(data=>{"
+        << "tbody.innerHTML = '';"
+        << "if(!data.aps || data.aps.length===0){"
+        << "tbody.innerHTML = '<tr><td colspan=\"4\" style=\"text-align:center;\">Nenhuma rede encontrada</td></tr>';"
+        << "return;"
+        << "}"
+        << "data.aps.forEach(ap=>{"
+        << "const tr = document.createElement('tr');"
+        << "tr.innerHTML = '<td><strong>'+ap.ssid+'</strong></td><td>'+ap.rssi+' "
+           "dBm</td><td>'+(ap.auth===0?'Aberta':'WPA/WPA2')+'</td><td><button class=\"btn btn-secondary btn-sm\" "
+           "onclick=\"document.getElementById(\\'wifi-ssid\\').value=\\''+ap.ssid+'\\';document.getElementById(\\'wifi-"
+           "pass\\').focus();\">Selecionar</button></td>';"
+        << "tbody.appendChild(tr);"
+        << "});"
+        << "}).catch(()=>{tbody.innerHTML='<tr><td colspan=\"4\" style=\"text-align:center;color:#f38ba8;\">Erro ao "
+           "buscar redes</td></tr>';});"
+        << "}"
+        << "function connectWifi(){"
+        << "const ssid = document.getElementById('wifi-ssid').value;"
+        << "const pass = document.getElementById('wifi-pass').value;"
+        << "if(!ssid){alert('Digite o SSID da rede');return;}"
+        << "showToast('Conectando a '+ssid+'...');"
+        << "fetch('/api/settings/wifi', {method:'POST', body:JSON.stringify({action:'connect', ssid:ssid, "
+           "password:pass})})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast('✓ Conexão iniciada');setTimeout(loadSystemStatus, 3000);});"
+        << "}"
+        << "function disconnectWifi(){"
+        << "fetch('/api/settings/wifi', {method:'POST', body:JSON.stringify({action:'disconnect'})})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast('✓ Wi-Fi desconectado');setTimeout(loadSystemStatus, 1000);});"
+        << "}"
+        << "function forgetWifi(){"
+        << "const ssid = document.getElementById('wifi-ssid').value;"
+        << "if(!ssid){alert('Digite o SSID da rede para esquecer');return;}"
+        << "fetch('/api/settings/wifi', {method:'POST', body:JSON.stringify({action:'forget', ssid:ssid})})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast('✓ Rede esquecida');setTimeout(loadSystemStatus, 1000);});"
+        << "}"
+        << "function toggleBt(){"
+        << "const en = !systemStatus.bluetooth.enabled;"
+        << "fetch('/api/settings/bluetooth', {method:'POST', body:JSON.stringify({action: en ? 'enable' : 'disable'})})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast(en ? '✓ Bluetooth ativado' : '✓ Bluetooth desativado');setTimeout(loadSystemStatus, "
+           "1000);});"
+        << "}"
+        << "function scanBt(){"
+        << "fetch('/api/bluetooth/scan')"
+        << ".then(r=>r.json())"
+        << ".then(data=>{"
+        << "const tbody = document.getElementById('bt-tbody');"
+        << "tbody.innerHTML = '';"
+        << "if(!data.devices || data.devices.length===0){"
+        << "tbody.innerHTML = '<tr><td colspan=\"4\" style=\"text-align:center;\">Nenhum dispositivo salvo ou "
+           "conectado.</td></tr>';"
+        << "return;"
+        << "}"
+        << "data.devices.forEach(dev=>{"
+        << "const tr = document.createElement('tr');"
+        << "const typeStr = dev.type===1?'Teclado':(dev.type===2?'Mouse':(dev.type===3?'Fone/Áudio':'Genérico'));"
+        << "tr.innerHTML = '<td>'+dev.name+'</td><td>'+dev.mac+'</td><td>'+typeStr+'</td><td><button class=\"btn "
+           "btn-secondary btn-sm\" "
+           "onclick=\"connectBt(\\''+dev.mac+'\\',\\''+dev.name+'\\','+dev.type+')\">Conectar</button> <button "
+           "class=\"btn btn-danger btn-sm\" onclick=\"forgetBt(\\''+dev.mac+'\\')\">Esquecer</button></td>';"
+        << "tbody.appendChild(tr);"
+        << "});"
+        << "}).catch(console.error);"
+        << "}"
+        << "function connectBt(mac, name, type){"
+        << "showToast('Conectando a '+name+'...');"
+        << "fetch('/api/settings/bluetooth', {method:'POST', body:JSON.stringify({action:'connect', mac:mac, "
+           "name:name, type:type})})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast('✓ Conexão Bluetooth solicitada');setTimeout(loadSystemStatus, 2000);});"
+        << "}"
+        << "function forgetBt(mac){"
+        << "fetch('/api/settings/bluetooth', {method:'POST', body:JSON.stringify({action:'forget', mac:mac})})"
+        << ".then(r=>r.json())"
+        << ".then(()=>{showToast('✓ Dispositivo esquecido');setTimeout(scanBt, 500);});"
+        << "}"
+        << "window.onload = function(){"
+        << "loadSystemStatus();"
+        << "if('" << active_tab << "'==='files'){loadFileList('/sdcard');}"
+        << "setInterval(loadSystemStatus, 5000);"
+        << "};"
+        << "</script>";
 
     html << "</div></body></html>";
     std::string response = html.str();
@@ -287,143 +1381,9 @@ static esp_err_t index_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-static esp_err_t ai_save_handler(httpd_req_t *req)
-{
-    char buf[1024];
-    int total_len = req->content_len;
-    int cur_len = 0;
-    int received = 0;
-
-    if (total_len >= (int)sizeof(buf)) {
-        httpd_resp_send_500(req);
-        return ESP_FAIL;
-    }
-
-    while (cur_len < total_len) {
-        received = httpd_req_recv(req, buf + cur_len, total_len - cur_len);
-        if (received <= 0) {
-            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
-                continue;
-            }
-            httpd_resp_send_500(req);
-            return ESP_FAIL;
-        }
-        cur_len += received;
-    }
-    buf[total_len] = '\0';
-
-    ai_cfg_t cfg;
-    ai_storage_load(&cfg);
-
-    // Se for JSON ou Form URL-encoded
-    if (buf[0] == '{') {
-        cJSON *root = cJSON_Parse(buf);
-        if (root) {
-            cJSON *json_url = cJSON_GetObjectItem(root, "base_url");
-            cJSON *json_token = cJSON_GetObjectItem(root, "token");
-            cJSON *json_model = cJSON_GetObjectItem(root, "model");
-            cJSON *json_max_tokens = cJSON_GetObjectItem(root, "max_tokens");
-            cJSON *json_timeout = cJSON_GetObjectItem(root, "timeout_sec");
-            if (json_url && json_url->valuestring)
-                snprintf(cfg.base_url, sizeof(cfg.base_url), "%s", json_url->valuestring);
-            if (json_token && json_token->valuestring)
-                snprintf(cfg.token, sizeof(cfg.token), "%s", json_token->valuestring);
-            if (json_model && json_model->valuestring)
-                snprintf(cfg.model, sizeof(cfg.model), "%s", json_model->valuestring);
-            if (json_max_tokens && json_max_tokens->valueint > 0)
-                cfg.max_tokens = json_max_tokens->valueint;
-            if (json_timeout && json_timeout->valueint > 0)
-                cfg.timeout_sec = json_timeout->valueint;
-            cJSON_Delete(root);
-        }
-    } else {
-
-        parse_form_urlencoded(buf, cfg);
-    }
-
-    ai_storage_save(&cfg);
-    ESP_LOGI(TAG, "Configuracao de IA atualizada via web server (base_url=%s, model=%s)", cfg.base_url, cfg.model);
-
-    // Redireciona de volta para a página principal com parâmetro saved=1
-    httpd_resp_set_status(req, "303 See Other");
-    httpd_resp_set_hdr(req, "Location", "/?saved=1");
-    httpd_resp_send(req, NULL, 0);
-    return ESP_OK;
-}
-
-static esp_err_t api_ai_get_handler(httpd_req_t *req)
-{
-    ai_cfg_t cfg;
-    ai_storage_load(&cfg);
-
-    cJSON *root = cJSON_CreateObject();
-    cJSON_AddStringToObject(root, "base_url", cfg.base_url);
-    cJSON_AddStringToObject(root, "token", cfg.token);
-    cJSON_AddStringToObject(root, "model", cfg.model);
-    cJSON_AddNumberToObject(root, "max_tokens", cfg.max_tokens);
-    cJSON_AddNumberToObject(root, "timeout_sec", cfg.timeout_sec);
-
-    char *json_str = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-
-    if (!json_str) {
-        httpd_resp_send_500(req);
-        return ESP_FAIL;
-    }
-
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json_str, strlen(json_str));
-    free(json_str);
-    return ESP_OK;
-}
-
-static esp_err_t download_handler(httpd_req_t *req)
-{
-    char filepath[256] = {0};
-    char query[256] = {0};
-
-    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
-        httpd_query_key_value(query, "file", filepath, sizeof(filepath));
-    }
-
-    if (filepath[0] == '\0') {
-        httpd_resp_send_404(req);
-        return ESP_FAIL;
-    }
-
-    FILE *fp = fopen(filepath, "rb");
-    if (!fp) {
-        ESP_LOGE(TAG, "arquivo nao encontrado: %s", filepath);
-        httpd_resp_send_404(req);
-        return ESP_FAIL;
-    }
-
-    const char *dot = strrchr(filepath, '.');
-    if (dot && (strcasecmp(dot, ".jpg") == 0 || strcasecmp(dot, ".jpeg") == 0)) {
-        httpd_resp_set_type(req, "image/jpeg");
-    } else if (dot && strcasecmp(dot, ".png") == 0) {
-        httpd_resp_set_type(req, "image/png");
-    } else {
-        httpd_resp_set_type(req, "application/octet-stream");
-    }
-
-    char chunk[2048];
-    while (!feof(fp) && !ferror(fp)) {
-        size_t read_bytes = fread(chunk, 1, sizeof(chunk), fp);
-        if (read_bytes > 0) {
-            if (httpd_resp_send_chunk(req, chunk, read_bytes) != ESP_OK) {
-                fclose(fp);
-                return ESP_FAIL;
-            }
-        }
-        if (read_bytes < sizeof(chunk)) {
-            break;
-        }
-    }
-    fclose(fp);
-    httpd_resp_send_chunk(req, NULL, 0);
-    return ESP_OK;
-}
+/* ========================================================================= */
+/* Inicialização e Finalização do Servidor HTTP                             */
+/* ========================================================================= */
 
 esp_err_t http_file_server_start(void)
 {
@@ -433,28 +1393,71 @@ esp_err_t http_file_server_start(void)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
-    config.max_uri_handlers = 12;
-    config.stack_size = 8192;
+    config.max_uri_handlers = 20;
+    config.stack_size = 10240;
 
-    ESP_LOGI(TAG, "iniciando servidor HTTP (painel web e fotos) na porta %d...", config.server_port);
+    ESP_LOGI(TAG, "iniciando servidor HTTP (painel web, explorador SD e config) na porta %d...", config.server_port);
     esp_err_t ret = httpd_start(&s_server, &config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "falha ao iniciar http server (%s)", esp_err_to_name(ret));
         return ret;
     }
 
+    /* Rotas Web & Arquivos */
     httpd_uri_t uri_index = {.uri = "/", .method = HTTP_GET, .handler = index_handler, .user_ctx = nullptr};
     httpd_register_uri_handler(s_server, &uri_index);
 
+    httpd_uri_t uri_download = {
+        .uri = "/download", .method = HTTP_GET, .handler = download_handler, .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_download);
+
+    httpd_uri_t uri_api_files = {
+        .uri = "/api/files", .method = HTTP_GET, .handler = api_files_handler, .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_api_files);
+
+    /* Rotas de Status & Configurações do Sistema */
+    httpd_uri_t uri_sys_status = {
+        .uri = "/api/system/status", .method = HTTP_GET, .handler = api_system_status_handler, .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_sys_status);
+
+    httpd_uri_t uri_set_display = {.uri = "/api/settings/display",
+                                   .method = HTTP_POST,
+                                   .handler = api_settings_display_handler,
+                                   .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_set_display);
+
+    httpd_uri_t uri_set_tz = {.uri = "/api/settings/timezone",
+                              .method = HTTP_POST,
+                              .handler = api_settings_timezone_handler,
+                              .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_set_tz);
+
+    /* Rotas Wi-Fi */
+    httpd_uri_t uri_wifi_scan = {
+        .uri = "/api/wifi/scan", .method = HTTP_GET, .handler = api_wifi_scan_handler, .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_wifi_scan);
+
+    httpd_uri_t uri_set_wifi = {
+        .uri = "/api/settings/wifi", .method = HTTP_POST, .handler = api_settings_wifi_handler, .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_set_wifi);
+
+    /* Rotas Bluetooth */
+    httpd_uri_t uri_bt_scan = {
+        .uri = "/api/bluetooth/scan", .method = HTTP_GET, .handler = api_bluetooth_scan_handler, .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_bt_scan);
+
+    httpd_uri_t uri_set_bt = {.uri = "/api/settings/bluetooth",
+                              .method = HTTP_POST,
+                              .handler = api_settings_bluetooth_handler,
+                              .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_set_bt);
+
+    /* Rotas Chat IA */
     httpd_uri_t uri_ai_save = {.uri = "/ai/save", .method = HTTP_POST, .handler = ai_save_handler, .user_ctx = nullptr};
     httpd_register_uri_handler(s_server, &uri_ai_save);
 
     httpd_uri_t uri_api_ai = {.uri = "/api/ai", .method = HTTP_GET, .handler = api_ai_get_handler, .user_ctx = nullptr};
     httpd_register_uri_handler(s_server, &uri_api_ai);
-
-    httpd_uri_t uri_download = {
-        .uri = "/download", .method = HTTP_GET, .handler = download_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_download);
 
     ESP_LOGI(TAG, "servidor HTTP ativo em http://<IP>:8080/");
     return ESP_OK;
