@@ -36,6 +36,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 26** | Aplicativo Chat IA (OpenAI-compatível) | Aplicativo / Conectividade | Chat texto, cadastro de token/URL/modelo, cliente HTTP `/chat/completions`, persistência em `ai.cfg` |
 | `[x]` | **Fase 27** | Padronização do Shell e Registro Modular de Apps | Sistema / Arquitetura | Barra de título padronizada `ui_app_bar`, registro `app_registry`, desktop dinâmico, manifesto descentralizado de arquivos |
 | `[~]` | **Fase 28** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
+| `[ ]` | **Fase 29** | Aplicativo "Música" — Player de Áudio Local (MP3/WAV) | Aplicativo / Mídia | Decoder `esp_audio_codec`, reprodução de `/sdcard/musica/*.mp3|wav`, controles e volume via ES8388 |
 
 
 ---
@@ -1498,3 +1499,72 @@ main/
 ## 3. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 - **Build e Links**: Compilação concluída com sucesso no ESP-IDF 5.5.5 (`libos.a` e `libapps.a`).
 - **Validação Local e Hardware**: Testado via `pre-commit` e gravado com sucesso no hardware M5Stack Tab5 via USB-C.
+
+---
+
+# [ ] Fase 29: Aplicativo "Música" — Player de Áudio Local (MP3/WAV) `⏳ PLANEJADO`
+
+## 1. Contexto & Objetivos
+- Criar um novo aplicativo nativo **"Música"** em `components/apps/music/` que reproduza arquivos de áudio **MP3** e **WAV** armazenados localmente no cartão microSD (sem streaming).
+- Reaproveitar a infraestrutura de áudio já existente (DAC **ES8388** via `bsp_audio_codec_speaker_init()` + `esp_codec_dev_write()`) e a arquitetura modular de aplicações (`app_registry`, `ui_app_bar`, tema, teclado).
+- Adicionar decodificação de MP3/WAV via componente oficial **`espressif/esp_audio_codec`** (Simple Decoder), que suporta o alvo **ESP32-P4** e os containers MP3 e WAV.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Decoder de áudio | Componente managed `espressif/esp_audio_codec` (Simple Decoder) | Suporta ESP32-P4 e IDF 5.5, decodifica MP3/WAV e é leve em comparação ao ESP-ADF completo |
+| D2 | Saída de áudio | Reuso do DAC ES8388 (`esp_codec_dev_write`) | Mesmo pipeline do Gravador; ES8388 suporta 44.1 kHz estéreo para MP3 |
+| D3 | Origem de mídia | Arquivos locais em `/sdcard/musica/` (`*.mp3`, `*.wav`) | Escopo inicial sem streaming; foco em mídia local confiável |
+| D4 | Estrutura do app | `components/apps/music/` (*Package by Feature*) | Segue o padrão dos demais apps e o Guia de Desenvolvimento de Aplicações |
+
+## 3. Estrutura de Arquivos & Componentes
+- **`components/apps/music/music_player.{h,cpp}`**: Núcleo de áudio — task FreeRTOS, decodificação MP3/WAV, escrita no codec ES8388, estados (IDLE, PLAYING, PAUSED, STOPPED), volume e cancelamento assíncrono.
+- **`components/apps/music/ui_music.{h,cpp}`**: Interface LVGL — barra `ui_app_bar`, lista de músicas de `/sdcard/musica/`, controles Play/Pause/Stop, barra de progresso e slider de volume.
+- **`components/apps/CMakeLists.txt`**: Adicionar `"music/music_player.cpp"` e `"music/ui_music.cpp"`.
+- **`main/idf_component.yml`**: Adicionar dependência `espressif/esp_audio_codec`.
+- **`components/os/shell/ui_shell.{h,cpp}`**: `ui_music_register()`, `ui_music_create()`, `ui_shell_open_music()` e `ui_shell_open_music_with_file()`.
+- **Associação de arquivos**: `.id="music"`, `.name="Música"`, `.icon_symbol=LV_SYMBOL_AUDIO`, `file_extensions = {"mp3","wav",nullptr}`.
+
+## 4. Fases de Execução da Funcionalidade
+
+- [ ] **Etapa 1 — Dependência e Build**: Adicionar `espressif/esp_audio_codec` ao `main/idf_component.yml`; habilitar somente os decoders MP3 e WAV no `sdkconfig.defaults` para reduzir footprint; compilar para travar versões em `dependencies.lock`.
+- [ ] **Etapa 2 — Módulo de Áudio (`music_player`)**: Task FreeRTOS que lê o arquivo do SD em blocos, alimenta o Simple Decoder MP3/WAV e escreve o PCM resultante no `esp_codec_dev` (ES8388); API de play/pause/stop, volume e consulta de status; mutex e cancelamento assíncrono (espelhando `audio_recorder`).
+- [ ] **Etapa 3 — Interface LVGL (`ui_music`)**: Aba de arquivos listando `/sdcard/musica/` (`*.mp3`, `*.wav`), toque para tocar, controles Play/Pause/Stop, barra de progresso, slider de volume; `apply_layout`/`apply_theme` no padrão dos apps existentes e timer LVGL de atualização.
+- [ ] **Etapa 4 — Integração no Shell**: Registro no `app_registry` e no `ui_shell_init()` (antes do desktop); ícone aparece automaticamente no desktop; abertura de arquivo associado pelo aplicativo "Arquivos".
+- [ ] **Etapa 5 — Build, Validação e Teste em Hardware**: Compilação com `pre-commit`, gravação e validação real: tocar MP3 e WAV locais, volume, pausa/retomada/parada e abertura via "Arquivos".
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Footprint do decoder | MP3 decodifica com ~28 KB de heap e task ~20 KB de stack; habilitar apenas MP3 e WAV e alocar buffers em PSRAM (padrão do projeto) |
+| Conflito com o Gravador | Checar `audio_recorder_is_playing()`/`is_recording()` antes de tocar; parar um ao iniciar o outro (acesso exclusivo ao speaker) |
+| Mudança de `sdkconfig.defaults` | Exigência de apagar `sdkconfig` antes de rebuild (gotcha já documentado) |
+| Formato não suportado | Restringir associação a `.mp3`/`.wav`; tratar falha de decodificação sem travar a UI |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Copiar arquivos MP3 e WAV para `/sdcard/musica/` e verificar que aparecem na lista do aplicativo.
+2. Tocar um arquivo MP3 e um WAV, validando som no alto-falante e avanço da barra de progresso.
+3. Testar pausa, retomada e parada, bem como o ajuste de volume em tempo real.
+4. Abrir um `.mp3` ou `.wav` pelo aplicativo "Arquivos" e confirmar a abertura automática no "Música".
+5. Validar o comportamento ao tentar tocar enquanto o Gravador está ativo (conflito tratado).
+
+## 7. Status de Conclusão: `[ ] PLANEJADO`
+- Funcionalidade arquitetada e especificada, aguardando início de implementação.
+
+---
+
+## Sugestões de Novas Aplicações (Não Planejadas)
+
+> [!NOTE]
+> As aplicações abaixo são apenas **sugestões** para o roadmap futuro. Ainda **não** foram arquitetadas nem especificadas, portanto não possuem fase própria no caderno. Elas serão promovidas a uma fase formal (com detalhamento completo) quando forem priorizadas para implementação.
+
+| Aplicação | Descrição Simplificada |
+|---|---|
+| **Calculadora** | Calculadora simples com botões em grade e histórico de operações. |
+| **Calendário / Agenda** | Visão mensal com lembretes persistidos no microSD, usando o RTC RX8130CE. |
+| **Cronômetro / Timer / Alarme** | Temporizadores com aviso sonoro via ES8388, aproveitando o RTC. |
+| **Monitor de Bateria (INA226)** | Telemetria de tensão, corrente e carga em tempo real com gráfico. |
+| **Jogo simples (Snake / 2048)** | Jogo leve para demonstrar loop de animação e entrada por toque. |
+| **Desenho / Pintura (Canvas)** | Tela de desenho livre com toque/mouse e salvamento de imagem no SD. |
