@@ -9,6 +9,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 - `[x]` **`✅ IMPLEMENTADO`**: Funcionalidade codificada, integrada, testada com `pre-commit` e validada em hardware real.
 - `[-]` **`🚧 EM ANDAMENTO`**: Funcionalidade com desenvolvimento em progresso ou testes parciais.
 - `[ ]` **`⏳ PLANEJADO`**: Funcionalidade arquitetada e especificada, aguardando início de implementação.
+- `[~]` **`❌ CANCELADO`**: Funcionalidade cancelada ou descartada do escopo.
 
 ---
 
@@ -34,7 +35,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
 | `[x]` | **Fase 26** | Aplicativo Chat IA (OpenAI-compatível) | Aplicativo / Conectividade | Chat texto, cadastro de token/URL/modelo, cliente HTTP `/chat/completions`, persistência em `ai.cfg` |
 | `[x]` | **Fase 27** | Padronização do Shell e Registro Modular de Apps | Sistema / Arquitetura | Barra de título padronizada `ui_app_bar`, registro `app_registry`, desktop dinâmico, manifesto descentralizado de arquivos |
-| `[ ]` | **Fase 28** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
+| `[~]` | **Fase 28** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
 
 
 ---
@@ -1382,7 +1383,7 @@ docs/
 
 ---
 
-# [ ] Fase 28: Modo Pen Drive USB — USB Mass Storage (MSC) para Recuperação de Arquivos `⏳ PLANEJADO`
+# [~] Fase 28: Modo Pen Drive USB — USB Mass Storage (MSC) para Recuperação de Arquivos `❌ CANCELADO`
 
 ## 1. Contexto & Objetivos
 - Implementar o **Modo Pen Drive**: ao conectar o Tab5 ao computador via USB-C, o dispositivo se apresenta ao sistema operacional do host como um **disco removível** (classe **MSC — Mass Storage Class**), permitindo que o PC monte o volume e o usuário copie/recupere arquivos do cartão microSD de forma transparente — sem precisar retirar o cartão físico.
@@ -1466,8 +1467,8 @@ main/
 5. Desligar o modo e validar que os apps voltam a acessar normalmente o `/sdcard`.
 6. Testar a desconexão abrupta do cabo e validar que o cartão permanece íntegro (sem corrupção) no próximo boot.
 
-## 8. Status de Conclusão: `[ ] PLANEJADO`
-- **Modo Pen Drive USB**: Arquitetura planejada e pronta para implementação na Fase 27, permitindo recuperação de arquivos do microSD via USB Mass Storage em qualquer computador.
+## 8. Status de Conclusão: `[~] CANCELADO`
+- **Modo Pen Drive USB**: Funcionalidade cancelada e descartada do escopo de implementação.
 
 ---
 
