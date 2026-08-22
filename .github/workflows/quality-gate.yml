@@ -63,6 +63,7 @@ jobs:
       - name: Configure CMake (compile db)
         run: |
           idf.py reconfigure
+          python3 -c "import json, os; [open(x['file'], 'a').close() for x in json.load(open('build/compile_commands.json')) if not os.path.exists(x['file'])]"
 
       - name: clang-tidy (app code only)
         id: clang_tidy
