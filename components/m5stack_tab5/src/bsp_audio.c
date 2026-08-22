@@ -8,6 +8,7 @@
 #include "esp_check.h"
 #include "bsp_err_check.h"
 #include "esp_codec_dev_defaults.h"
+#include "esp_io_expander_pi4ioe5v6408.h"
 #include "bsp/m5stack_tab5.h"
 
 static const char *TAG = "M5Stack Tab5";
@@ -179,20 +180,23 @@ esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
 
 bool bsp_headphone_is_connected(void)
 {
-    esp_io_expander_handle_t io_expander = bsp_io_expander_init();
-    if (io_expander == NULL) {
+    esp_io_expander_handle_t exp0 = bsp_io_expander_init();
+    if (exp0 == NULL) {
         return false;
     }
 
-    static bool s_hp_configured = false;
-    if (!s_hp_configured) {
-        esp_io_expander_set_dir(io_expander, BSP_HEADPHONE_DET, IO_EXPANDER_INPUT);
-        s_hp_configured = true;
+    static bool s_configured = false;
+    if (!s_configured) {
+        /* Configura o pino 7 como entrada High-Z com pull-up no exp0 */
+        esp_io_expander_set_dir(exp0, BSP_HEADPHONE_DET, IO_EXPANDER_INPUT);
+        esp_io_expander_set_output_mode(exp0, BSP_HEADPHONE_DET, IO_EXPANDER_OUTPUT_MODE_OPEN_DRAIN);
+        esp_io_expander_set_pullupdown(exp0, BSP_HEADPHONE_DET, IO_EXPANDER_PULL_UP);
+        s_configured = true;
     }
 
-    uint32_t level_mask = 0;
-    if (esp_io_expander_get_level(io_expander, BSP_HEADPHONE_DET, &level_mask) == ESP_OK) {
-        return (level_mask & BSP_HEADPHONE_DET) != 0;
+    uint32_t lvl0 = 0;
+    if (esp_io_expander_get_level(exp0, BSP_HEADPHONE_DET, &lvl0) == ESP_OK) {
+        return (lvl0 & BSP_HEADPHONE_DET) != 0;
     }
 
     return false;

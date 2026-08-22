@@ -7,6 +7,7 @@
 #include "ui_shell.h"
 #include "ui_theme.h"
 #include "wifi_storage.h"
+#include "bsp/m5stack_tab5.h"
 #include "esp_log.h"
 
 #include <algorithm>
