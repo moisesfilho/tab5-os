@@ -162,9 +162,16 @@ void play_toggle_btn_cb(lv_event_t *event)
 void play_stop_btn_cb(lv_event_t *event)
 {
     (void)event;
+    s_last_state = MUSIC_PLAYER_STATE_IDLE;
     music_player_stop();
+    s_active_file.clear();
+    s_current_track_index = -1;
     lv_bar_set_value(play_bar, 0, LV_ANIM_OFF);
     lv_label_set_text(play_time_label, "00:00 / 00:00");
+    lv_label_set_text(play_file_label, "Nenhuma música selecionada");
+    lv_label_set_text(play_info_label, "Selecione uma faixa para tocar");
+    lv_label_set_text(play_toggle_label, LV_SYMBOL_PLAY);
+    lv_obj_set_style_bg_color(play_toggle_btn, lv_color_hex(ui_theme_get()->surface_alt), 0);
     ui_app_bar_set_title(&music_app_bar, "Música");
     render_music_list();
 }
@@ -353,6 +360,7 @@ void modal_btn_cb(lv_event_t *event)
             music_player_get_status(&st);
             if (s_active_file == s_file_to_delete &&
                 (st.state == MUSIC_PLAYER_STATE_PLAYING || st.state == MUSIC_PLAYER_STATE_PAUSED)) {
+                s_last_state = MUSIC_PLAYER_STATE_IDLE;
                 music_player_stop();
                 s_active_file.clear();
                 s_current_track_index = -1;
