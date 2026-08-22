@@ -1520,7 +1520,8 @@ main/
 | D4 | Estrutura do app | `components/apps/music/` (*Package by Feature*) | Conformidade com o Guia de Desenvolvimento e arquitetura modular de apps do SO |
 
 ## 3. Estrutura de Arquivos & Componentes
-- **`components/apps/music/music_player.{h,cpp}`**: Núcleo de áudio — task FreeRTOS `music_play_task` com stack de 64 KB alocado em PSRAM (`MALLOC_CAP_SPIRAM`), decodificação MP3 via `minimp3` e WAV via Simple Decoder, escrita no DAC ES8388, cálculo refinado de duração/progresso com parsing de tags ID3v2, estados (`IDLE`, `PLAYING`, `PAUSED`), controle de volume e cancelamento assíncrono.
+- **`components/apps/music/music_player.{h,cpp}`**: Núcleo de áudio — task FreeRTOS `music_play_task` com stack de 64 KB alocado em PSRAM (`MALLOC_CAP_SPIRAM`), decodificação MP3 via `minimp3` e WAV via Simple Decoder, escrita no DAC ES8388, cálculo refinado de duração/progresso com parsing de tags ID3v2, estados (`IDLE`, `PLAYING`, `PAUSED`), controle de volume, gerenciamento de energia sob demanda do amplificador de som (PA), detecção automática de fone de ouvido no conector 3.5mm via `bsp_headphone_is_connected()` e chaveamento automático do alto-falante embutido (som apenas no fone quando conectado).
+- **`components/m5stack_tab5/`**: BSP Tab5 — mapeamento do pino de detecção de fone `BSP_HEADPHONE_DET` (`IO_EXPANDER_PIN_NUM_7` no expansor PI4IOE5V6408), controle de inicialização do amplificador `BSP_SPEAKER_EN` em modo desligado por padrão (eliminando chiado em repouso) e função pública `bsp_headphone_is_connected()`.
 - **`components/apps/music/ui_music.{h,cpp}`**: Interface LVGL — barra `ui_app_bar`, lista deduplicada de músicas de `/sdcard/musica/`, controles `Repetir 1`, `Prev`, `Play/Pause`, `Stop`, `Next` e `Loop da Playlist`, barra de progresso com trilha de alto contraste, tempo formatado, slider de volume e continuidade de playlist/repetição ativa em segundo plano com o app fechado.
 - **`components/os/shell/ui_status.{h,cpp}`**: Indicador de reprodução de música na barra superior do sistema operacional (`LV_SYMBOL_AUDIO`), sincronizado com os estados `PLAYING`/`PAUSED`/`IDLE` e com ação de toque rápido para pausar e continuar a reprodução em qualquer tela.
 - **`components/os/shell/ui_bar.{h,cpp}`**: Controle de volume geral (0% a 100%) no menu de Configurações da engrenagem com slider horizontal e indicador percentual em tempo real.
@@ -1532,13 +1533,13 @@ main/
 ## 4. Fases de Execução da Funcionalidade
 
 - [x] **Etapa 1 — Dependência e Build**: Adicionado `espressif/esp_audio_codec` (<2.6.0) ao `main/idf_component.yml` compatível com ESP32-P4 rev v1.3; configuração validada e compilada.
-- [x] **Etapa 2 — Módulo de Áudio (`music_player`)**: Task FreeRTOS dedicada com stack de 64 KB em SPIRAM que lê o arquivo em blocos, alimenta o decoder MP3/WAV e transmite PCM ao ES8388 com volume e estados de reprodução.
+- [x] **Etapa 2 — Módulo de Áudio (`music_player`)**: Task FreeRTOS dedicada com stack de 64 KB em SPIRAM que lê o arquivo em blocos, alimenta o decoder MP3/WAV e transmite PCM ao ES8388 com volume, mute no repouso, detecção de fone 3.5mm e estados de reprodução.
 - [x] **Etapa 3 — Interface LVGL (`ui_music`)**: Card "Tocando Agora" com controles (Repetir 1, Anterior, Play/Pause, Parar, Próximo, Loop de Playlist), barra de progresso em tempo real de alto contraste, slider de volume 0-100%, card de lista de faixas de `/sdcard/musica/`, suporte a temas e layout responsivo.
 - [x] **Etapa 4 — Continuidade em Segundo Plano & Integração no Shell**: Indicador de áudio na barra superior (`ui_status`) com Play/Pause rápido; slider de volume nas Configurações (`ui_bar`); playlist e repetição de faixas contínuas em background.
 - [x] **Etapa 5 — Build, Validação e Teste em Hardware**: Firmware compilado com sucesso, 100% aprovado no `pre-commit` e gravado no M5Stack Tab5 via USB-C com reprodução validada e testada no hardware.
 
 ## 5. Status de Conclusão: `[x] CONCLUÍDO (100%)`
-- **Player de Áudio "Música"**: Aplicativo nativo implementado, integrado com a barra de status do sistema operacional, controles de repetição de faixa e playlist, e gravado em hardware.
+- **Player de Áudio "Música"**: Aplicativo nativo implementado, integrado com a barra de status do sistema operacional, controles de repetição de faixa e playlist, detecção inteligente de fone de ouvido no conector 3.5mm com corte automático de alto-falante e gravado em hardware.
 
 ---
 
