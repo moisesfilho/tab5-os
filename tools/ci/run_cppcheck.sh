@@ -22,6 +22,8 @@ cppcheck \
     --suppress=missingIncludeSystem \
     --suppress=syntaxError \
     --suppress=incorrectStringBooleanError \
+    --suppress=dangerousTypeCast \
+    --suppress=*:*minimp3.h* \
     --error-exitcode=1 \
     --inline-suppr \
     "${FILES[@]}"

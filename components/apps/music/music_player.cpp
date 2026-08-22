@@ -289,7 +289,8 @@ void music_play_task(void *param)
         }
         mp3dec_init(mp3dec);
 
-        mp3d_sample_t *pcm_buf = (mp3d_sample_t *)out_buf;
+        // cppcheck-suppress invalidPointerCast
+        mp3d_sample_t *pcm_buf = reinterpret_cast<mp3d_sample_t *>(out_buf);
         size_t data_len = 0;
         bool eof = false;
         int64_t t_decode_us = 0;

@@ -42,7 +42,7 @@ static std::string url_decode(const std::string &src)
     std::string ret;
     for (size_t i = 0; i < src.length(); i++) {
         if (src[i] == '%' && i + 2 < src.length()) {
-            int ii = 0;
+            unsigned int ii = 0;
             if (sscanf(src.substr(i + 1, 2).c_str(), "%x", &ii) == 1) {
                 ret += static_cast<char>(ii);
                 i += 2;
@@ -95,7 +95,7 @@ static std::string read_req_body(httpd_req_t *req)
 /* Sanitização segura de caminhos do cartão SD */
 static bool is_safe_sd_path(const std::string &path)
 {
-    if (path.empty() || path.find("/sdcard") != 0) {
+    if (path.empty() || path.rfind("/sdcard", 0) != 0) {
         return false;
     }
     if (path.find("..") != std::string::npos) {

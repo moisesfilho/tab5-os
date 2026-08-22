@@ -602,7 +602,7 @@ static int handle_gap_disconnect(struct ble_gap_event *event)
 
 static int handle_gap_notify_rx(struct ble_gap_event *event)
 {
-    uint16_t len = OS_MBUF_PKTLEN(event->notify_rx.om);
+    uint16_t len = os_mbuf_len(event->notify_rx.om);
     if (len >= 3) {
         uint8_t data[32] = {};
         os_mbuf_copydata(event->notify_rx.om, 0, len < 32 ? len : 32, data);
