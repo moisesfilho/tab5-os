@@ -4,6 +4,7 @@
 #include "ui_shell.h"
 #include "wifi_mgr.h"
 #include "bt_mgr.h"
+#include "music_player.h"
 
 namespace {
 
@@ -11,9 +12,12 @@ lv_obj_t *bt_icon_btn = nullptr;
 lv_obj_t *bt_icon_label = nullptr;
 lv_obj_t *wifi_icon_btn = nullptr;
 lv_obj_t *wifi_icon_label = nullptr;
+lv_obj_t *music_icon_btn = nullptr;
+lv_obj_t *music_icon_label = nullptr;
 lv_timer_t *status_timer = nullptr;
 bool s_last_wifi_connected = false;
 bool s_last_bt_connected = false;
+music_player_state_t s_last_music_state = MUSIC_PLAYER_STATE_IDLE;
 
 /* Atualiza o tema dos icones de status */
 void apply_status_theme(void)
@@ -27,6 +31,11 @@ void apply_status_theme(void)
     if (bt_icon_label != nullptr) {
         lv_obj_set_style_text_color(bt_icon_label, lv_color_hex(s_last_bt_connected ? pal->accent : pal->text_muted),
                                     0);
+    }
+    if (music_icon_label != nullptr) {
+        lv_obj_set_style_text_color(
+            music_icon_label,
+            lv_color_hex((s_last_music_state == MUSIC_PLAYER_STATE_PLAYING) ? pal->accent : pal->text_muted), 0);
     }
 }
 
@@ -47,6 +56,10 @@ void status_update(void)
         b_connected = b_status.any_connected;
     }
     s_last_bt_connected = b_connected;
+
+    music_player_status_t m_status = {};
+    music_player_get_status(&m_status);
+    s_last_music_state = m_status.state;
 
     const ui_palette_t *pal = ui_theme_get();
     if (wifi_icon_btn != nullptr) {
@@ -70,6 +83,19 @@ void status_update(void)
     if (bt_icon_label != nullptr) {
         lv_obj_set_style_text_color(bt_icon_label, lv_color_hex(b_connected ? pal->accent : pal->text_muted), 0);
     }
+
+    if (music_icon_btn != nullptr) {
+        if (m_status.state == MUSIC_PLAYER_STATE_IDLE) {
+            lv_obj_add_flag(music_icon_btn, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_remove_flag(music_icon_btn, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (music_icon_label != nullptr) {
+        lv_obj_set_style_text_color(
+            music_icon_label,
+            lv_color_hex((m_status.state == MUSIC_PLAYER_STATE_PLAYING) ? pal->accent : pal->text_muted), 0);
+    }
 }
 
 void status_timer_cb(lv_timer_t *timer)
@@ -90,10 +116,43 @@ void bt_icon_click_cb(lv_event_t *event)
     ui_shell_open_bluetooth();
 }
 
+void music_icon_click_cb(lv_event_t *event)
+{
+    (void)event;
+    music_player_status_t m_status = {};
+    music_player_get_status(&m_status);
+    if (m_status.state == MUSIC_PLAYER_STATE_PLAYING) {
+        music_player_pause();
+    } else if (m_status.state == MUSIC_PLAYER_STATE_PAUSED) {
+        music_player_resume();
+    }
+    status_update();
+}
+
 } // namespace
 
 void ui_status_init(lv_obj_t *parent)
 {
+    /* Icone de Musica / Audio interativo */
+    music_icon_btn = lv_obj_create(parent);
+    lv_obj_set_size(music_icon_btn, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(music_icon_btn, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(music_icon_btn, 0, 0);
+    lv_obj_set_style_shadow_width(music_icon_btn, 0, 0);
+    lv_obj_set_style_radius(music_icon_btn, 8, 0);
+    lv_obj_set_style_pad_left(music_icon_btn, 6, 0);
+    lv_obj_set_style_pad_right(music_icon_btn, 6, 0);
+    lv_obj_set_style_pad_top(music_icon_btn, 4, 0);
+    lv_obj_set_style_pad_bottom(music_icon_btn, 4, 0);
+    lv_obj_set_style_margin_right(music_icon_btn, 2, 0);
+    lv_obj_clear_flag(music_icon_btn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(music_icon_btn, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(music_icon_btn, music_icon_click_cb, LV_EVENT_CLICKED, nullptr);
+
+    music_icon_label = lv_label_create(music_icon_btn);
+    lv_label_set_text(music_icon_label, LV_SYMBOL_AUDIO);
+    lv_obj_set_style_text_font(music_icon_label, &lv_font_montserrat_14_latin1, 0);
+
     /* Icone Bluetooth interativo */
     bt_icon_btn = lv_obj_create(parent);
     lv_obj_set_size(bt_icon_btn, LV_SIZE_CONTENT, LV_SIZE_CONTENT);

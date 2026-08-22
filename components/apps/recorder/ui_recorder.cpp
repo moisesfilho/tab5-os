@@ -525,7 +525,11 @@ void apply_recorder_theme(void)
     if (play_file_label)
         lv_obj_set_style_text_color(play_file_label, lv_color_hex(pal->text), 0);
     if (play_bar) {
-        lv_obj_set_style_bg_color(play_bar, lv_color_hex(pal->surface_alt), 0);
+        uint32_t bar_track = ui_theme_is_dark() ? 0x2A3441 : 0xE2E8F0;
+        uint32_t bar_border = ui_theme_is_dark() ? 0x475569 : 0xCBD5E1;
+        lv_obj_set_style_bg_color(play_bar, lv_color_hex(bar_track), 0);
+        lv_obj_set_style_border_color(play_bar, lv_color_hex(bar_border), 0);
+        lv_obj_set_style_border_width(play_bar, 1, 0);
         lv_obj_set_style_bg_color(play_bar, lv_color_hex(pal->accent), LV_PART_INDICATOR);
     }
     if (play_toggle_btn)
@@ -631,13 +635,15 @@ lv_obj_t *ui_recorder_create(void)
     lv_obj_set_style_text_color(play_file_label, lv_color_hex(pal->text), 0);
 
     play_bar = lv_bar_create(play_card);
-    lv_obj_set_size(play_bar, lv_pct(95), 8);
+    lv_obj_set_size(play_bar, lv_pct(95), 10);
     lv_bar_set_range(play_bar, 0, 100);
     lv_bar_set_value(play_bar, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(play_bar, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_radius(play_bar, 5, 0);
+    lv_obj_set_style_radius(play_bar, 5, LV_PART_INDICATOR);
+    lv_obj_set_style_border_width(play_bar, 1, 0);
+    lv_obj_set_style_border_color(play_bar, lv_color_hex(ui_theme_is_dark() ? 0x475569 : 0xCBD5E1), 0);
+    lv_obj_set_style_bg_color(play_bar, lv_color_hex(ui_theme_is_dark() ? 0x2A3441 : 0xE2E8F0), 0);
     lv_obj_set_style_bg_color(play_bar, lv_color_hex(pal->accent), LV_PART_INDICATOR);
-    lv_obj_set_style_radius(play_bar, 4, 0);
-    lv_obj_set_style_radius(play_bar, 4, LV_PART_INDICATOR);
 
     play_ctrl_row = lv_obj_create(play_card);
     lv_obj_set_size(play_ctrl_row, lv_pct(95), 36);

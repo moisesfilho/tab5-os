@@ -872,7 +872,7 @@ static void generate_next_photo_filepath(char *out_path, size_t max_len)
     timezone_mgr_get_localtime(&timeinfo);
 
     if (timeinfo.tm_year + 1900 >= 2024) {
-        char base[128];
+        char base[64];
         snprintf(base, sizeof(base), "/sdcard/imagens/IMG_%04d%02d%02d_%02d%02d%02d", timeinfo.tm_year + 1900,
                  timeinfo.tm_mon + 1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
         snprintf(out_path, max_len, "%s.jpg", base);

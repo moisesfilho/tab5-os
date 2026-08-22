@@ -5,6 +5,7 @@ dependencies:
   espressif/esp_hosted: "^2.11.0"
   espressif/esp_wifi_remote: "^1.6.4"
   david-cermak/libssh: "*"
+  espressif/esp_audio_codec: "<2.6.0,>=2.3.0"
 
 overrides:
   - espressif/m5stack_tab5:

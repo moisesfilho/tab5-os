@@ -19,7 +19,7 @@
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-
+#include "esp_heap_caps.h"
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -118,8 +118,11 @@ struct FileItem {
 static std::vector<FileItem> list_sd_directory(const std::string &dir_path)
 {
     std::vector<FileItem> items;
+    wifi_storage_mount();
+
     DIR *d = opendir(dir_path.c_str());
     if (!d) {
+        ESP_LOGE(TAG, "opendir(%s) falhou: errno=%d (%s)", dir_path.c_str(), errno, strerror(errno));
         return items;
     }
 
@@ -225,6 +228,7 @@ static esp_err_t download_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    wifi_storage_mount();
     FILE *fp = fopen(filepath.c_str(), "rb");
     if (!fp) {
         ESP_LOGE(TAG, "arquivo nao encontrado: %s", filepath.c_str());
@@ -264,6 +268,210 @@ static esp_err_t download_handler(httpd_req_t *req)
     }
     fclose(fp);
     httpd_resp_send_chunk(req, nullptr, 0);
+    return ESP_OK;
+}
+
+static esp_err_t upload_handler(httpd_req_t *req)
+{
+    char query[512] = {0};
+    std::string path = "/sdcard";
+    std::string filename;
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        std::string q_path = get_query_param(query, "path");
+        if (!q_path.empty() && is_safe_sd_path(q_path)) {
+            path = q_path;
+        }
+        filename = get_query_param(query, "filename");
+    }
+
+    if (filename.empty()) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename is required");
+        return ESP_FAIL;
+    }
+
+    size_t slash_pos = filename.find_last_of("/\\");
+    if (slash_pos != std::string::npos) {
+        filename = filename.substr(slash_pos + 1);
+    }
+    if (filename.empty() || filename == "." || filename == "..") {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid filename");
+        return ESP_FAIL;
+    }
+
+    std::string fullpath = path;
+    if (fullpath.back() != '/') {
+        fullpath += "/";
+    }
+    fullpath += filename;
+
+    if (!is_safe_sd_path(fullpath)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid destination path");
+        return ESP_FAIL;
+    }
+
+    /* Buffer de recepcao de rede na PSRAM (SPIRAM) para liberar heap interna */
+    constexpr size_t NET_CHUNK = 4096;
+    constexpr size_t SD_CHUNK = 512;
+
+    char *net_buf = static_cast<char *>(heap_caps_malloc(NET_CHUNK, MALLOC_CAP_SPIRAM));
+    if (!net_buf) {
+        net_buf = static_cast<char *>(malloc(NET_CHUNK));
+    }
+    if (!net_buf) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_FAIL;
+    }
+
+    /* Buffer de gravacao dedicado de 512B com alinhamento de 64B em memoria DMA interna.
+     * Quando o ponteiro passado para write() ja eh DMA-capaz e alinhado a 64 bytes,
+     * o driver sdmmc usa o buffer diretamente SEM chamar allocate_dma_buf! */
+    char *sd_buf = static_cast<char *>(heap_caps_aligned_alloc(64, SD_CHUNK, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+    if (!sd_buf) {
+        free(net_buf);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of DMA memory");
+        return ESP_FAIL;
+    }
+
+    wifi_storage_mount();
+
+    FILE *fp = fopen(fullpath.c_str(), "wb");
+    if (!fp) {
+        free(sd_buf);
+        free(net_buf);
+        ESP_LOGE(TAG, "Falha ao criar arquivo no SD: %s (errno=%d)", fullpath.c_str(), errno);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create file on SD");
+        return ESP_FAIL;
+    }
+    int sd_fd = fileno(fp);
+
+    /* Suporte a chunked transfer (sem Content-Length) e upload com Content-Length.
+     * Quando content_len <= 0 o browser esta usando chunked encoding: lemos ate
+     * httpd_req_recv retornar 0 (fim de stream). */
+    int content_len = req->content_len;
+    bool chunked = (content_len <= 0);
+    int remaining = chunked ? static_cast<int>(NET_CHUNK) : content_len;
+    size_t total_written = 0;
+    esp_err_t ret = ESP_OK;
+
+    while (remaining > 0) {
+        int to_read = remaining > static_cast<int>(NET_CHUNK) ? static_cast<int>(NET_CHUNK) : remaining;
+        int received = httpd_req_recv(req, net_buf, to_read);
+        if (received == 0) {
+            break; /* fim de stream (chunked) */
+        }
+        if (received < 0) {
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue;
+            }
+            ESP_LOGE(TAG, "Erro de recepcao durante upload de %s (recebido=%d)", fullpath.c_str(), received);
+            ret = ESP_FAIL;
+            break;
+        }
+
+        /* Copia para sd_buf (buffer DMA alinhado) e grava fatias de ate 512B no SD */
+        size_t net_offset = 0;
+        while (net_offset < static_cast<size_t>(received)) {
+            size_t slice = received - net_offset;
+            if (slice > SD_CHUNK) {
+                slice = SD_CHUNK;
+            }
+            memcpy(sd_buf, net_buf + net_offset, slice);
+            ssize_t wr = write(sd_fd, sd_buf, slice);
+            if (wr <= 0) {
+                ESP_LOGE(TAG, "Erro de gravacao no SD: %s (errno=%d, offset=%zu)", fullpath.c_str(), errno, net_offset);
+                ret = ESP_FAIL;
+                break;
+            }
+            net_offset += wr;
+            total_written += wr;
+        }
+        if (ret != ESP_OK) {
+            break;
+        }
+
+        if (chunked) {
+            remaining = static_cast<int>(NET_CHUNK); /* continua lendo */
+        } else {
+            remaining -= received;
+        }
+    }
+
+    fclose(fp);
+    free(sd_buf);
+    free(net_buf);
+
+    if (ret != ESP_OK) {
+        unlink(fullpath.c_str());
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Upload error");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Upload concluido com sucesso: %s (%zu bytes)", fullpath.c_str(), total_written);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "success", true);
+    cJSON_AddStringToObject(root, "filename", filename.c_str());
+    cJSON_AddStringToObject(root, "path", fullpath.c_str());
+    cJSON_AddNumberToObject(root, "size", total_written);
+    char *json_str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    httpd_resp_set_type(req, "application/json");
+    if (json_str) {
+        httpd_resp_send(req, json_str, strlen(json_str));
+        free(json_str);
+    } else {
+        httpd_resp_send(req, "{\"success\":true}", 16);
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t api_delete_handler(httpd_req_t *req)
+{
+    char query[512] = {0};
+    std::string filepath;
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        filepath = get_query_param(query, "file");
+    }
+
+    if (filepath.empty()) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing 'file' parameter");
+        return ESP_FAIL;
+    }
+
+    if (!is_safe_sd_path(filepath)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid path");
+        return ESP_FAIL;
+    }
+
+    wifi_storage_mount();
+
+    struct stat st;
+    if (stat(filepath.c_str(), &st) != 0) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+        return ESP_FAIL;
+    }
+
+    int rc;
+    if (S_ISDIR(st.st_mode)) {
+        rc = rmdir(filepath.c_str());
+    } else {
+        rc = unlink(filepath.c_str());
+    }
+
+    if (rc != 0) {
+        ESP_LOGE(TAG, "Falha ao apagar %s (errno=%d)", filepath.c_str(), errno);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Arquivo/pasta apagado: %s", filepath.c_str());
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"success\":true}", 16);
     return ESP_OK;
 }
 
@@ -857,22 +1065,45 @@ static esp_err_t index_handler(httpd_req_t *req)
     /* --------------------------------------------------------------------- */
     /* TAB 1: Explorador de Arquivos MicroSD                                 */
     /* --------------------------------------------------------------------- */
-    html << "<div id='tab-files' class='tab-content'" << (active_tab == "files" ? "" : " style='display:none'") << ">"
-         << "<div class='card'>"
-         << "<h2>📁 Explorador de Arquivos do Cartão MicroSD</h2>"
-         << "<div class='breadcrumbs' id='file-breadcrumbs'>Carregando...</div>"
-         << "<div class='btn-row' style='margin-top:0;margin-bottom:14px;'>"
-         << "<button class='btn btn-secondary btn-sm' onclick='navigateParent()'>⬆ Subir Nível</button>"
-         << "<button class='btn btn-secondary btn-sm' onclick='loadFileList(currentPath)'>🔄 Atualizar</button>"
-         << "</div>"
-         << "<div style='overflow-x:auto;'>"
-         << "<table "
-            "id='file-table'><thead><tr><th>Nome</th><th>Tipo</th><th>Tamanho</th><th>Ação</th></tr></thead><tbody "
-            "id='file-tbody'>"
-         << "<tr><td colspan='4' style='text-align:center;'>Carregando arquivos do SD...</td></tr>"
-         << "</tbody></table>"
-         << "</div>"
-         << "</div></div>";
+    html
+        << "<div id='tab-files' class='tab-content'" << (active_tab == "files" ? "" : " style='display:none'") << ">"
+        << "<div class='card' id='files-dropzone' ondragover='handleDragOver(event)' "
+           "ondragleave='handleDragLeave(event)' ondrop='handleDrop(event)'>"
+        << "<h2>📁 Explorador de Arquivos do Cartão MicroSD</h2>"
+        << "<div class='breadcrumbs' id='file-breadcrumbs'>Carregando...</div>"
+        << "<div class='btn-row' style='margin-top:0;margin-bottom:14px;justify-content:space-between;align-items:"
+           "center;'>"
+        << "<div style='display:flex;gap:8px;'>"
+        << "<button class='btn btn-secondary btn-sm' onclick='navigateParent()'>⬆ Subir Nível</button>"
+        << "<button class='btn btn-secondary btn-sm' onclick='loadFileList(currentPath)'>🔄 Atualizar</button>"
+        << "</div>"
+        << "<div>"
+        << "<input type='file' id='file-upload-input' multiple style='display:none;' "
+           "onchange='handleFileSelect(event)'>"
+        << "<button class='btn btn-primary btn-sm' onclick='document.getElementById(\"file-upload-input\").click()'>📤 "
+           "Enviar Arquivo(s)</button>"
+        << "</div>"
+        << "</div>"
+        << "<div id='upload-progress-container' style='display:none;margin-bottom:14px;background:#1e1e2e;padding:"
+           "12px;border-radius:8px;border:1px solid #45475a;'>"
+        << "<div style='display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:6px;'>"
+        << "<span id='upload-status-text'>Enviando arquivo...</span>"
+        << "<span id='upload-percent-text'>0%</span>"
+        << "</div>"
+        << "<div style='background:#313244;height:8px;border-radius:4px;overflow:hidden;'>"
+        << "<div id='upload-progress-bar' style='background:#89b4fa;width:0%;height:100%;transition:width "
+           ".1s;'></div>"
+        << "</div>"
+        << "</div>"
+        << "<div style='overflow-x:auto;'>"
+        << "<table "
+           "id='file-table'><thead><tr><th>Nome</th><th>Tipo</th><th>Tamanho</th><th>Baixar</th><th>Apagar</th></tr></"
+           "thead><tbody "
+           "id='file-tbody'>"
+        << "<tr><td colspan='5' style='text-align:center;'>Carregando arquivos do SD...</td></tr>"
+        << "</tbody></table>"
+        << "</div>"
+        << "</div></div>";
 
     /* --------------------------------------------------------------------- */
     /* TAB 2: Configurações do Sistema                                       */
@@ -1076,6 +1307,7 @@ static esp_err_t index_handler(httpd_req_t *req)
            "em /sdcard/imagens:</p>"
         << "<table><thead><tr><th>Arquivo</th><th>Tamanho</th><th>Ação</th></tr></thead><tbody>";
 
+    wifi_storage_mount();
     DIR *d = opendir("/sdcard/imagens");
     if (d) {
         struct dirent *entry;
@@ -1156,29 +1388,61 @@ static esp_err_t index_handler(httpd_req_t *req)
         << "const tbody = document.getElementById('file-tbody');"
         << "tbody.innerHTML = '';"
         << "if(!data.files || data.files.length === 0){"
-        << "tbody.innerHTML = '<tr><td colspan=\"4\" style=\"text-align:center;\">Pasta vazia</td></tr>';"
+        << "tbody.innerHTML = '<tr><td colspan=\"5\" style=\"text-align:center;\">Pasta vazia</td></tr>';"
         << "return;"
         << "}"
         << "data.files.forEach(f=>{"
         << "const tr = document.createElement('tr');"
         << "const full = (path.endsWith('/')?path:path+'/')+f.name;"
+        << "const tdName = document.createElement('td');"
+        << "const tdType = document.createElement('td');"
+        << "const tdSize = document.createElement('td');"
+        << "const tdAction = document.createElement('td');"
+        << "const tdDel = document.createElement('td');"
+        << "const btnDel = document.createElement('button');"
+        << "btnDel.innerText = '🗑';"
+        << "btnDel.title = 'Apagar';"
+        << "btnDel.style.cssText = 'background:#f38ba8;color:#1e1e2e;border:none;border-radius:6px;padding:3px "
+           "9px;cursor:pointer;font-size:0.85rem;';"
+        << "btnDel.onclick = ()=>deleteFile(full, f.name, f.is_dir);"
+        << "tdDel.appendChild(btnDel);"
         << "if(f.is_dir){"
-        << "tr.innerHTML = '<td><a class=\"folder-link\" onclick=\"loadFileList(\\''+full+'\\')\">📁 "
-           "'+f.name+'</a></td><td>Diretório</td><td>--</td><td><a class=\"dl-link\" "
-           "onclick=\"loadFileList(\\''+full+'\\')\">Abrir</a></td>';"
+        << "const aFold = document.createElement('a');"
+        << "aFold.className = 'folder-link';"
+        << "aFold.innerText = '📁 ' + f.name;"
+        << "aFold.onclick = ()=>loadFileList(full);"
+        << "tdName.appendChild(aFold);"
+        << "tdType.innerText = 'Diretório';"
+        << "tdSize.innerText = '--';"
+        << "const aOpen = document.createElement('a');"
+        << "aOpen.className = 'dl-link';"
+        << "aOpen.innerText = 'Abrir';"
+        << "aOpen.onclick = ()=>loadFileList(full);"
+        << "tdAction.appendChild(aOpen);"
         << "}else{"
         << "let icon = '📄 ';"
         << "if(/\\.(jpg|jpeg|png)$/i.test(f.name)) icon = '🖼️ ';"
         << "else if(/\\.(wav|mp3)$/i.test(f.name)) icon = '🎵 ';"
         << "else if(/\\.(txt|log|cfg|json)$/i.test(f.name)) icon = '📝 ';"
-        << "tr.innerHTML = '<td>'+icon+f.name+'</td><td>Arquivo</td><td>'+formatSize(f.size)+'</td><td><a "
-           "class=\"dl-link\" href=\"/download?file='+encodeURIComponent(full)+'\" target=\"_blank\">⬇ "
-           "Baixar</a></td>';"
+        << "tdName.innerText = icon + f.name;"
+        << "tdType.innerText = 'Arquivo';"
+        << "tdSize.innerText = formatSize(f.size);"
+        << "const aDl = document.createElement('a');"
+        << "aDl.className = 'dl-link';"
+        << "aDl.href = '/download?file=' + encodeURIComponent(full);"
+        << "aDl.target = '_blank';"
+        << "aDl.innerText = '⬇ Baixar';"
+        << "tdAction.appendChild(aDl);"
         << "}"
+        << "tr.appendChild(tdName);"
+        << "tr.appendChild(tdType);"
+        << "tr.appendChild(tdSize);"
+        << "tr.appendChild(tdAction);"
+        << "tr.appendChild(tdDel);"
         << "tbody.appendChild(tr);"
         << "});"
         << "}).catch(e=>{"
-        << "document.getElementById('file-tbody').innerHTML = '<tr><td colspan=\"4\" "
+        << "document.getElementById('file-tbody').innerHTML = '<tr><td colspan=\"5\" "
            "style=\"text-align:center;color:#f38ba8;\">Erro ao ler pasta</td></tr>';"
         << "});"
         << "}"
@@ -1212,6 +1476,80 @@ static esp_err_t index_handler(httpd_req_t *req)
         << "const last = currentPath.lastIndexOf('/');"
         << "if(last>0){loadFileList(currentPath.substring(0, last));}"
         << "else{loadFileList('/sdcard');}"
+        << "}"
+        << "async function deleteFile(fullpath, name, isDir){"
+        << "const tipo = isDir ? 'pasta' : 'arquivo';"
+        << "if(!confirm('Apagar '+tipo+' \"'+name+'\"? Esta acao nao pode ser desfeita.')) return;"
+        << "try{"
+        << "const resp = await fetch('/api/delete?file='+encodeURIComponent(fullpath),{method:'POST'});"
+        << "if(resp.ok){showToast('🗑 '+name+' apagado com sucesso');loadFileList(currentPath);}"
+        << "else{const t=await resp.text();showToast('Erro: '+t);}"
+        << "}catch(e){showToast('Erro de rede: '+e.message);}"
+        << "}"
+        << "function handleFileSelect(event){"
+        << "const files = event.target.files;"
+        << "if(files && files.length>0){uploadFiles(Array.from(files));}"
+        << "event.target.value = '';"
+        << "}"
+        << "function handleDragOver(e){"
+        << "e.preventDefault();e.stopPropagation();"
+        << "const dz = document.getElementById('files-dropzone');"
+        << "if(dz){dz.style.borderColor='#89b4fa';dz.style.backgroundColor='#1e2030';}"
+        << "}"
+        << "function handleDragLeave(e){"
+        << "e.preventDefault();e.stopPropagation();"
+        << "const dz = document.getElementById('files-dropzone');"
+        << "if(dz){dz.style.borderColor='#313244';dz.style.backgroundColor='#181825';}"
+        << "}"
+        << "function handleDrop(e){"
+        << "e.preventDefault();e.stopPropagation();"
+        << "const dz = document.getElementById('files-dropzone');"
+        << "if(dz){dz.style.borderColor='#313244';dz.style.backgroundColor='#181825';}"
+        << "if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length>0){"
+        << "uploadFiles(Array.from(e.dataTransfer.files));"
+        << "}"
+        << "}"
+        << "async function uploadFiles(files){"
+        << "const progCont = document.getElementById('upload-progress-container');"
+        << "const statusText = document.getElementById('upload-status-text');"
+        << "const percentText = document.getElementById('upload-percent-text');"
+        << "const progBar = document.getElementById('upload-progress-bar');"
+        << "progCont.style.display = 'block';"
+        << "for(let i=0; i<files.length; i++){"
+        << "const file = files[i];"
+        << "statusText.innerText = 'Enviando '+(i+1)+'/'+files.length+': '+file.name+' ('+formatSize(file.size)+')...';"
+        << "progBar.style.width = '0%';"
+        << "percentText.innerText = '0%';"
+        << "try{"
+        << "await new Promise((resolve, reject)=>{"
+        << "const xhr = new XMLHttpRequest();"
+        << "const url = '/api/upload?path='+encodeURIComponent(currentPath)+'&filename='+encodeURIComponent(file.name);"
+        << "xhr.open('POST', url, true);"
+        << "xhr.upload.onprogress = function(e){"
+        << "if(e.lengthComputable){"
+        << "const pct = Math.round((e.loaded / e.total) * 100);"
+        << "progBar.style.width = pct + '%';"
+        << "percentText.innerText = pct + '%';"
+        << "}"
+        << "};"
+        << "xhr.onload = function(){"
+        << "if(xhr.status>=200 && xhr.status<300){resolve();}"
+        << "else{reject(new Error('Erro HTTP '+xhr.status+': '+xhr.responseText));}"
+        << "};"
+        << "xhr.onerror = function(){reject(new Error('Erro de rede durante o upload'));};"
+        << "xhr.send(file);"
+        << "});"
+        << "}catch(err){"
+        << "alert('Falha ao enviar '+file.name+': '+err.message);"
+        << "break;"
+        << "}"
+        << "}"
+        << "statusText.innerText = '✓ Upload concluído!';"
+        << "percentText.innerText = '100%';"
+        << "progBar.style.width = '100%';"
+        << "showToast('✓ Arquivo(s) enviado(s) com sucesso!');"
+        << "setTimeout(()=>{progCont.style.display='none';}, 2000);"
+        << "loadFileList(currentPath);"
         << "}"
         << "function loadSystemStatus(){"
         << "fetch('/api/system/status')"
@@ -1394,10 +1732,18 @@ esp_err_t http_file_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
     config.max_uri_handlers = 20;
-    config.stack_size = 10240;
+    config.stack_size = 12288;
+    config.recv_wait_timeout = 10;
+    config.send_wait_timeout = 10;
 
     ESP_LOGI(TAG, "iniciando servidor HTTP (painel web, explorador SD e config) na porta %d...", config.server_port);
+    ESP_LOGI(TAG, "HEAP_DIAG server_pre: internal=%zu dma=%zu dma_largest=%zu",
+             heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_free_size(MALLOC_CAP_DMA),
+             heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
     esp_err_t ret = httpd_start(&s_server, &config);
+    ESP_LOGI(TAG, "HEAP_DIAG server_post: internal=%zu dma=%zu dma_largest=%zu",
+             heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_free_size(MALLOC_CAP_DMA),
+             heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "falha ao iniciar http server (%s)", esp_err_to_name(ret));
         return ret;
@@ -1414,6 +1760,14 @@ esp_err_t http_file_server_start(void)
     httpd_uri_t uri_api_files = {
         .uri = "/api/files", .method = HTTP_GET, .handler = api_files_handler, .user_ctx = nullptr};
     httpd_register_uri_handler(s_server, &uri_api_files);
+
+    httpd_uri_t uri_upload = {
+        .uri = "/api/upload", .method = HTTP_POST, .handler = upload_handler, .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_upload);
+
+    httpd_uri_t uri_delete = {
+        .uri = "/api/delete", .method = HTTP_POST, .handler = api_delete_handler, .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_delete);
 
     /* Rotas de Status & Configurações do Sistema */
     httpd_uri_t uri_sys_status = {
@@ -1471,6 +1825,9 @@ esp_err_t http_file_server_stop(void)
     ESP_LOGI(TAG, "parando servidor HTTP...");
     esp_err_t ret = httpd_stop(s_server);
     s_server = nullptr;
+    ESP_LOGI(TAG, "HEAP_DIAG server_stopped: internal=%zu dma=%zu dma_largest=%zu",
+             heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_free_size(MALLOC_CAP_DMA),
+             heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
     return ret;
 }
 

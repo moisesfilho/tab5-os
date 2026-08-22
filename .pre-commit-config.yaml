@@ -5,12 +5,14 @@
 #   - components/m5stack_tab5   (BSP local vendido, com checksums)
 #   - components/rtc_rx8130     (driver RTC de terceiros)
 #   - components/os/fonts/      (fontes geradas pelo conversor LVGL)
+#   - components/apps/music/minimp3.h (decoder MP3 de cabeçalho único)
 #   - managed_components/       (componentes gerenciados)
 exclude: >
   (?x)^(
     components/m5stack_tab5/|
     components/rtc_rx8130/|
     components/os/fonts/|
+    components/apps/music/minimp3\.h|
     managed_components/
   )
 
@@ -48,7 +50,7 @@ repos:
     rev: v2.3.0
     hooks:
       - id: codespell
-        args: ["--skip=*build*,*managed_components*,*m5stack_tab5*"]
+        args: ["--skip=*build*,*managed_components*,*m5stack_tab5*", "-L", "dout"]
         additional_dependencies:
           - tomli
 

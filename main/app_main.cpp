@@ -19,6 +19,8 @@
 #include "ai_storage.h"
 #include "timezone_mgr.h"
 #include "ui_font.h"
+#include "driver/i2s_std.h"
+#include "esp_heap_caps.h"
 
 static const char *TAG = "tab5_poc";
 
@@ -35,6 +37,32 @@ extern "C" void app_main(void)
 
     /* Inicia display + touch + task LVGL (BSP oficial m5stack_tab5) */
     lv_display_t *disp = bsp_display_start();
+
+    /* Pre-inicializa o I2S de audio (STEREO 16-bit) no boot, enquanto a heap
+     * DMA interna ainda esta folgada. Reserva os descritores/buffers DMA do
+     * I2S; em runtime a heap DMA fragmenta (camera CSI, WiFi SDIO) e a
+     * realocacao feita pelo i2s_std_set_slot falharia (i2s_alloc_dma_desc:
+     * no mem). Trocar a sample rate so reconfigura clock/slot, sem realocar. */
+    i2s_std_config_t i2s_cfg = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(44100),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+        .gpio_cfg =
+            {
+                .mclk = BSP_I2S_MCLK,
+                .bclk = BSP_I2S_SCLK,
+                .ws = BSP_I2S_LCLK,
+                .dout = BSP_I2S_DOUT,
+                .din = BSP_I2S_DSIN,
+                .invert_flags = {.mclk_inv = false, .bclk_inv = false, .ws_inv = false},
+            },
+    };
+    esp_err_t audio_ret = bsp_audio_init(&i2s_cfg);
+    if (audio_ret == ESP_OK) {
+        ESP_LOGI(TAG, "I2S de audio pre-inicializado no boot (44100 stereo 16-bit), dma_free=%d",
+                 (int)heap_caps_get_free_size(MALLOC_CAP_DMA));
+    } else {
+        ESP_LOGW(TAG, "Falha ao pre-inicializar I2S de audio: %s", esp_err_to_name(audio_ret));
+    }
 
     /* Semeia o relogio do sistema a partir do RTC RX8130CE (I2C do BSP) */
     rtc_rx8130_init();

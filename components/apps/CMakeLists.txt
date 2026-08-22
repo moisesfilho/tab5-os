@@ -18,6 +18,8 @@ idf_component_register(
         "files/ui_files.cpp"
         "wifi/ui_wifi.cpp"
         "bluetooth/ui_bluetooth.cpp"
+        "music/music_player.cpp"
+        "music/ui_music.cpp"
     INCLUDE_DIRS
         "camera"
         "gallery"
@@ -29,9 +31,11 @@ idf_component_register(
         "files"
         "wifi"
         "bluetooth"
+        "music"
         "."
     REQUIRES os lvgl m5stack_tab5 libssh esp_video espressif__esp_cam_sensor
-            esp_http_server esp_codec_dev esp_http_client json esp-tls mbedtls
+            esp_http_server esp_codec_dev esp_http_client json esp-tls
+            mbedtls esp_audio_codec
 )
 
 target_link_libraries(

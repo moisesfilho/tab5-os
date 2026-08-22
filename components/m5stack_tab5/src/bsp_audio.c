@@ -28,11 +28,11 @@ static const char *TAG = "M5Stack Tab5";
     }
 
 /* This configuration is used by default in bsp_audio_init() */
-#define BSP_I2S_DUPLEX_CFG(_sample_rate)                                                         \
-    {                                                                                                 \
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(_sample_rate),                                          \
-        .slot_cfg = I2S_STD_PHILIP_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO), \
-        .gpio_cfg = BSP_I2S_GPIO_CFG,                                                                 \
+#define BSP_I2S_DUPLEX_CFG(_sample_rate)                                                           \
+    {                                                                                               \
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(_sample_rate),                                       \
+        .slot_cfg = I2S_STD_PHILIP_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO), \
+        .gpio_cfg = BSP_I2S_GPIO_CFG,                                                               \
     }
 static i2s_chan_handle_t i2s_tx_chan = NULL;
 static i2s_chan_handle_t i2s_rx_chan = NULL;
@@ -59,11 +59,9 @@ esp_err_t bsp_audio_init(const i2s_std_config_t *i2s_config)
     }
     if (i2s_tx_chan != NULL) {
         ESP_GOTO_ON_ERROR(i2s_channel_init_std_mode(i2s_tx_chan, p_i2s_cfg), err, TAG, "I2S channel initialization failed");
-        ESP_GOTO_ON_ERROR(i2s_channel_enable(i2s_tx_chan), err, TAG, "I2S enabling failed");
     }
     if (i2s_rx_chan != NULL) {
         ESP_GOTO_ON_ERROR(i2s_channel_init_std_mode(i2s_rx_chan, p_i2s_cfg), err, TAG, "I2S channel initialization failed");
-        ESP_GOTO_ON_ERROR(i2s_channel_enable(i2s_rx_chan), err, TAG, "I2S enabling failed");
     }
 
     audio_codec_i2s_cfg_t i2s_cfg = {

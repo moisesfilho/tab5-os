@@ -7,6 +7,8 @@
 #include "ui_theme.h"
 #include "wifi_storage.h"
 #include "file_assoc.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -116,6 +118,10 @@ void load_directory(const std::string &path)
 {
     current_path = path;
     entries.clear();
+
+    ESP_LOGI("tab5_ui_files", "HEAP_DIAG list_dir \"%s\": internal=%zu dma=%zu dma_largest=%zu", path.c_str(),
+             heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_free_size(MALLOC_CAP_DMA),
+             heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
 
     if (wifi_storage_mount() == ESP_OK) {
         DIR *dir = opendir(current_path.c_str());

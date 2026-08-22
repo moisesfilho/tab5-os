@@ -9,6 +9,7 @@
 #include "imu_reader.h"
 #include "wifi_mgr.h"
 #include "bt_mgr.h"
+#include "music_player.h"
 #include "bsp/esp-bsp.h"
 #include <time.h>
 
@@ -56,6 +57,9 @@ lv_obj_t *menu_row_bt_switch = nullptr;
 lv_obj_t *menu_row_brightness_label = nullptr;
 lv_obj_t *menu_row_brightness_val_label = nullptr;
 lv_obj_t *menu_row_brightness_slider = nullptr;
+lv_obj_t *menu_row_volume_label = nullptr;
+lv_obj_t *menu_row_volume_val_label = nullptr;
+lv_obj_t *menu_row_volume_slider = nullptr;
 lv_obj_t *menu_row_tz_label = nullptr;
 lv_obj_t *menu_row_tz_val_label = nullptr;
 lv_obj_t *menu_row_tz_minus_btn = nullptr;
@@ -111,6 +115,9 @@ void close_menu(void)
     menu_row_brightness_label = nullptr;
     menu_row_brightness_val_label = nullptr;
     menu_row_brightness_slider = nullptr;
+    menu_row_volume_label = nullptr;
+    menu_row_volume_val_label = nullptr;
+    menu_row_volume_slider = nullptr;
     menu_row_tz_label = nullptr;
     menu_row_tz_val_label = nullptr;
     menu_row_tz_minus_btn = nullptr;
@@ -261,6 +268,17 @@ void apply_menu_theme(void)
         lv_obj_set_style_bg_color(menu_row_brightness_slider, lv_color_hex(pal->border), LV_PART_MAIN);
         lv_obj_set_style_bg_color(menu_row_brightness_slider, lv_color_hex(pal->accent), LV_PART_INDICATOR);
         lv_obj_set_style_bg_color(menu_row_brightness_slider, lv_color_hex(pal->text), LV_PART_KNOB);
+    }
+    if (menu_row_volume_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_volume_label, lv_color_hex(pal->text), 0);
+    }
+    if (menu_row_volume_val_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_volume_val_label, lv_color_hex(pal->text_muted), 0);
+    }
+    if (menu_row_volume_slider != nullptr) {
+        lv_obj_set_style_bg_color(menu_row_volume_slider, lv_color_hex(pal->border), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(menu_row_volume_slider, lv_color_hex(pal->accent), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(menu_row_volume_slider, lv_color_hex(pal->text), LV_PART_KNOB);
     }
     if (menu_row_tz_label != nullptr) {
         lv_obj_set_style_text_color(menu_row_tz_label, lv_color_hex(pal->text), 0);
@@ -554,6 +572,85 @@ void menu_brightness_row_create(void)
     lv_obj_add_event_cb(menu_row_brightness_slider, brightness_slider_cb, LV_EVENT_RELEASED, nullptr);
 }
 
+void volume_slider_cb(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *slider = (lv_obj_t *)lv_event_get_target(event);
+    int val = (int)lv_slider_get_value(slider);
+    if (val < 0) {
+        val = 0;
+    }
+    if (val > 100) {
+        val = 100;
+    }
+
+    if (code == LV_EVENT_VALUE_CHANGED) {
+        if (menu_row_volume_val_label != nullptr) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d%%", val);
+            lv_label_set_text(menu_row_volume_val_label, buf);
+        }
+        music_player_set_volume(val);
+    }
+}
+
+/* Row "Volume" com slider horizontal no menu de configuracao. */
+void menu_volume_row_create(void)
+{
+    lv_obj_t *row = lv_obj_create(menu_panel);
+    lv_obj_set_width(row, lv_pct(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_shadow_width(row, 0, 0);
+    lv_obj_set_style_radius(row, 8, 0);
+    lv_obj_set_style_pad_left(row, 14, 0);
+    lv_obj_set_style_pad_right(row, 14, 0);
+    lv_obj_set_style_pad_top(row, 8, 0);
+    lv_obj_set_style_pad_bottom(row, 8, 0);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Flex coluna para empilhar o header e o slider verticalmente */
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(row, 8, 0);
+
+    lv_obj_t *header_box = lv_obj_create(row);
+    lv_obj_set_width(header_box, lv_pct(100));
+    lv_obj_set_height(header_box, 18);
+    lv_obj_set_style_bg_opa(header_box, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(header_box, 0, 0);
+    lv_obj_set_style_shadow_width(header_box, 0, 0);
+    lv_obj_set_style_pad_all(header_box, 0, 0);
+    lv_obj_clear_flag(header_box, LV_OBJ_FLAG_SCROLLABLE);
+
+    menu_row_volume_label = lv_label_create(header_box);
+    lv_label_set_text(menu_row_volume_label, "Volume");
+    lv_obj_set_style_text_font(menu_row_volume_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_align(menu_row_volume_label, LV_ALIGN_LEFT_MID, 0, 0);
+
+    int cur_vol = music_player_get_volume();
+
+    menu_row_volume_val_label = lv_label_create(header_box);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d%%", cur_vol);
+    lv_label_set_text(menu_row_volume_val_label, buf);
+    lv_obj_set_style_text_font(menu_row_volume_val_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_align(menu_row_volume_val_label, LV_ALIGN_RIGHT_MID, 0, 0);
+
+    menu_row_volume_slider = lv_slider_create(row);
+    lv_obj_set_width(menu_row_volume_slider, lv_pct(100));
+    lv_obj_set_height(menu_row_volume_slider, 8);
+    lv_obj_set_style_radius(menu_row_volume_slider, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_radius(menu_row_volume_slider, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(menu_row_volume_slider, LV_RADIUS_CIRCLE, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(menu_row_volume_slider, 3, LV_PART_KNOB);
+    lv_slider_set_range(menu_row_volume_slider, 0, 100);
+    lv_slider_set_value(menu_row_volume_slider, cur_vol, LV_ANIM_OFF);
+
+    lv_obj_add_event_cb(menu_row_volume_slider, volume_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+}
+
 static void tz_btn_cb(lv_event_t *e)
 {
     int delta = (int)(intptr_t)lv_event_get_user_data(e);
@@ -675,6 +772,7 @@ void open_menu(menu_page_t page)
         menu_wifi_row_create();
         menu_bluetooth_row_create();
         menu_brightness_row_create();
+        menu_volume_row_create();
         menu_timezone_row_create();
     } else if (page == MENU_PAGE_THEME) {
         menu_header_create("Tema");

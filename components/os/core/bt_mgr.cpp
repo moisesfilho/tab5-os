@@ -1340,8 +1340,8 @@ esp_err_t bt_mgr_get_status(bt_status_t *status)
         if (s_active_conns[i].connected) {
             status->connected_count++;
             status->any_connected = true;
-            snprintf(status->last_connected_mac, sizeof(status->last_connected_mac), "%s", s_active_conns[i].mac);
-            snprintf(status->last_connected_name, sizeof(status->last_connected_name), "%s", s_active_conns[i].name);
+            strlcpy(status->last_connected_mac, s_active_conns[i].mac, sizeof(status->last_connected_mac));
+            strlcpy(status->last_connected_name, s_active_conns[i].name, sizeof(status->last_connected_name));
 
             if (s_active_conns[i].type == BT_DEV_TYPE_KEYBOARD) {
                 status->keyboard_connected = true;
