@@ -129,6 +129,15 @@ typedef struct {
     uint64_t pcm_played;
 } play_codec_t;
 
+void music_player_sync_audio_output(void)
+{
+    bool hp_connected = bsp_headphone_is_connected();
+    /* Se o fone de ouvido estiver conectado, o amplificador do alto-falante embutido
+     * e desligado para tocar exclusivamente no fone (sem tocar no speaker).
+     * Se o fone for removido, o som volta automaticamente para o alto-falante. */
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, !hp_connected);
+}
+
 bool play_codec_open(play_codec_t *c, uint32_t sample_rate, uint8_t channels, uint8_t bits)
 {
     if (c->opened) {
@@ -150,9 +159,9 @@ bool play_codec_open(play_codec_t *c, uint32_t sample_rate, uint8_t channels, ui
         return false;
     }
     esp_codec_dev_set_out_mute(c->spk, false);
-    bsp_feature_enable(BSP_FEATURE_SPEAKER, true);
-    ESP_LOGI(TAG, "Codec aberto com sucesso: sr=%u, ch=%u, bits=%u", (unsigned)sample_rate, (unsigned)codec_channels,
-             (unsigned)bits);
+    music_player_sync_audio_output();
+    ESP_LOGI(TAG, "Codec aberto com sucesso: sr=%u, ch=%u, bits=%u (fone=%d)", (unsigned)sample_rate,
+             (unsigned)codec_channels, (unsigned)bits, (int)bsp_headphone_is_connected());
     c->opened = true;
     c->bytes_per_sec = sample_rate * codec_channels * (bits / 8);
     if (c->bytes_per_sec == 0) {
@@ -163,6 +172,14 @@ bool play_codec_open(play_codec_t *c, uint32_t sample_rate, uint8_t channels, ui
 
 void play_codec_write(play_codec_t *c, uint8_t *buffer, uint32_t len)
 {
+    /* Checa periodicamente se o fone de ouvido foi conectado/desconectado durante a reproducao */
+    static uint32_t s_last_hp_check_ms = 0;
+    uint32_t now_ms = esp_log_timestamp();
+    if (now_ms - s_last_hp_check_ms >= 250) {
+        s_last_hp_check_ms = now_ms;
+        music_player_sync_audio_output();
+    }
+
     if (esp_codec_dev_write(c->spk, buffer, len) == ESP_CODEC_DEV_OK) {
         c->pcm_played += len;
         uint32_t cur_sec = (c->bytes_per_sec > 0) ? (uint32_t)(c->pcm_played / c->bytes_per_sec) : 0;

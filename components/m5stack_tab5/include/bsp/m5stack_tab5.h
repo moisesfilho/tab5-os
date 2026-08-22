@@ -86,6 +86,7 @@
 #define BSP_I2S_DSIN         (GPIO_NUM_28)
 #define BSP_POWER_AMP_IO     (GPIO_NUM_NC)
 #define BSP_SPEAKER_EN       (IO_EXPANDER_PIN_NUM_1)
+#define BSP_HEADPHONE_DET    (IO_EXPANDER_PIN_NUM_7)
 /** @} */ // end of audio
 
 /** @defgroup g04_display Display and Touch
@@ -195,6 +196,13 @@ esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void);
  * @return Pointer to codec device handle or NULL when error occurred
  */
 esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void);
+
+/**
+ * @brief Check if headphones are plugged into the 3.5mm jack
+ *
+ * @return true if headphones are connected, false otherwise
+ */
+bool bsp_headphone_is_connected(void);
 
 /** @} */ // end of audio
 

@@ -176,3 +176,24 @@ esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
     };
     return esp_codec_dev_new(&codec_dev_cfg);
 }
+
+bool bsp_headphone_is_connected(void)
+{
+    esp_io_expander_handle_t io_expander = bsp_io_expander_init();
+    if (io_expander == NULL) {
+        return false;
+    }
+
+    static bool s_hp_configured = false;
+    if (!s_hp_configured) {
+        esp_io_expander_set_dir(io_expander, BSP_HEADPHONE_DET, IO_EXPANDER_INPUT);
+        s_hp_configured = true;
+    }
+
+    uint32_t level_mask = 0;
+    if (esp_io_expander_get_level(io_expander, BSP_HEADPHONE_DET, &level_mask) == ESP_OK) {
+        return (level_mask & BSP_HEADPHONE_DET) != 0;
+    }
+
+    return false;
+}

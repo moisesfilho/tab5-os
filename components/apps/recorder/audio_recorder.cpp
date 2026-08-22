@@ -302,7 +302,7 @@ void play_task(void *param)
     }
 
     esp_codec_dev_set_out_mute(s_spk_dev, false);
-    bsp_feature_enable(BSP_FEATURE_SPEAKER, true);
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, !bsp_headphone_is_connected());
 
     uint8_t *play_buf = (uint8_t *)heap_caps_malloc(AUDIO_BUFFER_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!play_buf) {
@@ -324,11 +324,18 @@ void play_task(void *param)
     }
 
     uint32_t bytes_played = 0;
+    uint32_t last_hp_check_ms = 0;
 
     while (!s_stop_requested && (data_bytes == 0 || bytes_played < data_bytes)) {
         if (s_status.state == AUDIO_RECORDER_STATE_PAUSED) {
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
+        }
+
+        uint32_t now_ms = esp_log_timestamp();
+        if (now_ms - last_hp_check_ms >= 250) {
+            last_hp_check_ms = now_ms;
+            bsp_feature_enable(BSP_FEATURE_SPEAKER, !bsp_headphone_is_connected());
         }
 
         if (feof(fp) || ferror(fp)) {
