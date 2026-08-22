@@ -564,9 +564,6 @@ void music_update_timer_cb(lv_timer_t *timer)
         if (st.state == MUSIC_PLAYER_STATE_PLAYING) {
             lv_label_set_text(play_toggle_label, LV_SYMBOL_PAUSE);
             lv_obj_set_style_bg_color(play_toggle_btn, lv_color_hex(ui_theme_get()->accent), 0);
-        } else if (st.state == MUSIC_PLAYER_STATE_PAUSED) {
-            lv_label_set_text(play_toggle_label, LV_SYMBOL_PLAY);
-            lv_obj_set_style_bg_color(play_toggle_btn, lv_color_hex(ui_theme_get()->surface_alt), 0);
         } else {
             lv_label_set_text(play_toggle_label, LV_SYMBOL_PLAY);
             lv_obj_set_style_bg_color(play_toggle_btn, lv_color_hex(ui_theme_get()->surface_alt), 0);

@@ -31,7 +31,8 @@ clang-tidy -p build \
     --config-file=.clang-tidy \
     --extra-arg="-Wno-unknown-warning-option" \
     --extra-arg="-Wno-extern-c-compat" \
-    --header-filter='components/(os|apps)/' \
+    --extra-arg="-Wno-unknown-pragmas" \
+    --header-filter='components/(os|apps)/(?!.*minimp3).*' \
     "${FILES[@]}" 2>&1 | tee "$TMP_LOG"
 
 grep -vE "error: unknown argument:" "$TMP_LOG" > "${TMP_LOG}.clean" || true

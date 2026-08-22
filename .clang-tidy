@@ -28,7 +28,8 @@ Checks: >
   -bugprone-casting-through-void,
   -clang-diagnostic-extern-c-compat,
   -clang-diagnostic-unknown-warning-option,
+  -clang-diagnostic-unknown-pragmas,
   -clang-analyzer-deadcode.DeadStores
 WarningsAsErrors: ''
-HeaderFilterRegex: 'components/(os|apps)/'
+HeaderFilterRegex: 'components/(os|apps)/(?!.*minimp3).*'
 FormatStyle: none

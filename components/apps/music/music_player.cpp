@@ -24,7 +24,9 @@
 /* Decode MP3 em tempo real: o build global usa -Og (debug), que deixaria o
  * minimp3 ~2.4x mais lento que o tempo real. Forcar -O2 neste arquivo faz o
  * minimp3 (incluido abaixo) acompanhar o I2S. */
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC optimize("O2")
+#endif
 
 /* minimp3: decodificador MP3 header-only (public domain). O wrapper da lib
  * esp_audio_codec e lento no P4 (~55ms/frame); usando o minimp3 direto com
@@ -313,7 +315,7 @@ void music_play_task(void *param)
                     uint32_t est_total_sec = 0;
                     if (info.bitrate_kbps > 0 && audio_data_size > 0) {
                         est_total_sec =
-                            (uint32_t)(((uint64_t)audio_data_size * 8) / ((uint32_t)info.bitrate_kbps * 1000));
+                            (uint32_t)(((uint64_t)audio_data_size * 8ULL) / ((uint64_t)info.bitrate_kbps * 1000ULL));
                     }
                     xSemaphoreTake(s_music_mutex, portMAX_DELAY);
                     s_status.total_time_sec = est_total_sec;
