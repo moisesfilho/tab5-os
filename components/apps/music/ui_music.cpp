@@ -156,6 +156,7 @@ void play_toggle_btn_cb(lv_event_t *event)
     } else if (!s_playlist.empty()) {
         play_track_at_index(0);
     }
+    render_music_list();
 }
 
 void play_stop_btn_cb(lv_event_t *event)
@@ -165,6 +166,7 @@ void play_stop_btn_cb(lv_event_t *event)
     lv_bar_set_value(play_bar, 0, LV_ANIM_OFF);
     lv_label_set_text(play_time_label, "00:00 / 00:00");
     ui_app_bar_set_title(&music_app_bar, "Música");
+    render_music_list();
 }
 
 void update_repeat_btn_style(void)
@@ -257,12 +259,34 @@ void play_track_at_index(int index)
     char title_buf[128];
     snprintf(title_buf, sizeof(title_buf), "Música - %s", s_playlist[index].filename.c_str());
     ui_app_bar_set_title(&music_app_bar, title_buf);
+
+    render_music_list();
 }
 
 void play_item_cb(lv_event_t *event)
 {
     int pl_index = (int)(intptr_t)lv_event_get_user_data(event);
-    play_track_at_index(pl_index);
+    if (pl_index < 0 || pl_index >= (int)s_playlist.size()) {
+        return;
+    }
+
+    music_player_status_t st;
+    music_player_get_status(&st);
+
+    if (s_playlist[pl_index].fullpath == s_active_file) {
+        /* Mesma faixa ativa: alterna entre reprodução e pausa */
+        if (st.state == MUSIC_PLAYER_STATE_PLAYING) {
+            music_player_pause();
+        } else if (st.state == MUSIC_PLAYER_STATE_PAUSED) {
+            music_player_resume();
+        } else {
+            play_track_at_index(pl_index);
+        }
+        render_music_list();
+    } else {
+        /* Nova faixa selecionada */
+        play_track_at_index(pl_index);
+    }
 }
 
 void folder_click_cb(lv_event_t *event)
@@ -549,11 +573,13 @@ void render_music_list(void)
         return;
     }
 
+    music_player_status_t st;
+    music_player_get_status(&st);
+
     for (size_t i = 0; i < s_display_items.size(); ++i) {
         const auto &item = s_display_items[i];
         lv_obj_t *row = lv_obj_create(list_container);
         lv_obj_set_size(row, lv_pct(100), 52);
-        lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_set_style_radius(row, 8, 0);
         lv_obj_set_style_pad_hor(row, 10, 0);
         lv_obj_set_style_pad_ver(row, 4, 0);
@@ -565,6 +591,7 @@ void render_music_list(void)
             /* Linha de Subpasta */
             lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface), 0);
             lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
+            lv_obj_set_style_border_width(row, 1, 0);
             lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(row, folder_click_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
@@ -599,8 +626,20 @@ void render_music_list(void)
             lv_obj_clear_flag(lbl_arrow, LV_OBJ_FLAG_CLICKABLE);
         } else {
             /* Linha de Arquivo de Áudio */
-            lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface), 0);
-            lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
+            bool is_active_track = (!s_active_file.empty() && item.fullpath == s_active_file);
+            bool is_playing = (is_active_track && st.state == MUSIC_PLAYER_STATE_PLAYING);
+
+            if (is_active_track) {
+                /* Destaque visual para a música ativa */
+                lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface_alt), 0);
+                lv_obj_set_style_border_color(row, lv_color_hex(pal->accent), 0);
+                lv_obj_set_style_border_width(row, 2, 0);
+            } else {
+                lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface), 0);
+                lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
+                lv_obj_set_style_border_width(row, 1, 0);
+            }
+
             lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(row, play_item_cb, LV_EVENT_CLICKED, (void *)(intptr_t)item.playlist_index);
 
@@ -622,7 +661,7 @@ void render_music_list(void)
             lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_DOT);
             lv_obj_set_width(lbl_name, lv_pct(100));
             lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_14_latin1, 0);
-            lv_obj_set_style_text_color(lbl_name, lv_color_hex(pal->text), 0);
+            lv_obj_set_style_text_color(lbl_name, lv_color_hex(is_active_track ? pal->accent : pal->text), 0);
 
             lv_obj_t *lbl_sz = lv_label_create(info_col);
             char sz_buf[64];
@@ -631,7 +670,7 @@ void render_music_list(void)
             lv_obj_set_style_text_font(lbl_sz, &lv_font_montserrat_14_latin1, 0);
             lv_obj_set_style_text_color(lbl_sz, lv_color_hex(pal->text_muted), 0);
 
-            /* Botões de Ação (Play e Delete) */
+            /* Botões de Ação (Play/Pause e Delete) */
             lv_obj_t *actions_row = lv_obj_create(row);
             lv_obj_set_size(actions_row, lv_pct(32), lv_pct(100));
             lv_obj_set_style_bg_opa(actions_row, LV_OPA_TRANSP, 0);
@@ -642,7 +681,7 @@ void render_music_list(void)
             lv_obj_set_flex_flow(actions_row, LV_FLEX_FLOW_ROW);
             lv_obj_set_flex_align(actions_row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-            /* Botao Play */
+            /* Botao Play / Pause */
             lv_obj_t *btn_p = lv_button_create(actions_row);
             lv_obj_set_size(btn_p, 40, 36);
             lv_obj_set_style_bg_color(btn_p, lv_color_hex(pal->accent), 0);
@@ -650,7 +689,7 @@ void render_music_list(void)
             lv_obj_set_style_pad_all(btn_p, 0, 0);
             lv_obj_add_event_cb(btn_p, play_item_cb, LV_EVENT_CLICKED, (void *)(intptr_t)item.playlist_index);
             lv_obj_t *lbl_p = lv_label_create(btn_p);
-            lv_label_set_text(lbl_p, LV_SYMBOL_PLAY);
+            lv_label_set_text(lbl_p, is_playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
             lv_obj_set_style_text_color(lbl_p, lv_color_white(), 0);
             lv_obj_clear_flag(lbl_p, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_center(lbl_p);
@@ -702,6 +741,7 @@ void music_update_timer_cb(lv_timer_t *timer)
             lv_label_set_text(play_toggle_label, LV_SYMBOL_PLAY);
             lv_obj_set_style_bg_color(play_toggle_btn, lv_color_hex(ui_theme_get()->surface_alt), 0);
         }
+        render_music_list();
     }
 
     if (st.state == MUSIC_PLAYER_STATE_PLAYING || st.state == MUSIC_PLAYER_STATE_PAUSED) {
