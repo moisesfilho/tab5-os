@@ -25,7 +25,7 @@ static const char *TAG = "tab5_ui_music";
 
 namespace {
 
-enum class ItemType { PARENT_DIR, DIRECTORY, AUDIO_FILE };
+enum class ItemType { DIRECTORY, AUDIO_FILE };
 
 struct MusicListItem {
     ItemType type;
@@ -433,19 +433,6 @@ void scan_music_directory(void)
         d = opendir(s_current_folder.c_str());
     }
 
-    /* Se não estiver na raiz do SD (/sdcard), adiciona a opção de subir de nível (..) */
-    if (s_current_folder != "/sdcard") {
-        size_t last_slash = s_current_folder.find_last_of('/');
-        std::string parent = "/sdcard";
-        if (last_slash != std::string::npos && last_slash > 0) {
-            parent = s_current_folder.substr(0, last_slash);
-            if (parent.length() < 7) {
-                parent = "/sdcard";
-            }
-        }
-        s_display_items.push_back({ItemType::PARENT_DIR, "..", parent, 0, 0, -1});
-    }
-
     std::vector<MusicListItem> dir_items;
     std::vector<MusicListItem> file_items;
 
@@ -574,28 +561,7 @@ void render_music_list(void)
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-        if (item.type == ItemType::PARENT_DIR) {
-            /* Linha compacta com ícone para subir nível */
-            lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface_alt), 0);
-            lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
-            lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_add_event_cb(row, folder_click_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
-
-            lv_obj_t *info_col = lv_obj_create(row);
-            lv_obj_set_size(info_col, lv_pct(100), lv_pct(100));
-            lv_obj_set_style_bg_opa(info_col, LV_OPA_TRANSP, 0);
-            lv_obj_set_style_border_width(info_col, 0, 0);
-            lv_obj_set_style_pad_all(info_col, 0, 0);
-            lv_obj_clear_flag(info_col, LV_OBJ_FLAG_SCROLLABLE);
-            lv_obj_clear_flag(info_col, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_set_flex_flow(info_col, LV_FLEX_FLOW_ROW);
-            lv_obj_set_flex_align(info_col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-            lv_obj_t *lbl_back = lv_label_create(info_col);
-            lv_label_set_text(lbl_back, LV_SYMBOL_LEFT "  ..");
-            lv_obj_set_style_text_font(lbl_back, &lv_font_montserrat_14_latin1, 0);
-            lv_obj_set_style_text_color(lbl_back, lv_color_hex(pal->accent), 0);
-        } else if (item.type == ItemType::DIRECTORY) {
+        if (item.type == ItemType::DIRECTORY) {
             /* Linha de Subpasta */
             lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface), 0);
             lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
