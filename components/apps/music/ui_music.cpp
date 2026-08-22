@@ -25,6 +25,17 @@ static const char *TAG = "tab5_ui_music";
 
 namespace {
 
+enum class ItemType { PARENT_DIR, DIRECTORY, AUDIO_FILE };
+
+struct MusicListItem {
+    ItemType type;
+    std::string name;
+    std::string fullpath;
+    size_t size_bytes;
+    time_t mtime;
+    int playlist_index; /* -1 para pastas; >= 0 para arquivos de áudio */
+};
+
 struct MusicFileItem {
     std::string filename;
     std::string fullpath;
@@ -79,6 +90,8 @@ lv_obj_t *empty_label = nullptr;
 lv_obj_t *confirm_modal = nullptr;
 std::string s_file_to_delete;
 
+std::string s_current_folder = "/sdcard/musica";
+std::vector<MusicListItem> s_display_items;
 std::vector<MusicFileItem> s_playlist;
 int s_current_track_index = -1;
 lv_timer_t *s_update_timer = nullptr;
@@ -90,6 +103,7 @@ void render_music_list(void);
 void show_delete_modal(const std::string &filepath, const std::string &filename);
 void hide_delete_modal(void);
 void play_track_at_index(int index);
+void folder_click_cb(lv_event_t *event);
 
 void format_time_mmss(uint32_t sec, char *buf, size_t buf_len)
 {
@@ -243,8 +257,21 @@ void play_track_at_index(int index)
 
 void play_item_cb(lv_event_t *event)
 {
-    int index = (int)(intptr_t)lv_event_get_user_data(event);
-    play_track_at_index(index);
+    int pl_index = (int)(intptr_t)lv_event_get_user_data(event);
+    play_track_at_index(pl_index);
+}
+
+void folder_click_cb(lv_event_t *event)
+{
+    int item_idx = (int)(intptr_t)lv_event_get_user_data(event);
+    if (item_idx >= 0 && item_idx < (int)s_display_items.size()) {
+        s_current_folder = s_display_items[item_idx].fullpath;
+        scan_music_directory();
+        render_music_list();
+        if (list_container != nullptr) {
+            lv_obj_scroll_to_y(list_container, 0, LV_ANIM_OFF);
+        }
+    }
 }
 
 void vol_slider_cb(lv_event_t *event)
@@ -259,9 +286,12 @@ void vol_slider_cb(lv_event_t *event)
 
 void delete_item_cb(lv_event_t *event)
 {
-    int index = (int)(intptr_t)lv_event_get_user_data(event);
-    if (index >= 0 && index < (int)s_playlist.size()) {
-        show_delete_modal(s_playlist[index].fullpath, s_playlist[index].filename);
+    int item_idx = (int)(intptr_t)lv_event_get_user_data(event);
+    if (item_idx >= 0 && item_idx < (int)s_display_items.size()) {
+        const auto &item = s_display_items[item_idx];
+        if (item.type == ItemType::AUDIO_FILE) {
+            show_delete_modal(item.fullpath, item.name);
+        }
     }
 }
 
@@ -365,61 +395,97 @@ void hide_delete_modal(void)
 
 void scan_music_directory(void)
 {
+    s_display_items.clear();
     s_playlist.clear();
-    const char *dirs[] = {"/sdcard/musica", "/sdcard", nullptr};
 
-    for (int idx = 0; dirs[idx] != nullptr; ++idx) {
-        const char *dir_path = dirs[idx];
-        DIR *d = opendir(dir_path);
-        if (!d && strcmp(dir_path, "/sdcard/musica") == 0) {
-            mkdir(dir_path, 0755);
-            d = opendir(dir_path);
-        }
-
-        if (d) {
-            struct dirent *entry;
-            while ((entry = readdir(d)) != nullptr) {
-                if (entry->d_type == DT_REG || entry->d_type == DT_UNKNOWN) {
-                    const char *dot = strrchr(entry->d_name, '.');
-                    if (dot && (strcasecmp(dot, ".mp3") == 0 || strcasecmp(dot, ".wav") == 0)) {
-                        std::string fullpath = std::string(dir_path);
-                        if (fullpath.back() != '/') {
-                            fullpath += "/";
-                        }
-                        fullpath += entry->d_name;
-
-                        /* Evita duplicatas por nome e caminho */
-                        bool exists = false;
-                        for (const auto &it : s_playlist) {
-                            if (strcasecmp(it.filename.c_str(), entry->d_name) == 0 || it.fullpath == fullpath) {
-                                exists = true;
-                                break;
-                            }
-                        }
-                        if (!exists) {
-                            struct stat st;
-                            size_t sz = 0;
-                            time_t mt = 0;
-                            if (stat(fullpath.c_str(), &st) == 0) {
-                                sz = st.st_size;
-                                mt = st.st_mtime;
-                            }
-                            s_playlist.push_back({entry->d_name, fullpath, sz, mt});
-                        }
-                    }
-                }
-            }
-            closedir(d);
-        }
+    if (s_current_folder.empty()) {
+        s_current_folder = "/sdcard/musica";
     }
 
-    /* Ordena alfabeticamente */
-    std::sort(s_playlist.begin(), s_playlist.end(),
-              [](const MusicFileItem &a, const MusicFileItem &b) { return a.filename < b.filename; });
+    DIR *d = opendir(s_current_folder.c_str());
+    if (!d && s_current_folder == "/sdcard/musica") {
+        mkdir(s_current_folder.c_str(), 0755);
+        d = opendir(s_current_folder.c_str());
+    }
 
-    ESP_LOGI(TAG, "scan_music_directory encontrou %zu musicas unicas", s_playlist.size());
+    /* Se não estiver na raiz do SD (/sdcard), adiciona a opção de subir de nível (..) */
+    if (s_current_folder != "/sdcard") {
+        size_t last_slash = s_current_folder.find_last_of('/');
+        std::string parent = "/sdcard";
+        if (last_slash != std::string::npos && last_slash > 0) {
+            parent = s_current_folder.substr(0, last_slash);
+            if (parent.length() < 7) {
+                parent = "/sdcard";
+            }
+        }
+        s_display_items.push_back({ItemType::PARENT_DIR, "..", parent, 0, 0, -1});
+    }
 
-    /* Atualiza indice da musica ativa se existir */
+    std::vector<MusicListItem> dir_items;
+    std::vector<MusicListItem> file_items;
+
+    if (d) {
+        struct dirent *entry;
+        while ((entry = readdir(d)) != nullptr) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            if (entry->d_name[0] == '.') {
+                continue; /* Arquivos ou pastas ocultas */
+            }
+
+            std::string fullpath = s_current_folder;
+            if (fullpath.back() != '/') {
+                fullpath += "/";
+            }
+            fullpath += entry->d_name;
+
+            struct stat st;
+            bool is_dir = false;
+            size_t sz = 0;
+            time_t mt = 0;
+            if (stat(fullpath.c_str(), &st) == 0) {
+                is_dir = S_ISDIR(st.st_mode);
+                sz = st.st_size;
+                mt = st.st_mtime;
+            } else if (entry->d_type == DT_DIR) {
+                is_dir = true;
+            }
+
+            if (is_dir) {
+                dir_items.push_back({ItemType::DIRECTORY, entry->d_name, fullpath, 0, mt, -1});
+            } else {
+                const char *dot = strrchr(entry->d_name, '.');
+                if (dot && (strcasecmp(dot, ".mp3") == 0 || strcasecmp(dot, ".wav") == 0)) {
+                    file_items.push_back({ItemType::AUDIO_FILE, entry->d_name, fullpath, sz, mt, -1});
+                }
+            }
+        }
+        closedir(d);
+    }
+
+    /* Ordena pastas e arquivos alfabeticamente */
+    std::sort(dir_items.begin(), dir_items.end(),
+              [](const MusicListItem &a, const MusicListItem &b) { return a.name < b.name; });
+    std::sort(file_items.begin(), file_items.end(),
+              [](const MusicListItem &a, const MusicListItem &b) { return a.name < b.name; });
+
+    /* Constrói a lista completa de exibição */
+    for (const auto &dir : dir_items) {
+        s_display_items.push_back(dir);
+    }
+
+    for (auto &file : file_items) {
+        int pl_idx = (int)s_playlist.size();
+        file.playlist_index = pl_idx;
+        s_playlist.push_back({file.name, file.fullpath, file.size_bytes, file.mtime});
+        s_display_items.push_back(file);
+    }
+
+    ESP_LOGI(TAG, "scan_music_directory em '%s': %zu pastas, %zu musicas", s_current_folder.c_str(), dir_items.size(),
+             s_playlist.size());
+
+    /* Atualiza índice da música ativa na pasta atual */
     s_current_track_index = -1;
     if (!s_active_file.empty()) {
         for (size_t i = 0; i < s_playlist.size(); ++i) {
@@ -441,25 +507,31 @@ void render_music_list(void)
 
     const ui_palette_t *pal = ui_theme_get();
 
-    char count_buf[64];
-    snprintf(count_buf, sizeof(count_buf), "Músicas Salvas (%zu)", s_playlist.size());
+    /* Nome legível da pasta */
+    const char *folder_display = s_current_folder.c_str();
+    if (s_current_folder == "/sdcard/musica") {
+        folder_display = "Músicas (musica/)";
+    } else if (s_current_folder == "/sdcard") {
+        folder_display = "Raiz (sdcard/)";
+    }
+
+    char count_buf[96];
+    snprintf(count_buf, sizeof(count_buf), LV_SYMBOL_DIRECTORY " %s (%zu)", folder_display, s_playlist.size());
     lv_label_set_text(list_title_label, count_buf);
 
-    if (s_playlist.empty()) {
+    if (s_display_items.empty()) {
         empty_label = lv_label_create(list_container);
-        lv_label_set_text(empty_label, "Nenhuma música em /sdcard/musica/\n(Copie arquivos .mp3 ou .wav)");
+        lv_label_set_text(empty_label, "Nenhuma música ou pasta encontrada\n(Copie arquivos .mp3 ou .wav)");
         lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_14_latin1, 0);
         lv_obj_set_style_text_color(empty_label, lv_color_hex(pal->text_muted), 0);
         lv_obj_set_style_pad_all(empty_label, 12, 0);
         return;
     }
 
-    for (size_t i = 0; i < s_playlist.size(); ++i) {
-        const auto &item = s_playlist[i];
+    for (size_t i = 0; i < s_display_items.size(); ++i) {
+        const auto &item = s_display_items[i];
         lv_obj_t *row = lv_obj_create(list_container);
         lv_obj_set_size(row, lv_pct(100), 52);
-        lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface), 0);
-        lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_set_style_radius(row, 8, 0);
         lv_obj_set_style_pad_hor(row, 10, 0);
@@ -468,73 +540,134 @@ void render_music_list(void)
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-        /* Torna toda a linha clicavel para iniciar reproducao */
-        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(row, play_item_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        if (item.type == ItemType::PARENT_DIR) {
+            /* Linha para Subir de Nível (..) */
+            lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface_alt), 0);
+            lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
+            lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(row, folder_click_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
-        /* Icone e Nome */
-        lv_obj_t *info_col = lv_obj_create(row);
-        lv_obj_set_size(info_col, lv_pct(65), lv_pct(100));
-        lv_obj_set_style_bg_opa(info_col, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(info_col, 0, 0);
-        lv_obj_set_style_pad_all(info_col, 0, 0);
-        lv_obj_clear_flag(info_col, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_clear_flag(info_col, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_flex_flow(info_col, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(info_col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
+            lv_obj_t *info_col = lv_obj_create(row);
+            lv_obj_set_size(info_col, lv_pct(100), lv_pct(100));
+            lv_obj_set_style_bg_opa(info_col, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(info_col, 0, 0);
+            lv_obj_set_style_pad_all(info_col, 0, 0);
+            lv_obj_clear_flag(info_col, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_clear_flag(info_col, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_flex_flow(info_col, LV_FLEX_FLOW_ROW);
+            lv_obj_set_flex_align(info_col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-        lv_obj_t *lbl_name = lv_label_create(info_col);
-        char name_buf[128];
-        snprintf(name_buf, sizeof(name_buf), LV_SYMBOL_AUDIO " %s", item.filename.c_str());
-        lv_label_set_text(lbl_name, name_buf);
-        lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(lbl_name, lv_pct(100));
-        lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_14_latin1, 0);
-        lv_obj_set_style_text_color(lbl_name, lv_color_hex(pal->text), 0);
+            lv_obj_t *lbl_back = lv_label_create(info_col);
+            lv_label_set_text(lbl_back, LV_SYMBOL_LEFT "  .. (Subir Pasta / Voltar)");
+            lv_obj_set_style_text_font(lbl_back, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_color(lbl_back, lv_color_hex(pal->accent), 0);
+        } else if (item.type == ItemType::DIRECTORY) {
+            /* Linha de Subpasta */
+            lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface), 0);
+            lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
+            lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(row, folder_click_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
-        lv_obj_t *lbl_sz = lv_label_create(info_col);
-        char sz_buf[64];
-        format_file_size(item.size_bytes, sz_buf, sizeof(sz_buf));
-        lv_label_set_text(lbl_sz, sz_buf);
-        lv_obj_set_style_text_font(lbl_sz, &lv_font_montserrat_14_latin1, 0);
-        lv_obj_set_style_text_color(lbl_sz, lv_color_hex(pal->text_muted), 0);
+            lv_obj_t *info_col = lv_obj_create(row);
+            lv_obj_set_size(info_col, lv_pct(85), lv_pct(100));
+            lv_obj_set_style_bg_opa(info_col, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(info_col, 0, 0);
+            lv_obj_set_style_pad_all(info_col, 0, 0);
+            lv_obj_clear_flag(info_col, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_clear_flag(info_col, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_flex_flow(info_col, LV_FLEX_FLOW_COLUMN);
+            lv_obj_set_flex_align(info_col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
 
-        /* Botoes de Acao (Play e Delete) */
-        lv_obj_t *actions_row = lv_obj_create(row);
-        lv_obj_set_size(actions_row, lv_pct(32), lv_pct(100));
-        lv_obj_set_style_bg_opa(actions_row, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(actions_row, 0, 0);
-        lv_obj_set_style_pad_all(actions_row, 0, 0);
-        lv_obj_clear_flag(actions_row, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_clear_flag(actions_row, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_flex_flow(actions_row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(actions_row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+            lv_obj_t *lbl_name = lv_label_create(info_col);
+            char name_buf[128];
+            snprintf(name_buf, sizeof(name_buf), LV_SYMBOL_DIRECTORY " %s", item.name.c_str());
+            lv_label_set_text(lbl_name, name_buf);
+            lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_DOT);
+            lv_obj_set_width(lbl_name, lv_pct(100));
+            lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_color(lbl_name, lv_color_hex(pal->text), 0);
 
-        /* Botao Play */
-        lv_obj_t *btn_p = lv_button_create(actions_row);
-        lv_obj_set_size(btn_p, 40, 36);
-        lv_obj_set_style_bg_color(btn_p, lv_color_hex(pal->accent), 0);
-        lv_obj_set_style_radius(btn_p, 6, 0);
-        lv_obj_set_style_pad_all(btn_p, 0, 0);
-        lv_obj_add_event_cb(btn_p, play_item_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
-        lv_obj_t *lbl_p = lv_label_create(btn_p);
-        lv_label_set_text(lbl_p, LV_SYMBOL_PLAY);
-        lv_obj_set_style_text_color(lbl_p, lv_color_white(), 0);
-        lv_obj_clear_flag(lbl_p, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_center(lbl_p);
+            lv_obj_t *lbl_sub = lv_label_create(info_col);
+            lv_label_set_text(lbl_sub, "Pasta de músicas");
+            lv_obj_set_style_text_font(lbl_sub, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_color(lbl_sub, lv_color_hex(pal->text_muted), 0);
 
-        /* Botao Excluir */
-        lv_obj_t *btn_del = lv_button_create(actions_row);
-        lv_obj_set_size(btn_del, 40, 36);
-        lv_obj_set_style_bg_color(btn_del, lv_color_hex(pal->surface_alt), 0);
-        lv_obj_set_style_radius(btn_del, 6, 0);
-        lv_obj_set_style_pad_all(btn_del, 0, 0);
-        lv_obj_add_event_cb(btn_del, delete_item_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
-        lv_obj_t *lbl_del = lv_label_create(btn_del);
-        lv_label_set_text(lbl_del, LV_SYMBOL_TRASH);
-        lv_obj_set_style_text_color(lbl_del, lv_color_hex(0xE53935), 0);
-        lv_obj_clear_flag(lbl_del, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_center(lbl_del);
+            /* Ícone de Seta para Entrar */
+            lv_obj_t *lbl_arrow = lv_label_create(row);
+            lv_label_set_text(lbl_arrow, LV_SYMBOL_RIGHT);
+            lv_obj_set_style_text_color(lbl_arrow, lv_color_hex(pal->text_muted), 0);
+            lv_obj_clear_flag(lbl_arrow, LV_OBJ_FLAG_CLICKABLE);
+        } else {
+            /* Linha de Arquivo de Áudio */
+            lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface), 0);
+            lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
+            lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(row, play_item_cb, LV_EVENT_CLICKED, (void *)(intptr_t)item.playlist_index);
+
+            /* Ícone e Nome */
+            lv_obj_t *info_col = lv_obj_create(row);
+            lv_obj_set_size(info_col, lv_pct(65), lv_pct(100));
+            lv_obj_set_style_bg_opa(info_col, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(info_col, 0, 0);
+            lv_obj_set_style_pad_all(info_col, 0, 0);
+            lv_obj_clear_flag(info_col, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_clear_flag(info_col, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_flex_flow(info_col, LV_FLEX_FLOW_COLUMN);
+            lv_obj_set_flex_align(info_col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
+
+            lv_obj_t *lbl_name = lv_label_create(info_col);
+            char name_buf[128];
+            snprintf(name_buf, sizeof(name_buf), LV_SYMBOL_AUDIO " %s", item.name.c_str());
+            lv_label_set_text(lbl_name, name_buf);
+            lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_DOT);
+            lv_obj_set_width(lbl_name, lv_pct(100));
+            lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_color(lbl_name, lv_color_hex(pal->text), 0);
+
+            lv_obj_t *lbl_sz = lv_label_create(info_col);
+            char sz_buf[64];
+            format_file_size(item.size_bytes, sz_buf, sizeof(sz_buf));
+            lv_label_set_text(lbl_sz, sz_buf);
+            lv_obj_set_style_text_font(lbl_sz, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_color(lbl_sz, lv_color_hex(pal->text_muted), 0);
+
+            /* Botões de Ação (Play e Delete) */
+            lv_obj_t *actions_row = lv_obj_create(row);
+            lv_obj_set_size(actions_row, lv_pct(32), lv_pct(100));
+            lv_obj_set_style_bg_opa(actions_row, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(actions_row, 0, 0);
+            lv_obj_set_style_pad_all(actions_row, 0, 0);
+            lv_obj_clear_flag(actions_row, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_clear_flag(actions_row, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_flex_flow(actions_row, LV_FLEX_FLOW_ROW);
+            lv_obj_set_flex_align(actions_row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+            /* Botao Play */
+            lv_obj_t *btn_p = lv_button_create(actions_row);
+            lv_obj_set_size(btn_p, 40, 36);
+            lv_obj_set_style_bg_color(btn_p, lv_color_hex(pal->accent), 0);
+            lv_obj_set_style_radius(btn_p, 6, 0);
+            lv_obj_set_style_pad_all(btn_p, 0, 0);
+            lv_obj_add_event_cb(btn_p, play_item_cb, LV_EVENT_CLICKED, (void *)(intptr_t)item.playlist_index);
+            lv_obj_t *lbl_p = lv_label_create(btn_p);
+            lv_label_set_text(lbl_p, LV_SYMBOL_PLAY);
+            lv_obj_set_style_text_color(lbl_p, lv_color_white(), 0);
+            lv_obj_clear_flag(lbl_p, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_center(lbl_p);
+
+            /* Botao Excluir */
+            lv_obj_t *btn_del = lv_button_create(actions_row);
+            lv_obj_set_size(btn_del, 40, 36);
+            lv_obj_set_style_bg_color(btn_del, lv_color_hex(pal->surface_alt), 0);
+            lv_obj_set_style_radius(btn_del, 6, 0);
+            lv_obj_set_style_pad_all(btn_del, 0, 0);
+            lv_obj_add_event_cb(btn_del, delete_item_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+            lv_obj_t *lbl_del = lv_label_create(btn_del);
+            lv_label_set_text(lbl_del, LV_SYMBOL_TRASH);
+            lv_obj_set_style_text_color(lbl_del, lv_color_hex(0xE53935), 0);
+            lv_obj_clear_flag(lbl_del, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_center(lbl_del);
+        }
     }
 }
 
@@ -844,33 +977,32 @@ void ui_music_open_file(const char *filepath)
     if (filepath == nullptr) {
         return;
     }
+
+    std::string path_str = filepath;
+    size_t last_slash = path_str.find_last_of('/');
+    if (last_slash != std::string::npos && last_slash > 0) {
+        s_current_folder = path_str.substr(0, last_slash);
+    } else {
+        s_current_folder = "/sdcard/musica";
+    }
+
     ui_music_on_open();
     s_active_file = filepath;
 
-    bool found = false;
     for (size_t i = 0; i < s_playlist.size(); ++i) {
         if (s_playlist[i].fullpath == filepath) {
             s_current_track_index = (int)i;
-            found = true;
-            break;
+            play_track_at_index((int)i);
+            return;
         }
-    }
-    if (!found) {
-        const char *slash = strrchr(filepath, '/');
-        const char *name = slash ? (slash + 1) : filepath;
-        struct stat st;
-        size_t sz = 0;
-        time_t mt = 0;
-        if (stat(filepath, &st) == 0) {
-            sz = st.st_size;
-            mt = st.st_mtime;
-        }
-        s_playlist.push_back({name, filepath, sz, mt});
-        s_current_track_index = (int)s_playlist.size() - 1;
-        render_music_list();
     }
 
-    play_track_at_index(s_current_track_index);
+    const char *slash = strrchr(filepath, '/');
+    const char *name = slash ? (slash + 1) : filepath;
+    music_player_start(filepath);
+    char buf[128];
+    snprintf(buf, sizeof(buf), "Tocando: %s", name);
+    lv_label_set_text(play_file_label, buf);
 }
 
 void ui_music_refresh_theme(void)
