@@ -301,6 +301,9 @@ void play_task(void *param)
         return;
     }
 
+    esp_codec_dev_set_out_mute(s_spk_dev, false);
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, true);
+
     uint8_t *play_buf = (uint8_t *)heap_caps_malloc(AUDIO_BUFFER_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!play_buf) {
         play_buf = (uint8_t *)malloc(AUDIO_BUFFER_SIZE);
@@ -308,6 +311,8 @@ void play_task(void *param)
 
     if (!play_buf) {
         ESP_LOGE(TAG, "Falha ao alocar buffer de reproducao");
+        esp_codec_dev_set_out_mute(s_spk_dev, true);
+        bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
         esp_codec_dev_close(s_spk_dev);
         fclose(fp);
         xSemaphoreTake(s_audio_mutex, portMAX_DELAY);
@@ -353,7 +358,9 @@ void play_task(void *param)
     }
 
     free(play_buf);
+    esp_codec_dev_set_out_mute(s_spk_dev, true);
     esp_codec_dev_close(s_spk_dev);
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
     fclose(fp);
 
     ESP_LOGI(TAG, "Reproducao finalizada com sucesso: %u bytes", (unsigned)bytes_played);
@@ -391,12 +398,14 @@ esp_err_t audio_recorder_init(void)
     if (s_spk_dev == nullptr) {
         s_spk_dev = bsp_audio_codec_speaker_init();
         if (s_spk_dev) {
+            esp_codec_dev_set_out_mute(s_spk_dev, true);
             esp_codec_dev_set_out_vol(s_spk_dev, s_current_volume);
             ESP_LOGI(TAG, "Codec de speaker ES8388 inicializado");
         } else {
             ESP_LOGW(TAG, "Nao foi possivel inicializar codec de speaker");
         }
     }
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
 
     return ESP_OK;
 }
@@ -542,6 +551,11 @@ esp_err_t audio_recorder_stop_playback(void)
     while (s_task_handle != nullptr) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+
+    if (s_spk_dev != nullptr) {
+        esp_codec_dev_set_out_mute(s_spk_dev, true);
+    }
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
 
     return ESP_OK;
 }

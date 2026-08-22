@@ -149,6 +149,8 @@ bool play_codec_open(play_codec_t *c, uint32_t sample_rate, uint8_t channels, ui
                  (unsigned)codec_channels, (unsigned)bits);
         return false;
     }
+    esp_codec_dev_set_out_mute(c->spk, false);
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, true);
     ESP_LOGI(TAG, "Codec aberto com sucesso: sr=%u, ch=%u, bits=%u", (unsigned)sample_rate, (unsigned)codec_channels,
              (unsigned)bits);
     c->opened = true;
@@ -178,6 +180,10 @@ void play_codec_write(play_codec_t *c, uint8_t *buffer, uint32_t len)
 
 void play_task_exit_failed(void)
 {
+    if (s_spk_dev != nullptr) {
+        esp_codec_dev_set_out_mute(s_spk_dev, true);
+    }
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
     xSemaphoreTake(s_music_mutex, portMAX_DELAY);
     s_status.state = MUSIC_PLAYER_STATE_IDLE;
     s_task_handle = nullptr;
@@ -543,8 +549,10 @@ void music_play_task(void *param)
     }
 
     if (codec.opened) {
+        esp_codec_dev_set_out_mute(s_spk_dev, true);
         esp_codec_dev_close(s_spk_dev);
     }
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
     free(in_buf);
     free(out_buf);
     fclose(fp);
@@ -570,7 +578,7 @@ esp_err_t music_player_init(void)
     }
 
     wifi_storage_mount();
-    bsp_feature_enable(BSP_FEATURE_SPEAKER, true);
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
 
     if (!s_decoders_registered) {
         esp_audio_err_t ret = esp_audio_simple_dec_register_default();
@@ -585,12 +593,14 @@ esp_err_t music_player_init(void)
     if (s_spk_dev == nullptr) {
         s_spk_dev = bsp_audio_codec_speaker_init();
         if (s_spk_dev) {
+            esp_codec_dev_set_out_mute(s_spk_dev, true);
             esp_codec_dev_set_out_vol(s_spk_dev, s_current_volume);
             ESP_LOGI(TAG, "Codec de speaker ES8388 inicializado para player de musica");
         } else {
             ESP_LOGW(TAG, "Nao foi possivel inicializar codec de speaker");
         }
     }
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
 
     ensure_music_dir_exists();
     ESP_LOGI(TAG, "HEAP_DIAG music_init: internal=%zu dma=%zu dma_largest=%zu",
@@ -611,8 +621,6 @@ esp_err_t music_player_start(const char *filepath)
         ESP_LOGE(TAG, "Speaker nao disponivel para reproducao (s_spk_dev=%p)", s_spk_dev);
         return ESP_ERR_NOT_SUPPORTED;
     }
-
-    bsp_feature_enable(BSP_FEATURE_SPEAKER, true);
 
     /* Coexistencia com gravador de voz */
     if (audio_recorder_is_recording()) {
@@ -686,6 +694,11 @@ esp_err_t music_player_stop(void)
     while (s_task_handle != nullptr) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+
+    if (s_spk_dev != nullptr) {
+        esp_codec_dev_set_out_mute(s_spk_dev, true);
+    }
+    bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
 
     return ESP_OK;
 }

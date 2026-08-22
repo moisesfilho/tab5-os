@@ -104,8 +104,8 @@ esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void)
         data_if = bsp_audio_get_codec_itf();
     }
     assert(data_if);
-    /* Enable Feature */
-    BSP_ERROR_CHECK_RETURN_NULL(bsp_feature_enable(BSP_FEATURE_SPEAKER, true));
+    /* Mantem o speaker PA desabilitado durante init para evitar chiado quando ocioso */
+    BSP_ERROR_CHECK_RETURN_NULL(bsp_feature_enable(BSP_FEATURE_SPEAKER, false));
 
     const audio_codec_gpio_if_t *gpio_if = audio_codec_new_gpio();
 
