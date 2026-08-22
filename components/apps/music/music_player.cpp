@@ -514,12 +514,12 @@ void music_play_task(void *param)
                 to_read = data_bytes - bytes_played;
             }
 
-            if (feof(fp)) {
+            if (feof(fp) || ferror(fp)) {
                 break;
             }
 
             size_t rd = fread(in_buf, 1, to_read, fp);
-            if (rd == 0) {
+            if (rd == 0 || ferror(fp)) {
                 break;
             }
 

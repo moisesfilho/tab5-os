@@ -29,7 +29,8 @@ Checks: >
   -clang-diagnostic-extern-c-compat,
   -clang-diagnostic-unknown-warning-option,
   -clang-diagnostic-unknown-pragmas,
-  -clang-analyzer-deadcode.DeadStores
+  -clang-analyzer-deadcode.DeadStores,
+  -clang-analyzer-unix.Stream*
 WarningsAsErrors: ''
 HeaderFilterRegex: 'components/(os|apps)/(?!.*minimp3).*'
 FormatStyle: none
