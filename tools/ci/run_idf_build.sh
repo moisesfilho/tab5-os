@@ -11,7 +11,6 @@ fi
 
 # Fallback: ativa ambiente do ESP-IDF padrão se existir
 if [ -f "$HOME/esp/esp-idf/export.sh" ]; then
-    export IDF_PYTHON_ENV_PATH="${IDF_PYTHON_ENV_PATH:-$HOME/.espressif/python_env_3.12}"
     . "$HOME/esp/esp-idf/export.sh" > /dev/null 2>&1
     idf.py build
     exit 0

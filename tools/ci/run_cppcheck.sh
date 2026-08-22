@@ -17,7 +17,10 @@ if [ ${#FILES[@]} -eq 0 ]; then
     exit 0
 fi
 
+THREADS=$(nproc 2>/dev/null || echo 2)
+
 cppcheck \
+    -j "$THREADS" \
     --enable=warning,performance,portability \
     --suppress=missingIncludeSystem \
     --suppress=syntaxError \

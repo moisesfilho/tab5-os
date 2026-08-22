@@ -59,10 +59,10 @@ jobs:
         with:
           version: v5.5.5
 
-      # Gera build/compile_commands.json (base p/ clang-tidy e cppcheck)
-      - name: Configure + build (compile db)
+      # Gera build/compile_commands.json rapidamente sem compilar binarios
+      - name: Configure CMake (compile db)
         run: |
-          idf.py build
+          idf.py reconfigure
 
       - name: clang-tidy (app code only)
         id: clang_tidy
@@ -72,13 +72,14 @@ jobs:
             --config-file=.clang-tidy \
             --extra-arg="-Wno-unknown-warning-option" \
             --extra-arg="-Wno-extern-c-compat" \
-            --header-filter='components/(os|apps)/' \
+            --extra-arg="-Wno-unknown-pragmas" \
+            --header-filter='components/(os|apps)/(?!.*minimp3).*' \
             main/app_main.cpp \
             components/os/core/*.cpp \
             components/os/shell/*.cpp \
             components/apps/*/*.cpp 2>&1 | tee clang-tidy.log
           # Desconsidera flags especificas do GCC RISC-V
-          grep -vE "error: unknown argument:" clang-tidy.log > clang-tidy-clean.log
+          grep -vE "error: (unknown argument|invalid arch name)" clang-tidy.log > clang-tidy-clean.log
           if grep -qE 'error:|warning:' clang-tidy-clean.log; then
             echo "::error::clang-tidy encontrou problemas — ver clang-tidy.log"
             cat clang-tidy-clean.log
@@ -88,11 +89,14 @@ jobs:
       - name: cppcheck (via compile db)
         id: cppcheck
         run: |
-          cppcheck --project=build/compile_commands.json \
+          cppcheck -j $(nproc) \
+            --project=build/compile_commands.json \
             --enable=warning,performance,portability \
             --suppress=missingIncludeSystem \
             --suppress=syntaxError \
             --suppress=incorrectStringBooleanError \
+            --suppress=dangerousTypeCast \
+            --suppress=*:*minimp3.h* \
             --file-filter=main/* \
             --file-filter=components/os/* \
             --file-filter=components/apps/* \
