@@ -82,6 +82,9 @@ lv_obj_t *vol_value_label = nullptr;
 
 /* Card da Lista de Músicas */
 lv_obj_t *list_card = nullptr;
+lv_obj_t *list_header_row = nullptr;
+lv_obj_t *folder_up_btn = nullptr;
+lv_obj_t *folder_up_label = nullptr;
 lv_obj_t *list_title_label = nullptr;
 lv_obj_t *list_container = nullptr;
 lv_obj_t *empty_label = nullptr;
@@ -104,6 +107,7 @@ void show_delete_modal(const std::string &filepath, const std::string &filename)
 void hide_delete_modal(void);
 void play_track_at_index(int index);
 void folder_click_cb(lv_event_t *event);
+void folder_up_btn_cb(lv_event_t *event);
 
 void format_time_mmss(uint32_t sec, char *buf, size_t buf_len)
 {
@@ -266,6 +270,27 @@ void folder_click_cb(lv_event_t *event)
     int item_idx = (int)(intptr_t)lv_event_get_user_data(event);
     if (item_idx >= 0 && item_idx < (int)s_display_items.size()) {
         s_current_folder = s_display_items[item_idx].fullpath;
+        scan_music_directory();
+        render_music_list();
+        if (list_container != nullptr) {
+            lv_obj_scroll_to_y(list_container, 0, LV_ANIM_OFF);
+        }
+    }
+}
+
+void folder_up_btn_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_current_folder != "/sdcard") {
+        size_t last_slash = s_current_folder.find_last_of('/');
+        std::string parent = "/sdcard";
+        if (last_slash != std::string::npos && last_slash > 0) {
+            parent = s_current_folder.substr(0, last_slash);
+            if (parent.length() < 7) {
+                parent = "/sdcard";
+            }
+        }
+        s_current_folder = parent;
         scan_music_directory();
         render_music_list();
         if (list_container != nullptr) {
@@ -507,6 +532,15 @@ void render_music_list(void)
 
     const ui_palette_t *pal = ui_theme_get();
 
+    /* Atualiza visibilidade do botão de subir pasta no cabeçalho */
+    if (folder_up_btn != nullptr) {
+        if (s_current_folder == "/sdcard") {
+            lv_obj_add_flag(folder_up_btn, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(folder_up_btn, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     /* Nome legível da pasta */
     const char *folder_display = s_current_folder.c_str();
     if (s_current_folder == "/sdcard/musica") {
@@ -541,7 +575,7 @@ void render_music_list(void)
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
         if (item.type == ItemType::PARENT_DIR) {
-            /* Linha para Subir de Nível (..) */
+            /* Linha compacta com ícone para subir nível */
             lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface_alt), 0);
             lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
             lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
@@ -558,7 +592,7 @@ void render_music_list(void)
             lv_obj_set_flex_align(info_col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
             lv_obj_t *lbl_back = lv_label_create(info_col);
-            lv_label_set_text(lbl_back, LV_SYMBOL_LEFT "  .. (Subir Pasta / Voltar)");
+            lv_label_set_text(lbl_back, LV_SYMBOL_LEFT "  ..");
             lv_obj_set_style_text_font(lbl_back, &lv_font_montserrat_14_latin1, 0);
             lv_obj_set_style_text_color(lbl_back, lv_color_hex(pal->accent), 0);
         } else if (item.type == ItemType::DIRECTORY) {
@@ -921,7 +955,7 @@ lv_obj_t *ui_music_create(void)
     lv_obj_set_style_text_font(vol_value_label, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(vol_value_label, lv_color_hex(pal->text_muted), 0);
 
-    /* --- Card da Lista de Músicas --- */
+    /* --- Card da Lista de Músicas e Pastas --- */
     list_card = lv_obj_create(main_container);
     lv_obj_set_style_bg_color(list_card, lv_color_hex(pal->surface), 0);
     lv_obj_set_style_border_color(list_card, lv_color_hex(pal->border), 0);
@@ -931,14 +965,37 @@ lv_obj_t *ui_music_create(void)
     lv_obj_set_flex_flow(list_card, LV_FLEX_FLOW_COLUMN);
     lv_obj_clear_flag(list_card, LV_OBJ_FLAG_SCROLLABLE);
 
-    list_title_label = lv_label_create(list_card);
-    lv_label_set_text(list_title_label, "Músicas Salvas");
+    list_header_row = lv_obj_create(list_card);
+    lv_obj_set_size(list_header_row, lv_pct(100), 38);
+    lv_obj_set_style_bg_opa(list_header_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list_header_row, 0, 0);
+    lv_obj_set_style_pad_all(list_header_row, 0, 0);
+    lv_obj_clear_flag(list_header_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(list_header_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(list_header_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(list_header_row, 8, 0);
+
+    folder_up_btn = lv_button_create(list_header_row);
+    lv_obj_set_size(folder_up_btn, 36, 32);
+    lv_obj_set_style_bg_color(folder_up_btn, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_radius(folder_up_btn, 6, 0);
+    lv_obj_set_style_pad_all(folder_up_btn, 0, 0);
+    lv_obj_add_event_cb(folder_up_btn, folder_up_btn_cb, LV_EVENT_CLICKED, nullptr);
+
+    folder_up_label = lv_label_create(folder_up_btn);
+    lv_label_set_text(folder_up_label, LV_SYMBOL_LEFT);
+    lv_obj_set_style_text_color(folder_up_label, lv_color_hex(pal->accent), 0);
+    lv_obj_center(folder_up_label);
+
+    list_title_label = lv_label_create(list_header_row);
+    lv_label_set_text(list_title_label, "Músicas e Pastas");
+    lv_label_set_long_mode(list_title_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_flex_grow(list_title_label, 1);
     lv_obj_set_style_text_font(list_title_label, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(list_title_label, lv_color_hex(pal->accent), 0);
-    lv_obj_set_style_pad_all(list_title_label, 4, 0);
 
     list_container = lv_obj_create(list_card);
-    lv_obj_set_size(list_container, lv_pct(100), lv_pct(90));
+    lv_obj_set_size(list_container, lv_pct(100), lv_pct(88));
     lv_obj_set_style_bg_opa(list_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list_container, 0, 0);
     lv_obj_set_style_pad_all(list_container, 4, 0);
@@ -1051,6 +1108,10 @@ void ui_music_refresh_theme(void)
     if (list_card != nullptr) {
         lv_obj_set_style_bg_color(list_card, lv_color_hex(pal->surface), 0);
         lv_obj_set_style_border_color(list_card, lv_color_hex(pal->border), 0);
+        if (folder_up_btn != nullptr) {
+            lv_obj_set_style_bg_color(folder_up_btn, lv_color_hex(pal->surface_alt), 0);
+            lv_obj_set_style_text_color(folder_up_label, lv_color_hex(pal->accent), 0);
+        }
         lv_obj_set_style_text_color(list_title_label, lv_color_hex(pal->accent), 0);
     }
 
