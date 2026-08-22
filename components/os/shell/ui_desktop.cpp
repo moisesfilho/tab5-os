@@ -5,10 +5,56 @@
 #include "ui_bar.h"
 #include "ui_font.h"
 
+#include <climits>
+
 namespace {
 
 lv_obj_t *desktop_scr = nullptr;
 lv_obj_t *grid_cont = nullptr;
+
+/* Centraliza a label do icone usando a caixa real dos glifos (nao a caixa
+ * do widget). Sem isso, simbolos e textos com metricas diferentes (ex.: ">_"
+ * ou LV_SYMBOL_AUDIO) aparecem deslocados dentro do botao. */
+static void center_icon_label_optically(lv_obj_t *icon_label)
+{
+    const lv_font_t *font = lv_obj_get_style_text_font(icon_label, LV_PART_MAIN);
+    if (font == nullptr || font->line_height <= 0) {
+        lv_obj_center(icon_label);
+        return;
+    }
+
+    const char *txt = lv_label_get_text(icon_label);
+    if (txt == nullptr || txt[0] == '\0') {
+        lv_obj_center(icon_label);
+        return;
+    }
+
+    int32_t min_top = INT32_MAX;
+    int32_t max_bottom = INT32_MIN;
+    for (const uint8_t *p = (const uint8_t *)txt; *p != '\0'; p++) {
+        lv_font_glyph_dsc_t gdsc;
+        if (!lv_font_get_glyph_dsc(font, &gdsc, *p, 0)) {
+            continue;
+        }
+        int32_t top = font->line_height - font->base_line - gdsc.box_h - gdsc.ofs_y;
+        int32_t bottom = top + gdsc.box_h;
+        if (top < min_top) {
+            min_top = top;
+        }
+        if (bottom > max_bottom) {
+            max_bottom = bottom;
+        }
+    }
+
+    if (min_top == INT32_MAX) {
+        lv_obj_center(icon_label);
+        return;
+    }
+
+    int32_t glyph_center = (min_top + max_bottom) / 2;
+    int32_t y_comp = font->line_height / 2 - glyph_center;
+    lv_obj_align(icon_label, LV_ALIGN_CENTER, 0, y_comp);
+}
 
 static void update_grid_padding(lv_obj_t *cont)
 {
@@ -156,7 +202,7 @@ void ui_desktop_create(lv_obj_t *scr)
             lv_obj_t *icon_label = lv_label_create(icon_box);
             lv_label_set_text(icon_label, app.icon_symbol != nullptr ? app.icon_symbol : "");
             lv_obj_set_style_text_font(icon_label, &lv_font_montserrat_28_latin1, 0);
-            lv_obj_center(icon_label);
+            center_icon_label_optically(icon_label);
         }
 
         lv_obj_t *label = lv_label_create(tile);

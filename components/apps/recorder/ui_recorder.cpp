@@ -765,6 +765,79 @@ void ui_recorder_open_file(const char *filepath)
     audio_recorder_start_playback(filepath);
 }
 
+static void ui_recorder_build_icon(lv_obj_t *icon_box)
+{
+    const ui_palette_t *pal = ui_theme_get();
+    lv_obj_clear_flag(icon_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(icon_box, LV_SCROLLBAR_MODE_OFF);
+
+    /* Capsula do microfone */
+    lv_obj_t *mic_capsule = lv_obj_create(icon_box);
+    lv_obj_set_size(mic_capsule, 18, 26);
+    lv_obj_align(mic_capsule, LV_ALIGN_CENTER, 0, -3);
+    lv_obj_set_style_radius(mic_capsule, 9, 0);
+    lv_obj_set_style_border_width(mic_capsule, 0, 0);
+    lv_obj_set_style_pad_all(mic_capsule, 0, 0);
+    lv_obj_set_style_bg_color(mic_capsule, lv_color_hex(pal->accent), 0);
+    lv_obj_clear_flag(mic_capsule, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(mic_capsule, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(mic_capsule, LV_SCROLLBAR_MODE_OFF);
+
+    /* Ranhuras da capsula */
+    for (int i = 0; i < 3; i++) {
+        lv_obj_t *grill = lv_obj_create(mic_capsule);
+        lv_obj_set_size(grill, 10, 2);
+        lv_obj_align(grill, LV_ALIGN_CENTER, 0, -7 + i * 5);
+        lv_obj_set_style_radius(grill, 1, 0);
+        lv_obj_set_style_border_width(grill, 0, 0);
+        lv_obj_set_style_bg_color(grill, lv_color_hex(pal->surface), 0);
+        lv_obj_clear_flag(grill, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_clear_flag(grill, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scrollbar_mode(grill, LV_SCROLLBAR_MODE_OFF);
+    }
+
+    /* Suporte em arco do microfone */
+    lv_obj_t *mic_stand = lv_obj_create(icon_box);
+    lv_obj_set_size(mic_stand, 28, 10);
+    lv_obj_align(mic_stand, LV_ALIGN_CENTER, 0, 14);
+    lv_obj_set_style_radius(mic_stand, 5, 0);
+    lv_obj_set_style_border_width(mic_stand, 3, 0);
+    lv_obj_set_style_border_side(mic_stand, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_border_color(mic_stand, lv_color_hex(pal->accent), 0);
+    lv_obj_set_style_bg_opa(mic_stand, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(mic_stand, 0, 0);
+    lv_obj_clear_flag(mic_stand, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(mic_stand, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(mic_stand, LV_SCROLLBAR_MODE_OFF);
+}
+
+static void ui_recorder_theme_icon(lv_obj_t *icon_box)
+{
+    const ui_palette_t *pal = ui_theme_get();
+    if (icon_box == nullptr) {
+        return;
+    }
+    uint32_t count = lv_obj_get_child_count(icon_box);
+    for (uint32_t i = 0; i < count; i++) {
+        lv_obj_t *c = lv_obj_get_child(icon_box, i);
+        if (c == nullptr) {
+            continue;
+        }
+        if (lv_obj_get_width(c) == 28) {
+            lv_obj_set_style_border_color(c, lv_color_hex(pal->accent), 0);
+        } else {
+            lv_obj_set_style_bg_color(c, lv_color_hex(pal->accent), 0);
+            uint32_t inner_count = lv_obj_get_child_count(c);
+            for (uint32_t j = 0; j < inner_count; j++) {
+                lv_obj_t *inner = lv_obj_get_child(c, j);
+                if (inner != nullptr) {
+                    lv_obj_set_style_bg_color(inner, lv_color_hex(pal->surface), 0);
+                }
+            }
+        }
+    }
+}
+
 void ui_recorder_refresh_theme(void)
 {
     apply_recorder_theme();
@@ -781,9 +854,9 @@ void ui_recorder_register(void)
     static const app_desc_t s_recorder_desc = {
         .id = "recorder",
         .name = "Gravador",
-        .icon_symbol = LV_SYMBOL_AUDIO,
-        .icon_builder = nullptr,
-        .icon_theme_refresh = nullptr,
+        .icon_symbol = nullptr,
+        .icon_builder = ui_recorder_build_icon,
+        .icon_theme_refresh = ui_recorder_theme_icon,
         .on_launch = ui_shell_open_recorder,
         .file_extensions = s_recorder_extensions,
         .on_open_file = ui_shell_open_recorder_with_file,
