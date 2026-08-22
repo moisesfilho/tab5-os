@@ -61,7 +61,7 @@ lv_obj_t *play_loop_btn = nullptr;
 lv_obj_t *play_loop_label = nullptr;
 
 bool s_repeat_one = false;
-bool s_loop_all = true;
+bool s_loop_all = false;
 
 /* Volume */
 lv_obj_t *vol_row = nullptr;
