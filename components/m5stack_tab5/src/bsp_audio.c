@@ -140,7 +140,27 @@ esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void)
         .codec_if = dev,
         .data_if = data_if,
     };
-    return esp_codec_dev_new(&codec_dev_cfg);
+    esp_codec_dev_handle_t spk_dev = esp_codec_dev_new(&codec_dev_cfg);
+    BSP_NULL_CHECK(spk_dev, NULL);
+
+    /* O es8388_codec_new() deixa o DAC energizado (DACPOWER=0x3C) com o estagio
+     * analogico de saida ligado (LOUT/ROUT) mesmo sem clock I2S. O fone de
+     * ouvido e ligado direto nessas saidas, entao esse estado gera chiado no
+     * fone enquanto ocioso (o alto-falante nao chia porque o PA fica desligado
+     * via BSP_FEATURE_SPEAKER). Abrir e fechar o codec uma vez com um formato
+     * padrao aciona es8388_stop(), que desliga o DAC (DACPOWER=0x00) e mantem o
+     * mute, deixando o ocioso silencioso ate a proxima reproducao. */
+    esp_codec_dev_sample_info_t idle_fs = {
+        .bits_per_sample = 16,
+        .channel = 2,
+        .channel_mask = 0,
+        .sample_rate = 48000,
+        .mclk_multiple = 0,
+    };
+    esp_codec_dev_open(spk_dev, &idle_fs);
+    esp_codec_dev_close(spk_dev);
+
+    return spk_dev;
 }
 
 esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
