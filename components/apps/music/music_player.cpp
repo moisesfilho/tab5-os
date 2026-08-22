@@ -281,10 +281,14 @@ void music_play_task(void *param)
 
             /* Le dados do SD para encher o buffer de entrada */
             if (!eof && data_len < IN_BUFFER_SIZE) {
-                size_t rd = fread(in_buf + data_len, 1, IN_BUFFER_SIZE - data_len, fp);
-                data_len += rd;
-                if (rd == 0) {
+                if (feof(fp)) {
                     eof = true;
+                } else {
+                    size_t rd = fread(in_buf + data_len, 1, IN_BUFFER_SIZE - data_len, fp);
+                    data_len += rd;
+                    if (rd == 0) {
+                        eof = true;
+                    }
                 }
             }
 
@@ -508,6 +512,10 @@ void music_play_task(void *param)
             }
             if (data_bytes > 0 && (data_bytes - bytes_played) < to_read) {
                 to_read = data_bytes - bytes_played;
+            }
+
+            if (feof(fp)) {
+                break;
             }
 
             size_t rd = fread(in_buf, 1, to_read, fp);
