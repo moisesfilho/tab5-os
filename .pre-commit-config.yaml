@@ -6,6 +6,7 @@
 #   - components/rtc_rx8130     (driver RTC de terceiros)
 #   - components/os/fonts/      (fontes geradas pelo conversor LVGL)
 #   - components/apps/music/minimp3.h (decoder MP3 de cabeçalho único)
+#   - components/apps/gallery/tjpgd.c/h (decoder JPEG TJpgDec de terceiros)
 #   - managed_components/       (componentes gerenciados)
 exclude: >
   (?x)^(
@@ -13,6 +14,7 @@ exclude: >
     components/rtc_rx8130/|
     components/os/fonts/|
     components/apps/music/minimp3\.h|
+    components/apps/gallery/tjpgd\.(c|h)|
     managed_components/
   )
 
