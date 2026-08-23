@@ -38,6 +38,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[~]` | **Fase 28** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
 | `[x]` | **Fase 29** | Aplicativo "Música" — Player de Áudio Local (MP3/WAV) | Aplicativo / Mídia | Decoder `esp_audio_codec`, reprodução de `/sdcard/musica/*.mp3|wav`, controles e volume via ES8388 |
 | `[ ]` | **Fase 30** | Testes Unitários Automáticos com Cobertura ≥80% | Qualidade / Testes | Suíte GoogleTest em host nativo, cobertura gcov/lcov com gate ≥80%, job `test` no Quality Gate do CI |
+| `[x]` | **Fase 31** | Otimização de Memória Interna e Robustez do Servidor de Arquivos | Sistema / Memória | Upload HTTP sem erro "Out of DMA memory", `malloc()`/LVGL na PSRAM, reprodução de músicas em subpastas |
 
 
 ---
@@ -1630,6 +1631,53 @@ O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cob
 
 ## 9. Status de Conclusão: `[ ] PLANEJADO`
 - Plano arquitetado e especificado, aguardando início de implementação.
+
+---
+
+# [x] Fase 31: Otimização de Memória Interna e Robustez do Servidor de Arquivos (Upload HTTP) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- A **RAM interna do ESP32-P4 é escassa** (~768 KB) e em grande parte **DMA-capable**, sendo disputada por esp_hosted (Wi-Fi SDIO), áudio I2S, câmera MIPI-CSI e pelos buffers do sdmmc. A **PSRAM de 32 MB (HEX @200 MHz, acessível por GDMA)** é a memória principal efetiva do dispositivo.
+- **Problema 1 — Upload HTTP falhando**: O envio de arquivos pela interface web do app **Servidor** (`http_file_server.cpp`) retornava **HTTP 500 "Out of DMA memory"**. O handler de upload alocava um buffer de **512 B na heap DMA interna** por envio (`heap_caps_aligned_alloc(64, 512, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL)`), que falhava sob pressão da heap interna durante o tráfego de rede (pbufs LWIP + buffers WiFi).
+- **Problema 2 — Músicas em subpastas não tocavam**: Com `MALLOC_ALWAYSINTERNAL=16384` (default), toda alocação pequena de `malloc()` (widgets LVGL, `std::string`) caía na RAM interna. A renderização da lista de 13 faixas da subpasta `AJR/OK ORCHESTRA` consumia ~23 KB internos, deixando `internal=715` bytes livres no momento do play — a **task de reprodução falhava ao alocar o TCB em RAM interna** ("Falha ao criar task de reproducao de musica em PSRAM").
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Buffer de escrita do upload | **Nenhum** (grava direto do `net_buf` PSRAM) | O driver sdmmc já roteia buffers não-DMA/misaligned pelo `dma_aligned_buffer` de 4 KB dedicado que o BSP aloca no mount (`bsp_storage.c`), sem gastar a heap DMA interna |
+| D2 | Política de `malloc()` | `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0` | Todo `malloc()`/LVGL/`std::string` fica na PSRAM; `RESERVE_INTERNAL=32768` preserva RAM interna para TCBs de task, buffers DMA explícitos e `heap_caps` internos |
+| D3 | Buffers estáticos de WiFi/LWIP | `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y` | pbufs e buffers estáticos da stack de rede movidos para PSRAM, aliviando a heap interna também durante streaming/upload |
+
+## 3. Estrutura de Arquivos & Componentes
+
+- **`components/apps/fileserver/http_file_server.cpp`**: Removido o buffer DMA de 512 B por upload (`SD_CHUNK`, `sd_buf`, `aligned_alloc`); a gravação agora é feita em fatias de até 4 KB direto do `net_buf` (PSRAM), com loop de escrita parcial já existente.
+- **`sdkconfig.defaults`**: Adicionados `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0` e `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y`, com comentários explicando a escassez de RAM interna no P4.
+- **Observação**: Alterar `sdkconfig.defaults` exige **apagar o `sdkconfig`** gerado e rebuildar para regenerar a configuração.
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Correção do upload**: Remoção do buffer DMA interno por upload em `upload_handler`; gravação direta do `net_buf` PSRAM confiando no `dma_aligned_buffer` do BSP.
+- [x] **Etapa 2 — Migração de `malloc()` para PSRAM**: `ALWAYSINTERNAL=0` + `TRY_ALLOCATE_WIFI_LWIP=y` no `sdkconfig.defaults`; regeneração do `sdkconfig` e rebuild.
+- [x] **Etapa 3 — Validação em hardware**: Flash via USB-JTAG; upload de `01 - OK Overture.mp3` pela UI sem HTTP 500; reprodução em sequência de 4 faixas da subpasta `AJR/OK ORCHESTRA`; `HEAP_DIAG` com `internal≈128 KB` e `dma≈88 KB` livres (antes `internal=715 B` / `dma=163 B`).
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Desempenho de `malloc()` em PSRAM | PSRAM octal HEX @200 MHz é suficiente para a carga da UI; drivers de hardware usam `heap_caps` explícito e não são afetados |
+| Alocações que não podem usar PSRAM | `RESERVE_INTERNAL=32768` mantém reserva interna para TCBs, DMA e contexto de ISR |
+| Crash LVGL intermitente ao abrir a app Música pela 1ª vez | `use-after-free` latente em `lv_event_mark_deleted`/`render_music_list` (`spec_attr==NULL`); reprodução em 2ª abertura e em série OK — **em investigação** se recorrer |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Upload de arquivos (inclusive `.mp3` grandes, >10 MB) pela UI do Servidor sem erro HTTP 500.
+2. Navegação em pastas com muitas faixas no app Música e reprodução em sequência de subpastas.
+3. `HEAP_DIAG` (fileserver e music_init) mostrando RAM interna saudável (~128 KB livres).
+4. Boot limpo com Wi-Fi, SD e áudio operacionais.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Servidor de Arquivos & Memória**: Upload HTTP robusto e migração efetiva da carga de memória para a PSRAM, corrigindo upload com erro "Out of DMA memory" e reprodução de músicas em subpastas. Sem commit pendente após a validação em hardware.
 
 ---
 

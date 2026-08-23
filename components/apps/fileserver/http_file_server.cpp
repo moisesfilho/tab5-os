@@ -312,7 +312,6 @@ static esp_err_t upload_handler(httpd_req_t *req)
 
     /* Buffer de recepcao de rede na PSRAM (SPIRAM) para liberar heap interna */
     constexpr size_t NET_CHUNK = 4096;
-    constexpr size_t SD_CHUNK = 512;
 
     char *net_buf = static_cast<char *>(heap_caps_malloc(NET_CHUNK, MALLOC_CAP_SPIRAM));
     if (!net_buf) {
@@ -323,21 +322,16 @@ static esp_err_t upload_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    /* Buffer de gravacao dedicado de 512B com alinhamento de 64B em memoria DMA interna.
-     * Quando o ponteiro passado para write() ja eh DMA-capaz e alinhado a 64 bytes,
-     * o driver sdmmc usa o buffer diretamente SEM chamar allocate_dma_buf! */
-    char *sd_buf = static_cast<char *>(heap_caps_aligned_alloc(64, SD_CHUNK, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
-    if (!sd_buf) {
-        free(net_buf);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of DMA memory");
-        return ESP_FAIL;
-    }
+    /* Gravamos direto do net_buf (PSRAM). Nao alocamos buffer DMA proprio:
+     * buffers nao-DMA/misaligned sao roteados pelo driver sdmmc pelo
+     * dma_aligned_buffer de 4KB que o BSP aloca no mount (bsp_storage.c),
+     * sem gastar a heap DMA interna do P4 (escassa, compartilhada com
+     * esp_hosted/audio/camera) durante o upload. */
 
     wifi_storage_mount();
 
     FILE *fp = fopen(fullpath.c_str(), "wb");
     if (!fp) {
-        free(sd_buf);
         free(net_buf);
         ESP_LOGE(TAG, "Falha ao criar arquivo no SD: %s (errno=%d)", fullpath.c_str(), errno);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create file on SD");
@@ -369,15 +363,11 @@ static esp_err_t upload_handler(httpd_req_t *req)
             break;
         }
 
-        /* Copia para sd_buf (buffer DMA alinhado) e grava fatias de ate 512B no SD */
+        /* Grava direto do net_buf em fatias de ate 4096B */
         size_t net_offset = 0;
         while (net_offset < static_cast<size_t>(received)) {
             size_t slice = received - net_offset;
-            if (slice > SD_CHUNK) {
-                slice = SD_CHUNK;
-            }
-            memcpy(sd_buf, net_buf + net_offset, slice);
-            ssize_t wr = write(sd_fd, sd_buf, slice);
+            ssize_t wr = write(sd_fd, net_buf + net_offset, slice);
             if (wr <= 0) {
                 ESP_LOGE(TAG, "Erro de gravacao no SD: %s (errno=%d, offset=%zu)", fullpath.c_str(), errno, net_offset);
                 ret = ESP_FAIL;
@@ -398,7 +388,6 @@ static esp_err_t upload_handler(httpd_req_t *req)
     }
 
     fclose(fp);
-    free(sd_buf);
     free(net_buf);
 
     if (ret != ESP_OK) {

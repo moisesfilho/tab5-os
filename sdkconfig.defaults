@@ -18,6 +18,18 @@ CONFIG_ESP32P4_REV_MIN_100=y
 # PSRAM 32MB (obrigatório: framebuffer do MIPI DPI ~1.8MB nao cabe na RAM interna)
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_USE_MALLOC=y
+# Buffers estaticos de WiFi/LWIP para PSRAM: a heap interna do P4 (DMA-capable)
+# e escassa e durante upload/streaming os pbufs do LWIP esgotavam o bloco DMA
+# (httpd 500 "Out of DMA memory"). Com SPIRAM_USE_MALLOC, alocacoes <16KB
+# (pbufs ~1.5KB) ficam em RAM interna por padrao; essa opcao os move para PSRAM.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# PSRAM e a memoria principal do P4 (32MB HEX @200MHz, GDMA alcanca PSRAM).
+# ALWAYSINTERNAL=0 manda todo malloc()/LVGL/std::string p/ PSRAM, deixando a
+# RAM interna (escassa) livre para TCBs de task, buffers DMA explicitos e
+# heap_caps internos. Sem isso, a lista de musicas da app consome ~23KB internos
+# e a criacao da task de reproducao falha (TCB em RAM interna). RESERVE_INTERNAL
+# ja mantem 32KB internos para alocacoes que nao podem usar PSRAM.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
 
 # Flash real do Tab5: 16MB (default do IDF é 2MB)
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
