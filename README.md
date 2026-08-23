@@ -1,7 +1,7 @@
 # tab5-os
 
 <p>
-  <img src="https://img.shields.io/badge/version-v0.1.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-v0.2.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/platform-ESP32--P4-blue" alt="Platform">
   <img src="https://img.shields.io/badge/ESP--IDF-v5.5.5-blue" alt="ESP-IDF">
@@ -14,10 +14,11 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 
 ## Funcionalidades
 
+- **Aplicativo Gravador de Voz e Player de Áudio** — gravação nativa de voz via microfones integrados com codec ADC ES7210 em formato padrão WAV PCM 16-bit 16 kHz Mono (`/sdcard/gravacoes/REC_YYYYMMDD_HHMMSS.wav`), trava de segurança automática de 5 minutos, reprodutor de áudio com codec DAC ES8388 e barra de progresso em tempo real, listagem cronológica com modal de exclusão e associação direta com arquivos `.wav` e `.pcm`
 - **Aplicativo Câmera & Pipeline V4L2/ISP no ESP32-P4** — captura de fotos e streaming em tempo real na resolução 640×480 diretamente do sensor SC202CS via MIPI-CSI acelerado por hardware, com arquitetura persistente de streaming V4L2 (`VIDIOC_STREAMON`/`VIDIOC_STREAMOFF`), proteção contra estouro de matriz de correção de cores (CCM) e salvamento JPEG assíncrono em task FreeRTOS no cartão SD
 - **Aplicativo Galeria de Fotos** — visualizador de fotos nativo para imagens JPEG gravadas no cartão SD (`/sdcard/photos/`), com decodificador JPEG de alto desempenho (TJpgDec) em buffer PSRAM com renderização em Canvas LVGL 9, navegação de imagens e integração bidirecional com a Câmera e o Gerenciador de Arquivos
-- **Aplicativo Servidor Web de Arquivos (HTTP)** — servidor HTTP integrado para download e compartilhamento de fotos pela rede Wi-Fi local via navegador, com inicialização sob demanda para economia de energia e tela de controle no desktop com status, URL e estatísticas
-- **Área de Trabalho com Grid Responsivo Flexbox** — layout responsivo com fluxo contínuo da esquerda para a direita e de cima para baixo (`LV_FLEX_FLOW_ROW_WRAP`), centralização dinâmica de colunas, alinhamento à esquerda nas quebras de linha e ícones vetoriais estilizados (Câmera 📷, Bloco de Notas 🗒️, Galeria 🖼️, Servidor 💽)
+- **Aplicativo Servidor Web & Painel de Controle (HTTP)** — servidor HTTP embarcado para gerenciamento remoto via navegador web: explorador completo de arquivos e pastas do cartão microSD com download direto e navegação por breadcrumbs, painel de configurações do sistema em tempo real (Wi-Fi com scanner de redes, Bluetooth, controle de brilho, rotação manual/auto IMU, fuso horário, protetor de tela e tema claro/escuro), configuração de modelos para Chat IA (OpenAI/OpenCode Go) e galeria rápida de fotos
+- **Área de Trabalho com Grid Responsivo Flexbox** — layout responsivo com fluxo contínuo da esquerda para a direita e de cima para baixo (`LV_FLEX_FLOW_ROW_WRAP`), centralização dinâmica de colunas, alinhamento à esquerda nas quebras de linha e ícones vetoriais estilizados (Câmera 📷, Bloco de Notas 🗒️, Galeria 🖼️, Servidor 💽, Gravador 🎙️)
 - **Protetor de Tela Anti-Burn-in** — preservação do painel MIPI-DSI contra retenção de imagem (*burn-in*), com tela em fundo 100% preto (`#000000`), relógio digital em destaque (`HH:MM:SS`), data completa em português, versão do SO, reposicionamento aleatório a cada 30 segundos com *bounding box* seguro para todas as 4 orientações, ocultação temporária do cursor do mouse e despertar imediato ao toque na tela, teclado ou mouse
 - **Aplicativo Terminal & Cliente SSH Remoto** — shell de console estilo Linux integrado ao sistema, com prompt interativo (`/sdcard $`), histórico de comandos, suporte aos comandos essenciais (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`) e **Cliente SSH completo** (`ssh [user@]host [-p porta]`) executado em task FreeRTOS assíncrona dedicada com `libssh`, emulação de terminal VT100/xterm, prompt protegido de senha e filtragem robusta de sequências ANSI/OSC
 - **Gerenciador de Bluetooth & Teclado Físico (BLE HID)** — suporte a conexão, pareamento e auto-reconexão com periféricos Bluetooth Low Energy (HOGP), como teclados físicos e mouses/touchpads integrados, com injeção direta de digitação nos aplicativos (ex: Notas e Terminal), ocultação dinâmica do teclado virtual e indicador de conexão na barra superior
@@ -95,31 +96,29 @@ pre-commit run --all-files   # roda todos os hooks em todos os arquivos
 ```
 tab5-os/
 ├── main/
-│   └── app_main.cpp          # Boot: display, RTC, IMU, UI
+│   └── app_main.cpp          # Boot: display, RTC, IMU, UI, registro de subsistemas
 ├── components/
-│   ├── app/                  # UI + IMU + Terminal + WiFi/BT + Camera + Galeria + Servidor
-│   │   ├── ui_desktop.cpp    # Area de trabalho com grid responsivo e icones estilizados
-│   │   ├── ui_bar.cpp        # Barra superior, menu de configuracoes, relogio
-│   │   ├── ui_camera.cpp     # Aplicativo Camera com preview e obturador
-│   │   ├── camera_mgr.cpp    # Gerenciador V4L2/ISP e gravacao assincrona de fotos
-│   │   ├── ui_gallery.cpp    # Visualizador de fotos da Galeria
-│   │   ├── tjpgd.c           # Descompressor JPEG acelerado (TJpgDec)
-│   │   ├── ui_fileserver.cpp # Aplicativo Servidor Web HTTP
-│   │   ├── http_file_server.cpp # Servidor HTTP embarcado para download de fotos
-│   │   ├── ui_screensaver.cpp # Protetor de tela anti-burn-in com relogio/data
-│   │   ├── ui_mouse.cpp      # Suporte e cursor para mouse/touchpad BLE HID
-│   │   ├── ui_terminal.cpp   # Aplicativo Terminal (console interativo)
-│   │   ├── terminal_cmd.cpp  # Motor de execucao de comandos shell
-│   │   ├── ssh_client.cpp    # Cliente SSH assincrono (task FreeRTOS + libssh)
-│   │   ├── ui_keyboard.cpp   # Teclado virtual + pagina de acentos PT-BR
-│   │   ├── ui_status.cpp     # Badge de orientacao
-│   │   ├── ui_theme.cpp      # Paletas claro/escuro
-│   │   ├── imu_reader.cpp    # Eventos do BMI270 -> alvo de rotacao
-│   │   ├── orientation.cpp   # Vetor de gravidade -> mapeamento de rotacao
-│   │   └── fonts/            # Fonte Latin-1 custom
+│   ├── os/                   # Núcleo do Sistema Operacional (Core & Shell)
+│   │   ├── core/             # Gerenciadores de sistema (app_registry, fuso horário, wifi, bt, imu)
+│   │   ├── shell/            # Interface do SO (ui_shell, desktop, barra, screensaver, teclado, tema)
+│   │   └── fonts/            # Fontes compiladas Latin-1
+│   ├── apps/                 # Aplicações de Usuário (Package by Feature)
+│   │   ├── camera/           # Câmera com preview MIPI-CSI e captura JPEG
+│   │   ├── gallery/          # Visualizador JPEG de fotos
+│   │   ├── notas/            # Bloco de Notas
+│   │   ├── recorder/         # Gravador e Player de Voz
+│   │   ├── chat/             # Chat IA com LLM
+│   │   ├── terminal/         # Shell interativo e cliente SSH
+│   │   ├── fileserver/       # Servidor Web de Arquivos HTTP
+│   │   ├── files/            # Gerenciador de Arquivos microSD
+│   │   ├── wifi/             # Configurações de Wi-Fi
+│   │   └── bluetooth/        # Configurações de Bluetooth
 │   ├── m5stack_tab5/         # BSP local (override do oficial)
 │   └── rtc_rx8130/           # Driver do RTC RX8130CE
-├── .github/workflows/        # CI: build + lint (ci.yml) e CodeQL (codeql.yml)
+├── tools/
+│   └── ci/                   # Scripts de validação local de qualidade (clang-tidy, cppcheck, idf.py)
+├── docs/                     # Documentação técnica e guias de desenvolvimento
+├── .github/workflows/        # CI: Quality Gate (build + lint) e CodeQL
 ├── .clang-format             # Estilo C/C++ do projeto
 ├── .clang-tidy               # Checkers de lint estático
 ├── .pre-commit-config.yaml   # Hooks locais de qualidade
@@ -132,6 +131,10 @@ tab5-os/
 - A rotação usa um limiar de inclinação de ~27° (magnitude do plano de 0.45 G) para evitar oscilação; inclinações decididas sempre giram.
 - `sw_rotate=true` é obrigatório (LVGL 9 + DSI).
 - A fonte custom é gerada do mesmo `Montserrat-Medium.ttf` usado pelos fonts built-in do LVGL, adicionando o suplemento Latin-1 (`0xA0–0xFF`).
+
+## Desenvolvimento de Novas Aplicações
+
+Para aprender a criar, registrar e integrar novas aplicações no sistema operacional, com suporte a manifestos, ícones no desktop, barras de título padronizadas e associação de extensões de arquivos, consulte o [Guia de Desenvolvimento de Aplicações](docs/APP_DEVELOPMENT.md).
 
 ## Planejamento e Roadmap
 

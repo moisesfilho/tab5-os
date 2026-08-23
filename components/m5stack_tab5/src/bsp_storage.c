@@ -7,6 +7,7 @@
 #include <string.h>
 #include "esp_log.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "bsp_err_check.h"
 #include "esp_spiffs.h"
 #include "esp_vfs_fat.h"
@@ -18,6 +19,13 @@ static const char *TAG = "M5Stack Tab5";
 static sd_pwr_ctrl_handle_t pwr_ctrl_handle = NULL; //SD LDO handle
 static sdmmc_card_t *bsp_sdcard = NULL;    // Global uSD card handler
 static bool spi_sd_initialized = false;
+
+/* Buffer DMA dedicado para o SD. A heap DMA interna do P4 e pequena e fragmente
+ * em runtime (camera CSI, WiFi SDIO, I2S audio), fazendo o sdmmc falhar em
+ * allocate_dma_buf (err=0x101) -> apps nao listam arquivos. Alocar no mount
+ * (boot, heap ainda folgada) e reutilizar garante as transferencias do SD. */
+static void *s_sd_dma_buf = NULL;
+#define SD_DMA_BUF_SIZE 4096
 
 esp_err_t bsp_spiffs_mount(void)
 {
@@ -63,6 +71,17 @@ void bsp_sdcard_get_sdmmc_host(const int slot, sdmmc_host_t *config)
     sdmmc_host_t host_config = SDMMC_HOST_DEFAULT();
     host_config.slot = slot;
     host_config.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
+
+    if (s_sd_dma_buf == NULL) {
+        s_sd_dma_buf = heap_caps_malloc(SD_DMA_BUF_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+        if (s_sd_dma_buf != NULL) {
+            ESP_LOGI(TAG, "SD: buffer DMA dedicado de %d B alocado (dma_free=%d)", (int)SD_DMA_BUF_SIZE,
+                     (int)heap_caps_get_free_size(MALLOC_CAP_DMA));
+        } else {
+            ESP_LOGW(TAG, "SD: falha ao alocar buffer DMA dedicado");
+        }
+    }
+    host_config.dma_aligned_buffer = s_sd_dma_buf;
 
     memcpy(config, &host_config, sizeof(sdmmc_host_t));
 }
@@ -129,7 +148,7 @@ esp_err_t bsp_sdcard_sdmmc_mount(bsp_sdcard_cfg_t *cfg)
         host_config = &sdhost;
     }
 
-    sdmmc_slot_config_t *slot_config = cfg->slot.sdmmc;
+    const sdmmc_slot_config_t *slot_config = cfg->slot.sdmmc;
     if (!slot_config) {
         bsp_sdcard_sdmmc_get_slot(SDMMC_HOST_SLOT_0, &sdslot);
         slot_config = &sdslot;
@@ -185,7 +204,7 @@ esp_err_t bsp_sdcard_sdspi_mount(bsp_sdcard_cfg_t *cfg)
         host_config = &sdhost;
     }
 
-    sdspi_device_config_t *slot_config = cfg->slot.sdspi;
+    const sdspi_device_config_t *slot_config = cfg->slot.sdspi;
     if (!slot_config) {
         bsp_sdcard_sdspi_get_slot(BSP_SDSPI_HOST, &sdslot);
         slot_config = &sdslot;

@@ -1,7 +1,7 @@
 # tab5-os
 
 <p>
-  <img src="https://img.shields.io/badge/version-v0.1.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-v0.2.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/platform-ESP32--P4-blue" alt="Platform">
   <img src="https://img.shields.io/badge/ESP--IDF-v5.5.5-blue" alt="ESP-IDF">
@@ -14,10 +14,11 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 
 ## Features
 
+- **Voice Recorder & Audio Player App** — native voice recording via integrated microphones using the ES7210 ADC codec in standard WAV PCM 16-bit 16 kHz Mono format (`/sdcard/gravacoes/REC_YYYYMMDD_HHMMSS.wav`), automatic 5-minute safety timeout, audio player powered by the ES8388 DAC codec with real-time progress bar, chronological audio list with deletion modal, and direct association with `.wav` and `.pcm` files
 - **Camera App & V4L2/ISP Pipeline on ESP32-P4** — real-time 640×480 camera preview directly from SC202CS sensor over MIPI-CSI with hardware ISP acceleration, persistent V4L2 streaming architecture (`VIDIOC_STREAMON`/`VIDIOC_STREAMOFF`), ISP color correction matrix (CCM) clamping protection, and asynchronous JPEG photo capture via FreeRTOS task on SD card
 - **Photo Gallery App** — native photo viewer for JPEG images saved on the SD card (`/sdcard/photos/`), powered by high-performance Tiny JPEG Decompressor (TJpgDec) directly to PSRAM canvas buffer on LVGL 9, image navigation, and seamless integration with Camera and File Manager
-- **HTTP File Server App** — built-in embedded HTTP file server for downloading and sharing captured photos over local Wi-Fi via any web browser, with on-demand startup for power efficiency and a dedicated desktop status screen
-- **Responsive Flexbox Desktop Grid** — left-to-right, top-to-bottom layout (`LV_FLEX_FLOW_ROW_WRAP`) with dynamic column centering, left-aligned row wraps across orientations, and styled vector app icons (Camera 📷, Notepad 🗒️, Gallery 🖼️, Server 💽)
+- **Web Server & System Control Panel App (HTTP)** — embedded full-featured HTTP server for remote management via web browser: complete microSD file and directory explorer with direct downloads and breadcrumbs navigation, real-time system settings control panel (Wi-Fi with network scanner, Bluetooth, display brightness, manual/auto IMU rotation, timezone, screensaver timeout, and light/dark theme), AI Chat configuration (OpenAI/OpenCode Go), and quick photo gallery
+- **Responsive Flexbox Desktop Grid** — left-to-right, top-to-bottom layout (`LV_FLEX_FLOW_ROW_WRAP`) with dynamic column centering, left-aligned row wraps across orientations, and styled vector app icons (Camera 📷, Notepad 🗒️, Gallery 🖼️, Server 💽, Recorder 🎙️)
 - **Anti-Burn-in Screensaver** — MIPI-DSI panel protection against image sticking, featuring a pure black background (`#000000`), prominent digital clock (`HH:MM:SS`), full date in Portuguese, OS version, intelligent random relocation every 30 seconds with safe bounding box across all 4 orientations (0°, 90°, 180°, 270°), temporary mouse cursor hiding, and instant wake-up on touch, keyboard, or mouse events
 - **Terminal App & Remote SSH Client** — Linux-style console shell integrated into the OS, with interactive prompt (`/sdcard $`), command history, support for core commands (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`) and **full SSH Client** (`ssh [user@]host [-p port]`) running on a dedicated asynchronous FreeRTOS task powered by `libssh`, VT100/xterm terminal emulation, masked password prompt, and robust ANSI/OSC sequence stripping
 - **Bluetooth Manager & Physical Keyboard (BLE HID)** — connection, pairing, and automatic reconnection with Bluetooth Low Energy peripherals (HOGP) like physical keyboards and combo touchpad/mice, direct keystroke injection into apps (e.g., Notes and Terminal), dynamic virtual keyboard hiding, and top-bar connection indicator
@@ -95,31 +96,29 @@ pre-commit run --all-files   # run all hooks on all files
 ```
 tab5-os/
 ├── main/
-│   └── app_main.cpp          # Boot: display, RTC, IMU, UI
+│   └── app_main.cpp          # Boot: display, RTC, IMU, UI, subsystem registrations
 ├── components/
-│   ├── app/                  # UI + IMU + Terminal + WiFi/BT + Camera + Gallery + Server
-│   │   ├── ui_desktop.cpp    # Responsive desktop grid and styled app icons
-│   │   ├── ui_bar.cpp        # Top bar, settings menu, clock
-│   │   ├── ui_camera.cpp     # Camera app with preview and shutter button
-│   │   ├── camera_mgr.cpp    # V4L2/ISP manager and async photo capture
-│   │   ├── ui_gallery.cpp    # Gallery photo viewer
-│   │   ├── tjpgd.c           # Hardware/optimized JPEG decompressor (TJpgDec)
-│   │   ├── ui_fileserver.cpp # HTTP File Server control app
-│   │   ├── http_file_server.cpp # Embedded HTTP server for photo downloads
-│   │   ├── ui_screensaver.cpp # Anti-burn-in screensaver with clock/date
-│   │   ├── ui_mouse.cpp      # BLE HID mouse/touchpad support & cursor
-│   │   ├── ui_terminal.cpp   # Terminal app (interactive console)
-│   │   ├── terminal_cmd.cpp  # Shell command execution engine
-│   │   ├── ssh_client.cpp    # Asynchronous SSH client (FreeRTOS task + libssh)
-│   │   ├── ui_keyboard.cpp   # Virtual keyboard + PT-BR accents page
-│   │   ├── ui_status.cpp     # Orientation badge
-│   │   ├── ui_theme.cpp      # Light/dark palettes
-│   │   ├── imu_reader.cpp    # BMI270 events -> rotation target
-│   │   ├── orientation.cpp   # Gravity vector -> rotation mapping
-│   │   └── fonts/            # Custom Latin-1 font
+│   ├── os/                   # Operating System Core & Shell Subsystem
+│   │   ├── core/             # System managers (app_registry, timezone, wifi, bt, imu)
+│   │   ├── shell/            # OS graphical interface (ui_shell, desktop, bar, screensaver, keyboard, theme)
+│   │   └── fonts/            # Compiled Latin-1 fonts
+│   ├── apps/                 # User Applications (Package by Feature)
+│   │   ├── camera/           # Camera app with MIPI-CSI preview & JPEG capture
+│   │   ├── gallery/          # JPEG Photo Viewer
+│   │   ├── notas/            # Text & Notepad editor
+│   │   ├── recorder/         # Voice Recorder & Audio Player
+│   │   ├── chat/             # AI LLM Chat Client
+│   │   ├── terminal/         # Interactive Shell & SSH Client
+│   │   ├── fileserver/       # HTTP Web File Server
+│   │   ├── files/            # MicroSD File Explorer
+│   │   ├── wifi/             # Wi-Fi Settings
+│   │   └── bluetooth/        # Bluetooth Settings
 │   ├── m5stack_tab5/         # Local BSP (override of the official one)
 │   └── rtc_rx8130/           # RX8130CE RTC driver
-├── .github/workflows/        # CI: build + lint (ci.yml) and CodeQL (codeql.yml)
+├── tools/
+│   └── ci/                   # Local quality check scripts (clang-tidy, cppcheck, idf.py)
+├── docs/                     # Technical documentation & developer guides
+├── .github/workflows/        # CI: Quality Gate (build + lint) and CodeQL
 ├── .clang-format             # Project C/C++ style
 ├── .clang-tidy               # Static lint checkers
 ├── .pre-commit-config.yaml   # Local quality hooks
@@ -132,6 +131,10 @@ tab5-os/
 - Rotation uses a ~27° tilt threshold (0.45 G plane magnitude) to avoid oscillation; decisive tilts always rotate.
 - `sw_rotate=true` is required (LVGL 9 + DSI).
 - The custom font is generated from the same `Montserrat-Medium.ttf` used by the LVGL built-ins, adding the Latin-1 supplement range (`0xA0–0xFF`).
+
+## Developing New Applications
+
+To learn how to create, register, and integrate new applications into the operating system, with support for app manifests, desktop icons, standardized title bars, and file extension associations, see the [Application Development Guide](docs/APP_DEVELOPMENT.md).
 
 ## Planning & Roadmap
 

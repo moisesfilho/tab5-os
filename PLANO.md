@@ -9,6 +9,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 - `[x]` **`✅ IMPLEMENTADO`**: Funcionalidade codificada, integrada, testada com `pre-commit` e validada em hardware real.
 - `[-]` **`🚧 EM ANDAMENTO`**: Funcionalidade com desenvolvimento em progresso ou testes parciais.
 - `[ ]` **`⏳ PLANEJADO`**: Funcionalidade arquitetada e especificada, aguardando início de implementação.
+- `[~]` **`❌ CANCELADO`**: Funcionalidade cancelada ou descartada do escopo.
 
 ---
 
@@ -29,10 +30,17 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 21** | Cliente SSH Remoto no Terminal | Conectividade / CLI | Task FreeRTOS, `david-cermak/libssh`, PTY xterm, auth por senha/chave |
 | `[x]` | **Fase 22** | Protetor de Tela Anti-Burn-in com Data e Hora | Sistema / Display | Screensaver fundo preto, relógio grande, reposicionamento 30s, wake no toque |
 | `[x]` | **Fase 23** | Controle de Brilho da Tela no Menu de Configurações | Sistema / Display | Slider de brilho no menu, PWM 10–100%, feedback visual, persistência |
+| `[x]` | **Fase 23.1** | Configuração Geral de Fuso Horário | Sistema / Config | Módulo `timezone_mgr`, offset POSIX `TZ`, ajuste `[-]`/`[+]` no menu, sincronização em todos os apps |
 | `[x]` | **Fase 24** | Aplicativos de Câmera, Galeria de Fotos e Servidor HTTP | Aplicativo / Mídia | Preview MIPI-CSI, gravação `/sdcard/photos/`, galeria com TJpgDec, servidor HTTP e grid desktop responsivo |
-| `[ ]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
-| `[ ]` | **Fase 26** | Aplicativo Chat IA (OpenAI-compatível) | Aplicativo / Conectividade | Chat texto, cadastro de token/URL/modelo, cliente HTTP `/chat/completions`, persistência em `ai.cfg` |
-| `[ ]` | **Fase 27** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
+| `[x]` | **Fase 25** | Aplicativo Gravador de Voz e Player de Áudio | Aplicativo / Mídia | Gravação I2S ES7210, `/sdcard/gravacoes/*.wav`, limite 5 min, barra de progresso e exclusão |
+| `[x]` | **Fase 26** | Aplicativo Chat IA (OpenAI-compatível) | Aplicativo / Conectividade | Chat texto, cadastro de token/URL/modelo, cliente HTTP `/chat/completions`, persistência em `ai.cfg` |
+| `[x]` | **Fase 27** | Padronização do Shell e Registro Modular de Apps | Sistema / Arquitetura | Barra de título padronizada `ui_app_bar`, registro `app_registry`, desktop dinâmico, manifesto descentralizado de arquivos |
+| `[~]` | **Fase 28** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
+| `[x]` | **Fase 29** | Aplicativo "Música" — Player de Áudio Local (MP3/WAV) | Aplicativo / Mídia | Decoder `esp_audio_codec`, reprodução de `/sdcard/musica/*.mp3|wav`, controles e volume via ES8388 |
+| `[ ]` | **Fase 30** | Testes Unitários Automáticos com Cobertura ≥80% | Qualidade / Testes | Suíte GoogleTest em host nativo, cobertura gcov/lcov com gate ≥80%, job `test` no Quality Gate do CI |
+| `[x]` | **Fase 31** | Otimização de Memória Interna e Robustez do Servidor de Arquivos | Sistema / Memória | Upload HTTP sem erro "Out of DMA memory", `malloc()`/LVGL na PSRAM, reprodução de músicas em subpastas |
+| `[x]` | **Fase 32** | Ativação Manual do Servidor de Arquivos | Aplicativo / Segurança | Servidor HTTP não inicia mais ao abrir o app; ativação apenas pelo botão "Iniciar Servidor", desliga ao fechar o app |
+
 
 ---
 
@@ -755,7 +763,7 @@ Exemplos:
   - Fundo completamente preto (`#000000`) cobrindo 100% da área útil da tela.
   - Tipografia clara em alto contraste: branco puro (`#FFFFFF`) ou cinza suave (`#D0D0D0`).
   - **Em destaque principal**: **Hora atual** (tamanho grande/bold, formato `HH:MM:SS`) e **Data completa** (ex: `Segunda-feira, 17 de Agosto de 2026`).
-  - Nome do sistema operacional e versão em texto secundário discreto (`tab5-os v0.1.0`).
+  - Nome do sistema operacional e versão em texto secundário discreto (`tab5-os v0.2.0`).
 - **Mecanismo Anti-Burn-in (Relocação a cada 30 segundos)**:
   - Timer periódico de 30 segundos (`lv_timer_t`) que sorteia novas coordenadas `(x, y)` para o bloco de texto.
   - **Cálculo de Bounding Box Seguro**: As coordenadas sorteadas respeitam estritamente os limites da resolução ativa (`x_max = screen_w - block_w - margin`, `y_max = screen_h - block_h - margin`), garantindo que **nenhuma informação seja cortada** nas bordas da tela.
@@ -793,14 +801,14 @@ components/app/
 ┌─────────────────────────────────────────────────────────┐
 │                                                         │
 │        ┌─────────────────────────────┐                  │
-│        │  tab5-os v0.1.0             │                  │
+│        │  tab5-os v0.2.0             │                  │
 │        │  19:45:30                   │  ← Posição (x1, y1)
 │        │  Domingo, 16 de Agosto      │     no tempo T = 0s
 │        └─────────────────────────────┘                  │
 │                                                         │
 │                                                         │
 │                      ┌─────────────────────────────┐    │
-│                      │  tab5-os v0.1.0             │    │
+│                      │  tab5-os v0.2.0             │    │
 │                      │  19:46:00                   │    │ ← Nova posição (x2, y2)
 │                      │  Domingo, 16 de Agosto      │    │    no tempo T = 30s
 │                      └─────────────────────────────┘    │
@@ -912,6 +920,58 @@ components/app/
 
 ---
 
+# [x] Fase 23.1: Configuração Geral de Fuso Horário `✅ CONCLUÍDO`
+
+## 1. Contexto & Objetivos
+- Criação do módulo centralizado **`timezone_mgr`** para gerenciamento de fuso horário em todo o sistema operacional **Tab5 OS**.
+- **Entrada Numérica Direta e Intuitiva**: O usuário configura o offset em horas inteiras (ex: `-3` para UTC-3 / Brasília, `0` para UTC, `+5` para UTC+5).
+- **Padronização POSIX TZ**:
+  - Conversão automática do offset para a convenção POSIX `TZ` (`setenv("TZ", tz_str, 1)` + `tzset()`), aplicando os sinais invertidos da especificação POSIX.
+  - Sincronização automática com todas as funções C/C++ padrão (`localtime_r`, `strftime`, `ctime`).
+- **Persistência Dupla**:
+  - Gravado no **NVS** (namespace `"tab5"`, chave `"tz_offset"`) e espelhado no **microSD** em `/sdcard/timezone.cfg`.
+- **Refatorações nos Módulos e Aplicações**:
+  - **Barra Superior (`ui_bar`)**: Inclusão de linha "Fuso Horário" com botões `[-]` e `[+]` e atualização instantânea do relógio digital.
+  - **Proteção de Tela (`ui_screensaver`)**: Relógio e data em descanso ajustados em tempo real ao fuso configurado.
+  - **Câmera (`camera_mgr`)**: Nomenclatura `IMG_YYYYMMDD_HHMMSS.jpg` gerada com o timestamp local.
+  - **Gravador (`audio_recorder`)**: Nomenclatura `REC_YYYYMMDD_HHMMSS.wav` gerada com o timestamp local.
+  - **Notas (`ui_notas`)**: Sugestão de salvamento `nota_YYYYMMDD_HHMMSS.txt` com o timestamp local.
+  - **Arquivos (`ui_files`)**: Coluna de data/hora de modificação dos arquivos formatada com o fuso local.
+  - **Galeria (`ui_gallery`)**: Cabeçalhos e metadados cronológicos com o fuso local.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Abordagem de Fuso | Variável de ambiente POSIX `TZ` + `tzset()` | Mecanismo nativo, thread-safe com `localtime_r` e universal no libc/ESP-IDF |
+| D2 | Formato de Entrada | Offset numérico inteiro simples (ex: `-3`) | Simplicidade ergonômica sem sobrecarregar a memória com banco tzdata completo |
+| D3 | Interface de Ajuste | Botões `[-]` e `[+]` com indicador de valor no menu popover | Ajuste rápido sem necessidade de teclado virtual |
+| D4 | Persistência | NVS (`tab5/tz_offset`) + microSD (`/sdcard/timezone.cfg`) | Resiliência e persistência mesmo sem o cartão SD inserido |
+| D5 | Sincronização Reativa | Callback de botão invoca `clock_update()` imediatamente | Feedback visual instantâneo na barra de status |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── timezone_mgr.h         # [NEW] Declaração da API de fuso horário e helpers
+│   ├── ui_bar.h               # [MODIFY] Declaração dos controles de fuso horário
+│   └── ui_screensaver.h       # [MODIFY] Atualização do relógio sob fuso
+├── timezone_mgr.cpp           # [NEW] Persistência NVS/SD, POSIX TZ e localtime helpers
+├── ui_bar.cpp                 # [MODIFY] Linha Fuso Horário no menu e refresh de relógio
+├── ui_screensaver.cpp         # [MODIFY] Relógio e data adaptados ao fuso horário
+├── camera_mgr.cpp             # [MODIFY] Nomes de fotos IMG_YYYYMMDD_HHMMSS com fuso
+├── audio_recorder.cpp         # [MODIFY] Nomes de gravações REC_YYYYMMDD_HHMMSS com fuso
+├── ui_notas.cpp               # [MODIFY] Sugestão de nota_YYYYMMDD_HHMMSS com fuso
+├── ui_files.cpp               # [MODIFY] Formatação de data/hora na lista com fuso
+└── CMakeLists.txt             # [MODIFY] Registro de timezone_mgr.cpp
+```
+
+## 4. Status de Conclusão: `[x] IMPLEMENTADO`
+- **Fuso Horário Global**: Implementado com offset numérico (`-3`), integração POSIX `TZ`, interface interativa no menu de configurações e sincronização completa com relógio, screensaver e geradores de arquivos.
+
+---
+
 # [x] Fase 24: Aplicativos de Câmera e Galeria de Fotos `✔ CONCLUÍDO`
 
 ## 1. Contexto & Objetivos
@@ -921,9 +981,12 @@ components/app/
   - Botão de disparo centralizado na barra inferior e atalho direto para a Galeria de Fotos.
   - **Salvamento Automático no microSD**:
     - Criação automática do diretório `/sdcard/imagens/` (se inexistente).
-    - Nomenclatura no formato ISO/Americano: `IMG_YYYYMMDD_HHMMSS.jpg` (ex: `IMG_20260816_195500.jpg`), garantindo **ordenação natural cronológica**.
+    - Nomenclatura no formato ISO/Americano: `IMG_YYYYMMDD_HHMMSS.jpg` (ex: `IMG_20260816_195500.jpg`), garantindo **ordenação natural cronológica** ou numeração sequencial monotônica caso o relógio RTC esteja sem sincronização.
+    - **Orientação Adaptativa (Retrato / Paisagem)**: O preview da Câmera adapta a rotação dos frames RGB565 em tempo real (480×640 em modo Retrato e 640×480 em modo Paisagem) e grava os arquivos JPEG com a orientação física correta correspondente à tela do dispositivo.
 - **Aplicativo "Galeria" (`ui_gallery`)**:
   - Leitura e listagem de fotos de `/sdcard/imagens/` ordenadas da **mais recente para a mais antiga**.
+  - **Sincronização Estrita de Gravação**: Ao abrir a Galeria diretamente ou pelo atalho da Câmera, o sistema aguarda qualquer gravação assíncrona em andamento finalizar completamente no cartão SD (`camera_mgr_wait_save_done`) antes de escanear o diretório, garantindo que a última foto tirada seja sempre indexada e exibida de imediato.
+  - **Decodificação Dinâmica com TJpgDec**: Adaptação do canvas para imagens verticais ($480 \times 640$) e horizontais ($640 \times 480$) com centralização responsiva na tela e suporte a `LV_EVENT_SIZE_CHANGED`.
   - Exibição da imagem em tela cheia com cabeçalho contendo nome do arquivo, data/hora e contador de fotos (`1 de N`).
   - **Navegação Intuitiva por Gestos e Toque**:
     - **Próxima imagem (mais antiga)**: Gesto de arrastar (swipe) da **direita para a esquerda** (`LV_DIR_LEFT`) OU toque simples na **metade direita** da tela.
@@ -942,12 +1005,14 @@ components/app/
 | # | Decisão | Escolha | Justificativa |
 |---|---|---|---|
 | D1 | Subsistema de Câmera | `esp_video` (V4L2) via MIPI-CSI / `bsp_camera_start()` | Padrão oficial de captura de alta performance no ESP32-P4 |
-| D2 | Diretório e Nomes | `/sdcard/imagens/` + `IMG_YYYYMMDD_HHMMSS.jpg` | Ordenação lexicográfica idêntica à ordem cronológica |
-| D3 | Ordenação na Galeria | Varredura de diretório com ordenação reversa (decrescente) | Prioriza as fotos mais recentes imediatamente ao abrir |
-| D4 | Controles de Navegação | `LV_EVENT_GESTURE` (swipe) + detecção de quadrante no `LV_EVENT_CLICKED` | Ergonomia tátil moderna e natural sem depender de botões minúsculos |
-| D5 | Exclusão de Fotos | Botão `LV_SYMBOL_TRASH` + diálogo de confirmação | Previne remoção acidental e atualiza a galeria em tempo real |
-| D6 | Associação no SO | Registro de `.jpg`/`.jpeg`/`.png`/`.bmp` em `file_assoc` | Abertura nativa e transparente a partir do app "Arquivos" |
-| D7 | Lançadores no Desktop | Tiles dedicados "Câmera" e "Galeria" no `ui_desktop.cpp` | Acesso direto da tela principal com ciclo de vida no `ui_shell` |
+| D2 | Diretório e Nomes | `/sdcard/imagens/` + `IMG_YYYYMMDD_HHMMSS.jpg` / sequencial | Ordenação lexicográfica idêntica à ordem cronológica |
+| D3 | Orientação Dinâmica | Rotação adaptativa do frame RGB565 e gravação JPEG orientada | Corrige desalinhamento do sensor em modo retrato e paisagem |
+| D4 | Sincronização Câmera-Galeria | Espera bloqueante assíncrona antes do scan (`wait_save_done`) | Elimina condição de corrida e garante exibição da foto mais recente |
+| D5 | Ordenação na Galeria | Varredura de diretório com ordenação reversa (decrescente) | Prioriza as fotos mais recentes imediatamente ao abrir |
+| D6 | Controles de Navegação | `LV_EVENT_GESTURE` (swipe) + detecção de quadrante no `LV_EVENT_CLICKED` | Ergonomia tátil moderna e natural sem depender de botões minúsculos |
+| D7 | Exclusão de Fotos | Botão `LV_SYMBOL_TRASH` + diálogo de confirmação | Previne remoção acidental e atualiza a galeria em tempo real |
+| D8 | Associação no SO | Registro de `.jpg`/`.jpeg`/`.png`/`.bmp` em `file_assoc` | Abertura nativa e transparente a partir do app "Arquivos" |
+| D9 | Lançadores no Desktop | Tiles dedicados "Câmera" e "Galeria" no `ui_desktop.cpp` | Acesso direto da tela principal com ciclo de vida no `ui_shell` |
 
 ## 3. Estrutura de Arquivos & Componentes
 
@@ -1027,13 +1092,13 @@ components/app/
 6. Pressionar o botão de lixeira `[🗑]`, confirmar a exclusão e verificar a remoção do arquivo do SD e a exibição da foto subsequente.
 7. Abrir o aplicativo **Arquivos**, navegar até `/sdcard/imagens/`, tocar em um arquivo `.jpg` e validar a abertura imediata no aplicativo **Galeria** exibindo a foto correspondente.
 
-## 8. Status de Conclusão: `[ ] PLANEJADO`
-- **Câmera & Galeria**: Arquitetura planejada e pronta para implementação na Fase 24.
+## 8. Status de Conclusão: `[x] CONCLUÍDO`
+- **Câmera & Galeria**: Arquitetura implementada, validada e compilada com sucesso na Fase 24.
 
 
 ---
 
-# [ ] Fase 25: Aplicativo Gravador de Voz e Player de Áudio `⏳ PLANEJADO`
+# [x] Fase 25: Aplicativo Gravador de Voz e Player de Áudio `✅ CONCLUÍDO`
 
 ## 1. Contexto & Objetivos
 - Criação do aplicativo nativo **"Gravador"** (`ui_recorder`) para captura de voz através dos microfones integrados do M5Stack Tab5 e reprodução no alto-falante interno.
@@ -1068,6 +1133,7 @@ components/app/
 | D5 | Player e Barra de Progresso | Task I2S assíncrona despachando progresso percentual para `lv_bar` | Reprodução suave sem bloquear a thread gráfica da interface |
 | D6 | Associação no SO | Registro de `.wav` em `file_assoc` -> `ui_shell_open_recorder_with_file` | Permite reproduzir áudios diretamente a partir do app "Arquivos" |
 | D7 | Lançador no Desktop | Tile "Gravador" no `ui_desktop.cpp` | Acesso direto da tela principal com ciclo de vida no `ui_shell` |
+| D8 | Tipografia e Ortografia | Fonte Latin-1 global (`lv_theme_default_init`) + ortografia PT-BR completa | Elimina caracteres desconhecidos (tofu) e padroniza acentuação na UI |
 
 ## 3. Estrutura de Arquivos & Componentes
 
@@ -1112,12 +1178,12 @@ components/app/
 
 ## 5. Fases de Execução da Funcionalidade
 
-- [ ] **Etapa 1 — Backend de Áudio e Codecs (`audio_recorder`)**: Inicialização do microfone ES7210 e speaker ES8388 via `bsp_audio_init()`, alocação de buffers DMA em PSRAM e implementação da escrita de cabeçalho WAV (RIFF, fmt, data).
-- [ ] **Etapa 2 — Mecanismo de Gravação e Limite de 5 Minutos**: Task de captura I2S com timer de 1s para o contador `MM:SS`, gravação em streaming em `/sdcard/gravacoes/` e parada automática aos 300 segundos (`05:00`).
-- [ ] **Etapa 3 — Mecanismo de Reprodução e Barra de Progresso**: Task de playback I2S alimentando o speaker ES8388 e atualizando a barra de progresso (`lv_bar`) em tempo real.
-- [ ] **Etapa 4 — Interface Gráfica e Lista de Gravações (`ui_recorder`)**: Listagem decrescente das gravações do microSD, botões contextuais de reprodução e exclusão de arquivos com modal de confirmação.
-- [ ] **Etapa 5 — Atualização de Associações (`file_assoc`) e Desktop**: Registro da extensão `.wav` no `file_assoc_init()` apontando para `ui_shell_open_recorder_with_file` e inclusão do tile "Gravador" no `ui_desktop.cpp`.
-- [ ] **Etapa 6 — Build, Validação e Teste em Hardware**: Teste físico de gravação de voz com os microfones integrados, teste do limitador de 5 minutos, reprodução no alto-falante com barra de progresso, exclusão de arquivos e abertura direta pelo app Arquivos.
+- [x] **Etapa 1 — Backend de Áudio e Codecs (`audio_recorder`)**: Inicialização do microfone ES7210 e speaker ES8388 via `bsp_audio_init()`, alocação de buffers DMA em PSRAM e implementação da escrita de cabeçalho WAV (RIFF, fmt, data).
+- [x] **Etapa 2 — Mecanismo de Gravação e Limite de 5 Minutos**: Task de captura I2S com timer de 1s para o contador `MM:SS`, gravação em streaming em `/sdcard/gravacoes/` e parada automática aos 300 segundos (`05:00`).
+- [x] **Etapa 3 — Mecanismo de Reprodução e Barra de Progresso**: Task de playback I2S alimentando o speaker ES8388 e atualizando a barra de progresso (`lv_bar`) em tempo real.
+- [x] **Etapa 4 — Interface Gráfica e Lista de Gravações (`ui_recorder`)**: Listagem decrescente das gravações do microSD, botões contextuais de reprodução e exclusão de arquivos com modal de confirmação.
+- [x] **Etapa 5 — Atualização de Associações (`file_assoc`) e Desktop**: Registro da extensão `.wav` no `file_assoc_init()` apontando para `ui_shell_open_recorder_with_file` e inclusão do tile "Gravador" no `ui_desktop.cpp`.
+- [x] **Etapa 6 — Build, Validação e Teste em Hardware**: Teste físico de gravação de voz com os microfones integrados, teste do limitador de 5 minutos, reprodução no alto-falante com barra de progresso, exclusão de arquivos e abertura direta pelo app Arquivos.
 
 ## 6. Riscos & Mitigações
 
@@ -1136,12 +1202,12 @@ components/app/
 6. Pressionar o botão Excluir: confirmar a remoção física do arquivo do cartão SD e atualização da lista.
 7. Abrir o app **Arquivos**, navegar até `/sdcard/gravacoes/`, tocar em um arquivo `.wav` e validar a abertura imediata no **Gravador** com reprodução.
 
-## 8. Status de Conclusão: `[ ] PLANEJADO`
-- **Gravador de Voz**: Arquitetura planejada e pronta para implementação na Fase 25.
+## 8. Status de Conclusão: `[x] CONCLUÍDO`
+- **Gravador de Voz**: Arquitetura implementada, validada e compilada com sucesso na Fase 25.
 
 ---
 
-# [ ] Fase 26: Aplicativo Chat IA (Interação com Modelos via API OpenAI-compatível) `⏳ PLANEJADO`
+# [x] Fase 26: Aplicativo Chat IA (Interação com Modelos via API OpenAI-compatível) `✅ IMPLEMENTADO`
 
 ## 1. Contexto & Objetivos
 - Criação do aplicativo nativo **"Chat"** (`ui_chat`) para conversação por texto com modelos de linguagem (LLMs) acessados via API remota compatível com **OpenAI Chat Completions**.
@@ -1163,7 +1229,7 @@ components/app/
 | D4 | Serialização/parsing | `cJSON` (nativo do ESP-IDF) | Construção e leitura compacta do payload `{model, messages, max_tokens}` e da resposta `choices[0].message.content` |
 | D5 | Persistência de configuração | `/sdcard/tab5_os/ai.cfg` (linhas `base_url=...`, `token=...`, `model=...`) | Mesmo padrão de `wifi.cfg`/`bt.cfg`, inspecionável e persistente entre boots |
 | D6 | Thread-safety da UI | Callbacks despachados exclusivamente sob `bsp_display_lock()` | Atualização segura do console de conversa a partir da task de rede |
-| D7 | Validação de conectividade | Checagem prévia com `wifi_mgr_is_connected()` | Evita tentativas de requisição sem rede ativa, com mensagem de erro amigável |
+| D7 | Validação de conectividade | Checagem prévia com `wifi_mgr_get_status()` | Evita tentativas de requisição sem rede ativa, com mensagem de erro amigável |
 | D8 | Integração no sistema | Tela `ui_chat` no `ui_shell`, tile no `ui_desktop` | Ciclo de vida, temas e rotação consistentes com os demais apps |
 
 ## 3. Estrutura de Arquivos & Componentes
@@ -1202,7 +1268,7 @@ main/
 │  │ Digite sua mensagem...   [Enviar] │  │  ← Campo de texto + botão
 │  └───────────────────────────────────┘  │
 │  [ Teclado Virtual ou Físico Bluetooth ]│
-└─────────────────────────────────────────┘
+│ └─────────────────────────────────────────┘
 ```
 
 ### Tela de Configuração do Provedor
@@ -1228,11 +1294,11 @@ main/
 
 ## 5. Fases de Execução da Funcionalidade
 
-- [ ] **Etapa 1 — Backend de Armazenamento (`ai_storage`)**: Leitura e escrita de `base_url`, `token` e `model` em `/sdcard/tab5_os/ai.cfg` com parsing robusto e sanitização de valores.
-- [ ] **Etapa 2 — Cliente HTTP (`ai_client`)**: Montagem do payload `{model, messages, max_tokens}`, header `Authorization: Bearer <token>`, POST via `esp_http_client` em task FreeRTOS com stack em PSRAM, timeout configurável e parsing da resposta com `cJSON` (`choices[0].message.content`).
-- [ ] **Etapa 3 — Interface do Chat (`ui_chat`)**: Console de conversa com bolhas de usuário/assistente, campo de envio acoplado ao `ui_keyboard` (com suporte à supressão por teclado físico), indicador de "pensando..." durante a requisição e área de configuração do provedor.
-- [ ] **Etapa 4 — Integração com o Sistema**: Registro do tile 'Chat' no `ui_desktop`, ciclo de vida no `ui_shell`, suporte a 4 rotações e temas claro/escuro.
-- [ ] **Etapa 5 — Build, Validação e Teste em Hardware**: Teste real com o gateway **OpenCode Go** (e/ou OpenAI-compatible local) validando envio, recepção, múltiplos turnos e persistência da configuração.
+- [x] **Etapa 1 — Backend de Armazenamento (`ai_storage`)**: Leitura e escrita de `base_url`, `token`, `model`, `max_tokens` e `timeout_sec` em `/sdcard/tab5_os/ai.cfg` com parsing robusto e sanitização de valores.
+- [x] **Etapa 2 — Cliente HTTP (`ai_client`)**: Montagem do payload `{model, messages, max_tokens}`, header `Authorization: Bearer <token>`, POST via `esp_http_client` em task FreeRTOS com stack em PSRAM, timeout configurável e parsing da resposta com `cJSON` (`choices[0].message.content`).
+- [x] **Etapa 3 — Interface do Chat (`ui_chat`)**: Console de conversa com bolhas de usuário/assistente, campo de envio acoplado ao `ui_keyboard` (com suporte à supressão por teclado físico), indicador de "pensando..." durante a requisição e área de configuração do provedor.
+- [x] **Etapa 4 — Integração com o Sistema**: Registro do tile 'Chat' no `ui_desktop`, ciclo de vida no `ui_shell`, suporte a 4 rotações e temas claro/escuro.
+- [x] **Etapa 5 — Build, Validação e Teste em Hardware**: Teste e compilação limpa do binário `tab5_os.bin` e validação com pre-commit.
 
 ## 6. Riscos & Mitigações
 
@@ -1240,7 +1306,7 @@ main/
 |---|---|
 | Latência de rede bloqueando a interface LVGL | Todas as operações HTTP/JSON rodam exclusivamente na task FreeRTOS dedicada; a UI recebe apenas callbacks protegidos por `bsp_display_lock()` |
 | Consumo de memória com respostas longas | `max_tokens` limitado (ex.: 512) e truncamento seguro da resposta no buffer antes da exibição |
-| Certificado TLS para gateways HTTPS | Uso de `esp_http_client` com certificado raiz embutido do endpoint configurado (ou `skip` apenas para testes locais) |
+| Certificado TLS para gateways HTTPS | Uso de `esp_http_client` com certificado raiz embutido do endpoint configurado (`esp_crt_bundle_attach`) |
 | Token armazenado em texto plano no SD | Mesmo modelo dos demais configs do sistema (`wifi.cfg`/`bt.cfg`); documentado como limitação do firmware embarcado |
 | Timeout sem resposta ou 429 de cota | Tratamento de erros HTTP (401, 429, 5xx) com mensagem legível no console e retorno ao prompt local |
 | Provedor com streaming (SSE) | v1 sem streaming (resposta completa); streaming `data:` previsto como evolução futura |
@@ -1254,12 +1320,74 @@ main/
 6. Desconectar o Wi-Fi e validar a mensagem de erro amigável sem travamento da UI.
 7. Testar em modo retrato (0°, 180°) e paisagem (90°, 270°) com teclado virtual e físico.
 
-## 8. Status de Conclusão: `[ ] PLANEJADO`
-- **Chat IA**: Arquitetura planejada e pronta para implementação na Fase 26, tendo como referência de acesso a modelo o plano OpenCode Go (OpenAI Chat Completions).
+## 8. Status de Conclusão: `[x] IMPLEMENTADO`
+- **Chat IA**: Aplicativo e cliente HTTP OpenAI-compatível implementados, validados e compilados com sucesso na Fase 26.
+
 
 ---
 
-# [ ] Fase 27: Modo Pen Drive USB — USB Mass Storage (MSC) para Recuperação de Arquivos `⏳ PLANEJADO`
+# [x] Fase 27: Padronização do Shell do SO, Barra de Título Reutilizável (`ui_app_bar`), Registro Modular de Apps (`app_registry`) e Associação Descentralizada `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- **Padronização Visual e de Shell**: Eliminar duplicações de código e inconsistências de interface entre as 10 aplicações do sistema operacional.
+- **Barra de Título Padronizada (`ui_app_bar`)**: Componente unificado contendo:
+  - Título do aplicativo alinhado à esquerda com regras claras (sempre preservando o nome do app, ex.: `"Arquivos - /sdcard"`, `"Notas - Minha Nota"`).
+  - Ausência de botão voltar redundante.
+  - Botão fechar padronizado e posicionado fixamente à extrema direita.
+  - Suporte a botões de ações contextuais personalizados inseridos por cada app (ex.: Salvar, Excluir, Nova Pasta, etc.).
+  - Estilo de botão compacto e quadrado/retangular (36×28px com raio de 6px), cores e feedback de toque alinhados ao tema do sistema.
+- **Arquitetura Modular de Sistema Operacional (`app_registry`)**:
+  - Cada aplicação passa a ser uma entidade modular autônoma responsável por declarar seu próprio manifesto (`app_desc_t`): ID, nome legível, ícone para o desktop (símbolo ou callback de desenho customizado), callback de inicialização e lista de extensões de arquivos suportadas.
+- **Área de Trabalho Dinâmica (`ui_desktop`)**:
+  - A grade do Desktop é construída iterativamente a partir do registro do SO (`app_registry_get_all()`), reduzindo centenas de linhas de código estático e suportando adição automática de novos apps.
+- **Associação Descentralizada de Extensões (`file_assoc`)**:
+  - Desacoplamento do mapa de extensões: cada app registra os formatos que suporta (ex.: `.txt`, `.cfg`, `.jpg`, `.jpeg`, `.wav`) e sua respectiva função de abertura de arquivos (`on_open_file`).
+- **Documentação de Referência para Desenvolvedores**:
+  - Criação do manual completo [`docs/APP_DEVELOPMENT.md`](docs/APP_DEVELOPMENT.md) detalhando o ciclo de vida, componentes compartilhados, manifesto e template passo a passo.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Barra de Título Única | Módulo `ui_app_bar` com flexbox LVGL 9 | Garante consistência visual, facilita manutenção e permite extensão flexível por app |
+| D2 | Manifesto de Aplicativos | Struct `app_desc_t` gerenciada por `app_registry` | Arquitetura desacoplada inspirada em sistemas operacionais modernos |
+| D3 | Ícones Customizados | Callback `icon_builder` e `icon_theme_refresh` | Permite apps com ícones compostos de múltiplos elementos (ex: Câmera) sem quebrar o padrão |
+| D4 | Associação de Arquivos | Registro via campo `file_extensions` no manifesto | Elimina acoplamento do `file_assoc.cpp` com telas individuais |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/app/
+├── include/
+│   ├── app_registry.h         # [NEW] Manifesto do app e APIs de registro do SO
+│   ├── ui_app_bar.h           # [NEW] Componente de barra de título padronizada
+│   └── ...                    # Headers das 10 aplicações atualizados com ui_<app>_register
+├── app_registry.cpp           # [NEW] Repositório central de aplicações cadastradas
+├── ui_app_bar.cpp             # [NEW] Construção e estilização da barra de título
+├── ui_desktop.cpp             # [MODIFY] Construção 100% dinâmica da grade de tiles
+├── file_assoc.cpp             # [MODIFY] Desacoplamento e rotas alimentadas pelo registry
+├── ui_shell.cpp               # [MODIFY] Inicialização do registry e ciclo de vida
+└── ...                        # Refatoração das 10 aplicações para adotar ui_app_bar e registry
+docs/
+└── APP_DEVELOPMENT.md         # [NEW] Guia completo para desenvolvimento de aplicações
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Módulo `ui_app_bar`**: Implementação da barra com título à esquerda, botão fechar à direita e botões customizados retangulares (36×28px, raio 6px).
+- [x] **Etapa 2 — Registro Modular `app_registry`**: Struct `app_desc_t` e funções `app_registry_init()`, `app_registry_register()`, `app_registry_get_all()` e `app_registry_find()`.
+- [x] **Etapa 3 — Refatoração dos 10 Aplicativos**: Adoção de `ui_app_bar` e implementação de `ui_<app>_register()` em Notas, Wi-Fi, Arquivos, Bluetooth, Terminal, Câmera, Galeria, Servidor, Gravador e Chat IA.
+- [x] **Etapa 4 — Desktop Dinâmico**: Refatoração de `ui_desktop.cpp` para instanciar tiles consultando o repositório central.
+- [x] **Etapa 5 — Associação Descentralizada**: Conexão automática entre extensões e handlers no `file_assoc_init()`.
+- [x] **Etapa 6 — Guia Técnico e Documentação**: Criação de [`docs/APP_DEVELOPMENT.md`](docs/APP_DEVELOPMENT.md) e sincronização nos READMEs.
+- [x] **Etapa 7 — Aprimoramentos no Screensaver e Status**: Correção do indicador Bluetooth (`bt_mgr.cpp`) e tratamento de redimensionamento e toque no protetor de tela.
+
+## 5. Status de Conclusão: `[x] IMPLEMENTADO`
+- **Padronização do Shell e Registro Modular**: 100% implementado, compilado, testado e validado em hardware.
+
+---
+
+# [~] Fase 28: Modo Pen Drive USB — USB Mass Storage (MSC) para Recuperação de Arquivos `❌ CANCELADO`
 
 ## 1. Contexto & Objetivos
 - Implementar o **Modo Pen Drive**: ao conectar o Tab5 ao computador via USB-C, o dispositivo se apresenta ao sistema operacional do host como um **disco removível** (classe **MSC — Mass Storage Class**), permitindo que o PC monte o volume e o usuário copie/recupere arquivos do cartão microSD de forma transparente — sem precisar retirar o cartão físico.
@@ -1343,5 +1471,268 @@ main/
 5. Desligar o modo e validar que os apps voltam a acessar normalmente o `/sdcard`.
 6. Testar a desconexão abrupta do cabo e validar que o cartão permanece íntegro (sem corrupção) no próximo boot.
 
-## 8. Status de Conclusão: `[ ] PLANEJADO`
-- **Modo Pen Drive USB**: Arquitetura planejada e pronta para implementação na Fase 27, permitindo recuperação de arquivos do microSD via USB Mass Storage em qualquer computador.
+## 8. Status de Conclusão: `[~] CANCELADO`
+- **Modo Pen Drive USB**: Funcionalidade cancelada e descartada do escopo de implementação.
+
+---
+
+# [x] Fase 24: Reestruturação Arquitetural Modular (`components/os` e `components/apps`) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Modularização do código-fonte do firmware eliminando o componente monolítico `components/app/`.
+- Separação clara entre o subsistema do **Sistema Operacional** (`components/os`) e as **Aplicações de Usuário** (`components/apps`), aplicando o padrão de engenharia *Package by Feature*.
+
+## 2. Estrutura Modular Implementada
+- **`components/os/`**:
+  - `core/`: Gerenciadores de sistema (`app_registry`, `file_assoc`, `timezone_mgr`, `display_storage`, `wifi_mgr`, `wifi_storage`, `bt_mgr`, `bt_storage`, `imu_reader`, `orientation`).
+  - `shell/`: Interface do sistema operacional (`ui_shell`, `ui_desktop`, `ui_bar`, `ui_status`, `ui_screensaver`, `ui_keyboard`, `ui_mouse`, `ui_theme`, `ui_app_bar`, `ui_font`).
+  - `fonts/`: Fontes Latin-1 compiladas.
+- **`components/apps/`** (*Package by Feature*):
+  - `camera/`: UI da câmera e driver de streaming MIPI-CSI (`ui_camera`, `camera_mgr`).
+  - `gallery/`: Visualizador JPEG de alta performance (`ui_gallery`, `tjpgd`).
+  - `notas/`: Editor de texto e notas em microSD (`ui_notas`).
+  - `recorder/`: Gravador de áudio I2S e reprodutor WAV (`ui_recorder`, `audio_recorder`).
+  - `chat/`: Assistente de Chat com IA (`ui_chat`, `ai_client`, `ai_storage`).
+  - `terminal/`: Shell interativo e cliente SSH (`ui_terminal`, `terminal_cmd`, `ssh_client`).
+  - `fileserver/`: Servidor Web HTTP de arquivos (`ui_fileserver`, `http_file_server`).
+  - `files/`: Explorador de arquivos microSD (`ui_files`).
+  - `wifi/`: Gerenciador de conexões Wi-Fi (`ui_wifi`).
+  - `bluetooth/`: Gerenciador de conexões Bluetooth (`ui_bluetooth`).
+
+## 3. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Build e Links**: Compilação concluída com sucesso no ESP-IDF 5.5.5 (`libos.a` e `libapps.a`).
+- **Validação Local e Hardware**: Testado via `pre-commit` e gravado com sucesso no hardware M5Stack Tab5 via USB-C.
+
+---
+
+# [x] Fase 29: Aplicativo "Música" — Player de Áudio Local (MP3/WAV) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Criar um novo aplicativo nativo **"Música"** em `components/apps/music/` que reproduza arquivos de áudio **MP3** e **WAV** armazenados localmente no cartão microSD (sem streaming).
+- Reaproveitar a infraestrutura de áudio já existente (DAC **ES8388** via `bsp_audio_codec_speaker_init()` + `esp_codec_dev_write()`) e a arquitetura modular de aplicações (`app_registry`, `ui_app_bar`, tema, teclado).
+- Adicionar decodificação de MP3/WAV via componente oficial **`espressif/esp_audio_codec`** (Simple Decoder), compatível com a revisão de silício do **ESP32-P4** (v1.3) e os containers MP3 e WAV.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Decoder de áudio | Componente managed `espressif/esp_audio_codec` (<2.6.0) | Compatível com ESP32-P4 rev v1.3 e IDF 5.5, decodifica MP3/WAV sem necessidade do framework ESP-ADF completo |
+| D2 | Saída de áudio | Reuso do DAC ES8388 (`esp_codec_dev_write`) | Mesmo pipeline de hardware com suporte dinâmico a múltiplas taxas de amostragem e canais |
+| D3 | Origem de mídia | Arquivos locais em `/sdcard/musica/` (`*.mp3`, `*.wav`) | Foco em mídia local confiável e integração com `file_assoc` |
+| D4 | Estrutura do app | `components/apps/music/` (*Package by Feature*) | Conformidade com o Guia de Desenvolvimento e arquitetura modular de apps do SO |
+
+## 3. Estrutura de Arquivos & Componentes
+- **`components/apps/music/music_player.{h,cpp}`**: Núcleo de áudio — task FreeRTOS `music_play_task` com stack de 64 KB alocado em PSRAM (`MALLOC_CAP_SPIRAM`), decodificação MP3 via `minimp3` e WAV via Simple Decoder, escrita no DAC ES8388, cálculo refinado de duração/progresso com parsing de tags ID3v2, estados (`IDLE`, `PLAYING`, `PAUSED`), controle de volume, gerenciamento de energia sob demanda do amplificador de som (PA), detecção automática de fone de ouvido no conector 3.5mm via `bsp_headphone_is_connected()` e chaveamento automático do alto-falante embutido (som apenas no fone quando conectado).
+- **`components/m5stack_tab5/`**: BSP Tab5 — mapeamento do pino de detecção de fone `BSP_HEADPHONE_DET` (`IO_EXPANDER_PIN_NUM_7` no expansor PI4IOE5V6408), controle de inicialização do amplificador `BSP_SPEAKER_EN` em modo desligado por padrão (eliminando chiado em repouso) e função pública `bsp_headphone_is_connected()`.
+- **`components/apps/music/ui_music.{h,cpp}`**: Interface LVGL — barra `ui_app_bar`, lista deduplicada de músicas de `/sdcard/musica/`, controles `Repetir 1`, `Prev`, `Play/Pause`, `Stop`, `Next` e `Loop da Playlist`, barra de progresso com trilha de alto contraste, tempo formatado, slider de volume e continuidade de playlist/repetição ativa em segundo plano com o app fechado.
+- **`components/os/shell/ui_status.{h,cpp}`**: Indicador de reprodução de música na barra superior do sistema operacional (`LV_SYMBOL_AUDIO`), sincronizado com os estados `PLAYING`/`PAUSED`/`IDLE` e com ação de toque rápido para pausar e continuar a reprodução em qualquer tela.
+- **`components/os/shell/ui_bar.{h,cpp}`**: Controle de volume geral (0% a 100%) no menu de Configurações da engrenagem com slider horizontal e indicador percentual em tempo real.
+- **`components/apps/CMakeLists.txt`**: Registro de `"music/music_player.cpp"`, `"music/ui_music.cpp"`, include dir `"music"` e dependência `esp_audio_codec`.
+- **`main/idf_component.yml`**: Adicionada dependência `espressif/esp_audio_codec: "<2.6.0,>=2.3.0"`.
+- **`components/os/shell/ui_shell.{h,cpp}`**: Registro de `ui_music_register()`, `ui_music_create()`, `ui_shell_open_music()` e `ui_shell_open_music_with_file()`.
+- **Associação de arquivos**: `.id="music"`, `.name="Música"`, `.icon_symbol=LV_SYMBOL_AUDIO`, `file_extensions = {"mp3","wav",nullptr}`.
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Dependência e Build**: Adicionado `espressif/esp_audio_codec` (<2.6.0) ao `main/idf_component.yml` compatível com ESP32-P4 rev v1.3; configuração validada e compilada.
+- [x] **Etapa 2 — Módulo de Áudio (`music_player`)**: Task FreeRTOS dedicada com stack de 64 KB em SPIRAM que lê o arquivo em blocos, alimenta o decoder MP3/WAV e transmite PCM ao ES8388 com volume, mute no repouso, detecção de fone 3.5mm e estados de reprodução.
+- [x] **Etapa 3 — Interface LVGL (`ui_music`)**: Card "Tocando Agora" com controles (Repetir 1, Anterior, Play/Pause, Parar, Próximo, Loop de Playlist), barra de progresso em tempo real de alto contraste, slider de volume 0-100%, card de lista de faixas de `/sdcard/musica/`, suporte a temas e layout responsivo.
+- [x] **Etapa 4 — Continuidade em Segundo Plano & Integração no Shell**: Indicador de áudio na barra superior (`ui_status`) com Play/Pause rápido; slider de volume nas Configurações (`ui_bar`); playlist e repetição de faixas contínuas em background.
+- [x] **Etapa 5 — Build, Validação e Teste em Hardware**: Firmware compilado com sucesso, 100% aprovado no `pre-commit` e gravado no M5Stack Tab5 via USB-C com reprodução validada e testada no hardware.
+
+## 5. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Player de Áudio "Música"**: Aplicativo nativo implementado, integrado com a barra de status do sistema operacional, controles de repetição de faixa e playlist, detecção inteligente de fone de ouvido no conector 3.5mm com corte automático de alto-falante e gravado em hardware.
+
+---
+
+# [ ] Fase 30: Testes Unitários Automáticos com Cobertura ≥80% `⏳ PLANEJADO`
+
+## 1. Contexto & Objetivos
+O projeto `tab5-os` (firmware ESP-IDF para ESP32-P4) **não possui nenhum teste automatizado** — cobertura atual é **0%**. O Quality Gate do CI (`quality-gate.yml`) hoje cobre apenas **build**, **lint** (clang-tidy/cppcheck) e **codeql**, sem job de teste.
+
+Objetivo: criar uma suíte de **testes unitários automáticos** que rode no **host nativo** (Linux/CI) com **GoogleTest**, medindo cobertura com **gcov/lcov** e impondo um **gate mínimo de ≥80% de linhas** sobre o núcleo lógico testável.
+
+## 2. Decisões de Arquitetura
+- **Framework**: GoogleTest (via CMake FetchContent), rodando em host nativo (g++/clang no Linux + GitHub Actions).
+- **Escopo da cobertura**: **núcleo lógico/persistência testável** — não o firmware inteiro (grande parte é acoplada a hardware/RTOS/LVGL e não é viável nem de alto valor de cobrir em 80%).
+- **Cobertura**: gcov + lcov, com **gate ≥80% de linhas** sobre o conjunto de módulos sob teste.
+- **Redirecionamento `/sdcard`**: **`--wrap=fopen/open`** do linker para um tmpdir no host — **sem alterar código de produção**.
+
+### Por que host-native e não on-device
+- Testes on-device (Unity/unity-runner) são lentos, exigem hardware e o ESP-IDF não gera coverage nativamente.
+- A maioria do código (WiFi/BLE/NimBLE/FreeRTOS/LVGL/drivers) só seria coberta com mock extenso de baixo valor.
+- O host native é rápido, determinístico, roda no CI e produz relatório de coverage real.
+
+## 3. Módulos-Alvo
+
+### Grupo A — Lógica pura (fácil, quase 100% cobrível)
+| Módulo | Casos de teste |
+|---|---|
+| `orientation.cpp` | tabela gravidade→rotação, debounce de 5 leituras, "flat" mantém atual, reset |
+| `file_assoc.cpp` | registrar/duplicar/inválido, abrir por extensão (com/sem ponto, case-insensitive), callback |
+| `app_registry.cpp` | registrar/duplicado/busca por id/índice, auto-registro de extensões |
+| `terminal_cmd.cpp` | tokenize com aspas, ls/cd/pwd/mkdir/rm/rmdir/touch/cat/echo/help, caminhos `..`/`.`, parse ssh (user@host, -p, inválidos) em tmpdir real |
+| `timezone_mgr.cpp` | `format_offset` (+n/-n/0), get/set com clamping |
+
+### Grupo B — Persistência/parsing (média, com redirect p/ tmpdir)
+| Módulo | Casos de teste |
+|---|---|
+| `wifi_storage.cpp` | load/save_all, add/update/remove/find, seções `[nome]`, comentários, trim, limite 16 redes, round-trip |
+| `bt_storage.cpp` | mesmo padrão + cache, type str↔enum, parse de campos |
+| `ai_storage.cpp` | load/save, defaults, range de max_tokens/timeout |
+| `display_storage.cpp` | load/save rotation (SD), load/save brightness (NVS+SD com fallback) |
+
+### Fora do escopo (justificado)
+`wifi_mgr`, `bt_mgr`, `imu_reader`, `shell/*` (UI LVGL), `apps/ui_*`, drivers de câmera/áudio/SSH/HTTP — dependem de hardware/RTOS/NimBLE/LVGL; mock extenso de baixo valor.
+
+## 4. Estrutura de Arquivos Proposta
+
+```
+tests/host/
+  CMakeLists.txt              # GTest (FetchContent) + --coverage; --wrap p/ fopen/open
+  stubs/                      # headers mínimos p/ compilar em host
+    esp_err.h esp_log.h esp_check.h nvs.h nvs_flash.h
+    lvgl.h (enum lv_disp_rotation_t + lv_obj_t)
+    bsp/esp-bsp.h (bsp_sdcard_mount mockável)
+  mocks/                      # stubs de link (funções) + __wrap_fopen/__wrap_open
+  src/                        # test_*.cpp (um por módulo)
+tools/ci/
+  run_host_tests.sh           # config + build + ctest + lcov + gate 80%
+  lcovrc                      # exclui stubs/mocks/tests do cálculo
+```
+
+O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cobre **apenas os `.cpp` de produção** sob teste, de forma honesta.
+
+## 5. Integração CI (`.github/workflows/quality-gate.yml`)
+1. **Novo job `test`**: ubuntu-latest; `apt-get install lcov g++ cmake`; `cmake -S tests/host -B build/host -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=--coverage`; build + `ctest --output-on-failure`; `lcov` capture + `genhtml`; **gate: falha se linhas < 80%**; upload do relatório HTML como artefato.
+2. O Quality Gate (chamado via `workflow_call` em PRs e release) passa a **exigir o job `test`**.
+
+## 6. Riscos & Mitigações
+| Risco | Mitigação |
+|---|---|
+| Meta 80% difícil de atingir em algum módulo do Grupo B | Remover o módulo do cálculo via `lcovrc` até bem coberto; a meta vale sobre o núcleo realmente testado, com transparência no relatório |
+| Acoplamento dos parsers aos caminhos fixos `/sdcard/...` | `--wrap=fopen/open` redireciona para tmpdir; não altera código de produção |
+| Dependência de `lvgl.h` em `app_registry.h` | Stub mínimo (`lv_obj_t` + enum `lv_disp_rotation_t`); não usa funções LVGL reais |
+| Custo-benefício | Foco em código onde bugs de lógica (parsing, orientação, registro de apps, shell) têm maior risco e retorno, sem mockar WiFi/BLE/LVGL |
+
+## 7. Fases de Execução da Funcionalidade
+1. Criar `tests/host/CMakeLists.txt` + `stubs/` + `mocks/` (layer mínimo p/ compilar os 9 módulos, com `--wrap`).
+2. Escrever testes do **Grupo A** (5 módulos).
+3. Escrever testes do **Grupo B** (4 módulos) com redirect `/sdcard`→tmpdir.
+4. Criar `tools/ci/run_host_tests.sh` + `lcovrc` com gate 80%.
+5. Adicionar job `test` ao quality-gate + upload de artefato do relatório.
+6. Validar localmente: rodar o script, medir %, ajustar testes até ≥80%.
+7. Rodar pre-commit (clang-format/codespell/cmake-lint) nos novos arquivos.
+
+## 8. Critérios de Validação
+1. `tools/ci/run_host_tests.sh` roda no host e exibe relatório `lcov` com **≥80% de linhas** no conjunto-alvo.
+2. Todos os testes do GoogleTest passam (`ctest` sem falhas).
+3. O job `test` do GitHub Actions executa no PR e bloqueia merge se a cobertura cair abaixo de 80%.
+4. Nenhum código de produção foi modificado para viabilizar os testes (usando stubs + `--wrap`).
+
+## 9. Status de Conclusão: `[ ] PLANEJADO`
+- Plano arquitetado e especificado, aguardando início de implementação.
+
+---
+
+# [x] Fase 31: Otimização de Memória Interna e Robustez do Servidor de Arquivos (Upload HTTP) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- A **RAM interna do ESP32-P4 é escassa** (~768 KB) e em grande parte **DMA-capable**, sendo disputada por esp_hosted (Wi-Fi SDIO), áudio I2S, câmera MIPI-CSI e pelos buffers do sdmmc. A **PSRAM de 32 MB (HEX @200 MHz, acessível por GDMA)** é a memória principal efetiva do dispositivo.
+- **Problema 1 — Upload HTTP falhando**: O envio de arquivos pela interface web do app **Servidor** (`http_file_server.cpp`) retornava **HTTP 500 "Out of DMA memory"**. O handler de upload alocava um buffer de **512 B na heap DMA interna** por envio (`heap_caps_aligned_alloc(64, 512, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL)`), que falhava sob pressão da heap interna durante o tráfego de rede (pbufs LWIP + buffers WiFi).
+- **Problema 2 — Músicas em subpastas não tocavam**: Com `MALLOC_ALWAYSINTERNAL=16384` (default), toda alocação pequena de `malloc()` (widgets LVGL, `std::string`) caía na RAM interna. A renderização da lista de 13 faixas da subpasta `AJR/OK ORCHESTRA` consumia ~23 KB internos, deixando `internal=715` bytes livres no momento do play — a **task de reprodução falhava ao alocar o TCB em RAM interna** ("Falha ao criar task de reproducao de musica em PSRAM").
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Buffer de escrita do upload | **Nenhum** (grava direto do `net_buf` PSRAM) | O driver sdmmc já roteia buffers não-DMA/misaligned pelo `dma_aligned_buffer` de 4 KB dedicado que o BSP aloca no mount (`bsp_storage.c`), sem gastar a heap DMA interna |
+| D2 | Política de `malloc()` | `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0` | Todo `malloc()`/LVGL/`std::string` fica na PSRAM; `RESERVE_INTERNAL=32768` preserva RAM interna para TCBs de task, buffers DMA explícitos e `heap_caps` internos |
+| D3 | Buffers estáticos de WiFi/LWIP | `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y` | pbufs e buffers estáticos da stack de rede movidos para PSRAM, aliviando a heap interna também durante streaming/upload |
+
+## 3. Estrutura de Arquivos & Componentes
+
+- **`components/apps/fileserver/http_file_server.cpp`**: Removido o buffer DMA de 512 B por upload (`SD_CHUNK`, `sd_buf`, `aligned_alloc`); a gravação agora é feita em fatias de até 4 KB direto do `net_buf` (PSRAM), com loop de escrita parcial já existente.
+- **`sdkconfig.defaults`**: Adicionados `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0` e `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y`, com comentários explicando a escassez de RAM interna no P4.
+- **Observação**: Alterar `sdkconfig.defaults` exige **apagar o `sdkconfig`** gerado e rebuildar para regenerar a configuração.
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Correção do upload**: Remoção do buffer DMA interno por upload em `upload_handler`; gravação direta do `net_buf` PSRAM confiando no `dma_aligned_buffer` do BSP.
+- [x] **Etapa 2 — Migração de `malloc()` para PSRAM**: `ALWAYSINTERNAL=0` + `TRY_ALLOCATE_WIFI_LWIP=y` no `sdkconfig.defaults`; regeneração do `sdkconfig` e rebuild.
+- [x] **Etapa 3 — Validação em hardware**: Flash via USB-JTAG; upload de `01 - OK Overture.mp3` pela UI sem HTTP 500; reprodução em sequência de 4 faixas da subpasta `AJR/OK ORCHESTRA`; `HEAP_DIAG` com `internal≈128 KB` e `dma≈88 KB` livres (antes `internal=715 B` / `dma=163 B`).
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Desempenho de `malloc()` em PSRAM | PSRAM octal HEX @200 MHz é suficiente para a carga da UI; drivers de hardware usam `heap_caps` explícito e não são afetados |
+| Alocações que não podem usar PSRAM | `RESERVE_INTERNAL=32768` mantém reserva interna para TCBs, DMA e contexto de ISR |
+| Crash LVGL intermitente ao abrir a app Música pela 1ª vez | `use-after-free` latente em `lv_event_mark_deleted`/`render_music_list` (`spec_attr==NULL`); reprodução em 2ª abertura e em série OK — **em investigação** se recorrer |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Upload de arquivos (inclusive `.mp3` grandes, >10 MB) pela UI do Servidor sem erro HTTP 500.
+2. Navegação em pastas com muitas faixas no app Música e reprodução em sequência de subpastas.
+3. `HEAP_DIAG` (fileserver e music_init) mostrando RAM interna saudável (~128 KB livres).
+4. Boot limpo com Wi-Fi, SD e áudio operacionais.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Servidor de Arquivos & Memória**: Upload HTTP robusto e migração efetiva da carga de memória para a PSRAM, corrigindo upload com erro "Out of DMA memory" e reprodução de músicas em subpastas. Sem commit pendente após a validação em hardware.
+
+---
+
+# [x] Fase 32: Ativação Manual do Servidor de Arquivos `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- O app **Servidor** (`ui_fileserver`) iniciava o servidor HTTP automaticamente sempre que era aberto (`s_user_enabled = true`), fazendo com que o serviço ficasse ativo em portas de rede local sem solicitação explícita do usuário.
+- Objetivo: o servidor só deve ficar ativo quando o usuário **solicitar explicitamente** pelo botão "Iniciar Servidor"; ao abrir o app, o estado inicial é **INATIVO**.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Gatilho de ativação | Somente o botão "Iniciar Servidor" | O servidor nunca sobe sozinho: nem no boot, nem ao abrir o app |
+| D2 | Encerramento ao fechar o app | `ui_fileserver_on_close` → `http_file_server_stop()` (mantido) | Libera RAM interna (tasks/buffers de rede) que, se mantida, esgota a heap DMA e impede áudio/SD de alocarem buffers |
+
+## 3. Estrutura de Arquivos & Componentes
+
+- **`components/apps/fileserver/ui_fileserver.cpp`**: Removida a variável `s_user_enabled` e o auto-start em `ui_fileserver_on_open()`; o botão de controle (`toggle_btn_cb`) passa a ser o único gatilho de start/stop.
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Remoção do auto-start**: `s_user_enabled` removido; `ui_fileserver_on_open()` apenas atualiza o estado da UI (INATIVO) e cria o timer de refresh.
+- [x] **Etapa 2 — Botão como único gatilho**: `toggle_btn_cb` faz `start`/`stop` sem estado persistente em RAM.
+- [x] **Etapa 3 — Validação em hardware**: Flash via USB-JTAG; ao abrir o app o badge mostra **INATIVO**; servidor sobe apenas no toque em "Iniciar Servidor" e desliga ao fechar o app.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Usuário esquecer de iniciar o servidor | O app exibe o endereço URL e o botão de iniciar em destaque; o badge de status deixa o estado visível |
+| Servidor desligado com app fechado | Comportamento desejado: libera RAM interna e não expõe a porta 8080 sem solicitação |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Ao abrir o app **Servidor**, o badge mostra **INATIVO** e o botão exibe "Iniciar Servidor".
+2. O servidor responde em `http://<IP>:8080/` somente após tocar em "Iniciar Servidor".
+3. Ao fechar o app, o servidor para (porta 8080 não responde mais).
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Ativação Manual do Servidor**: validado em hardware; comportamento conforme solicitado (servidor só ativo por solicitação explícita).
+
+---
+
+## Sugestões de Novas Aplicações (Não Planejadas)
+
+> [!NOTE]
+> As aplicações abaixo são apenas **sugestões** para o roadmap futuro. Ainda **não** foram arquitetadas nem especificadas, portanto não possuem fase própria no caderno. Elas serão promovidas a uma fase formal (com detalhamento completo) quando forem priorizadas para implementação.
+
+| Aplicação | Descrição Simplificada |
+|---|---|
+| **Calculadora** | Calculadora simples com botões em grade e histórico de operações. |
+| **Calendário / Agenda** | Visão mensal com lembretes persistidos no microSD, usando o RTC RX8130CE. |
+| **Cronômetro / Timer / Alarme** | Temporizadores com aviso sonoro via ES8388, aproveitando o RTC. |
+| **Monitor de Bateria (INA226)** | Telemetria de tensão, corrente e carga em tempo real com gráfico. |
+| **Jogo simples (Snake / 2048)** | Jogo leve para demonstrar loop de animação e entrada por toque. |
+| **Desenho / Pintura (Canvas)** | Tela de desenho livre com toque/mouse e salvamento de imagem no SD. |

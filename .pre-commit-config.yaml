@@ -4,13 +4,15 @@
 # Vendido/gerado não é formatado nem alterado pelos hooks:
 #   - components/m5stack_tab5   (BSP local vendido, com checksums)
 #   - components/rtc_rx8130     (driver RTC de terceiros)
-#   - components/app/fonts/     (fontes geradas pelo conversor LVGL)
+#   - components/os/fonts/      (fontes geradas pelo conversor LVGL)
+#   - components/apps/music/minimp3.h (decoder MP3 de cabeçalho único)
 #   - managed_components/       (componentes gerenciados)
 exclude: >
   (?x)^(
     components/m5stack_tab5/|
     components/rtc_rx8130/|
-    components/app/fonts/|
+    components/os/fonts/|
+    components/apps/music/minimp3\.h|
     managed_components/
   )
 
@@ -48,6 +50,32 @@ repos:
     rev: v2.3.0
     hooks:
       - id: codespell
-        args: ["--skip=*build*,*managed_components*,*m5stack_tab5*"]
+        args: ["--skip=*build*,*managed_components*,*m5stack_tab5*", "-L", "dout"]
         additional_dependencies:
           - tomli
+
+  # Análise estática e checagens locais (espelham o Quality Gate do CI)
+  - repo: local
+    hooks:
+      - id: clang-tidy-local
+        name: clang-tidy (app code)
+        entry: tools/ci/run_clang_tidy.sh
+        language: script
+        types_or: [c, c++]
+        files: ^(main/|components/os/|components/apps/).*\.(cpp|c)$
+        exclude: ^components/os/fonts/
+
+      - id: cppcheck-local
+        name: cppcheck (app code)
+        entry: tools/ci/run_cppcheck.sh
+        language: script
+        types_or: [c, c++]
+        files: ^(main/|components/os/|components/apps/).*\.(cpp|c)$
+        exclude: ^components/os/fonts/
+
+      - id: idf-build-check
+        name: idf build check
+        entry: tools/ci/run_idf_build.sh
+        language: script
+        stages: [pre-push]
+        pass_filenames: false

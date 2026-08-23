@@ -8,6 +8,7 @@
 #include "esp_check.h"
 #include "bsp_err_check.h"
 #include "esp_codec_dev_defaults.h"
+#include "esp_io_expander_pi4ioe5v6408.h"
 #include "bsp/m5stack_tab5.h"
 
 static const char *TAG = "M5Stack Tab5";
@@ -28,11 +29,11 @@ static const char *TAG = "M5Stack Tab5";
     }
 
 /* This configuration is used by default in bsp_audio_init() */
-#define BSP_I2S_DUPLEX_CFG(_sample_rate)                                                         \
-    {                                                                                                 \
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(_sample_rate),                                          \
-        .slot_cfg = I2S_STD_PHILIP_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO), \
-        .gpio_cfg = BSP_I2S_GPIO_CFG,                                                                 \
+#define BSP_I2S_DUPLEX_CFG(_sample_rate)                                                           \
+    {                                                                                               \
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(_sample_rate),                                       \
+        .slot_cfg = I2S_STD_PHILIP_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO), \
+        .gpio_cfg = BSP_I2S_GPIO_CFG,                                                               \
     }
 static i2s_chan_handle_t i2s_tx_chan = NULL;
 static i2s_chan_handle_t i2s_rx_chan = NULL;
@@ -59,11 +60,9 @@ esp_err_t bsp_audio_init(const i2s_std_config_t *i2s_config)
     }
     if (i2s_tx_chan != NULL) {
         ESP_GOTO_ON_ERROR(i2s_channel_init_std_mode(i2s_tx_chan, p_i2s_cfg), err, TAG, "I2S channel initialization failed");
-        ESP_GOTO_ON_ERROR(i2s_channel_enable(i2s_tx_chan), err, TAG, "I2S enabling failed");
     }
     if (i2s_rx_chan != NULL) {
         ESP_GOTO_ON_ERROR(i2s_channel_init_std_mode(i2s_rx_chan, p_i2s_cfg), err, TAG, "I2S channel initialization failed");
-        ESP_GOTO_ON_ERROR(i2s_channel_enable(i2s_rx_chan), err, TAG, "I2S enabling failed");
     }
 
     audio_codec_i2s_cfg_t i2s_cfg = {
@@ -106,8 +105,8 @@ esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void)
         data_if = bsp_audio_get_codec_itf();
     }
     assert(data_if);
-    /* Enable Feature */
-    BSP_ERROR_CHECK_RETURN_NULL(bsp_feature_enable(BSP_FEATURE_SPEAKER, true));
+    /* Mantem o speaker PA desabilitado durante init para evitar chiado quando ocioso */
+    BSP_ERROR_CHECK_RETURN_NULL(bsp_feature_enable(BSP_FEATURE_SPEAKER, false));
 
     const audio_codec_gpio_if_t *gpio_if = audio_codec_new_gpio();
 
@@ -141,7 +140,27 @@ esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void)
         .codec_if = dev,
         .data_if = data_if,
     };
-    return esp_codec_dev_new(&codec_dev_cfg);
+    esp_codec_dev_handle_t spk_dev = esp_codec_dev_new(&codec_dev_cfg);
+    BSP_NULL_CHECK(spk_dev, NULL);
+
+    /* O es8388_codec_new() deixa o DAC energizado (DACPOWER=0x3C) com o estagio
+     * analogico de saida ligado (LOUT/ROUT) mesmo sem clock I2S. O fone de
+     * ouvido e ligado direto nessas saidas, entao esse estado gera chiado no
+     * fone enquanto ocioso (o alto-falante nao chia porque o PA fica desligado
+     * via BSP_FEATURE_SPEAKER). Abrir e fechar o codec uma vez com um formato
+     * padrao aciona es8388_stop(), que desliga o DAC (DACPOWER=0x00) e mantem o
+     * mute, deixando o ocioso silencioso ate a proxima reproducao. */
+    esp_codec_dev_sample_info_t idle_fs = {
+        .bits_per_sample = 16,
+        .channel = 2,
+        .channel_mask = 0,
+        .sample_rate = 48000,
+        .mclk_multiple = 0,
+    };
+    esp_codec_dev_open(spk_dev, &idle_fs);
+    esp_codec_dev_close(spk_dev);
+
+    return spk_dev;
 }
 
 esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
@@ -177,4 +196,28 @@ esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
         .data_if = data_if,
     };
     return esp_codec_dev_new(&codec_dev_cfg);
+}
+
+bool bsp_headphone_is_connected(void)
+{
+    esp_io_expander_handle_t exp0 = bsp_io_expander_init();
+    if (exp0 == NULL) {
+        return false;
+    }
+
+    static bool s_configured = false;
+    if (!s_configured) {
+        /* Configura o pino 7 como entrada High-Z com pull-up no exp0 */
+        esp_io_expander_set_dir(exp0, BSP_HEADPHONE_DET, IO_EXPANDER_INPUT);
+        esp_io_expander_set_output_mode(exp0, BSP_HEADPHONE_DET, IO_EXPANDER_OUTPUT_MODE_OPEN_DRAIN);
+        esp_io_expander_set_pullupdown(exp0, BSP_HEADPHONE_DET, IO_EXPANDER_PULL_UP);
+        s_configured = true;
+    }
+
+    uint32_t lvl0 = 0;
+    if (esp_io_expander_get_level(exp0, BSP_HEADPHONE_DET, &lvl0) == ESP_OK) {
+        return (lvl0 & BSP_HEADPHONE_DET) != 0;
+    }
+
+    return false;
 }
