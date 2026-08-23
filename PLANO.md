@@ -45,6 +45,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 35** | Botão de Energia na Barra Superior (Power Menu) | Sistema / Energia / UI | Ícone de power na ponta esquerda da barra, painel com Desligar Tela / Reiniciar (`esp_restart`) / Desligar (deep sleep), confirmação modal antes de ações destrutivas |
 | `[x]` | **Fase 36** | Monitor de Bateria INA226 e Proteção de Carregamento | Sistema / Energia / UI | Driver próprio do INA226 (I2C 0x41, shunt 5 mΩ), ícone com percentual e popup de detalhes na barra, estados Carregando/Na tomada/Na bateria/Somente cabo, corte de carga em 90% via `CHG_EN` com retomada em 85% e switch persistido em NVS |
 | `[x]` | **Fase 37** | Persistência do Volume Geral de Áudio | Sistema / Áudio / UI | Volume geral (menu Configuração e app Música) salvo ao soltar o slider em NVS (`tab5/volume`) e SD (`/sdcard/tab5_os/audio.cfg`), restaurado no boot via lazy-load no player, seguindo o padrão do brilho (`display_storage`) |
+| `[x]` | **Fase 38** | Ajustes de Usabilidade do Menu de Configuração | Sistema / UI | Painel alargado de 230 px para 320 px eliminando texto cortado, e trilha dos sliders visível nos dois temas (`text_muted` com 40% de opacidade em `LV_PART_MAIN`) no Brilho/Volume do menu e no app Música |
 
 
 ---
@@ -2011,6 +2012,49 @@ components/os/
 
 ## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 - **Validado em hardware real** (ago/2026): volume ajustado a 32% na UI sobreviveu ao reboot — boot exibiu `volume carregado do NVS: 32%`.
+
+---
+
+# [x] Fase 38: Ajustes de Usabilidade do Menu de Configuração `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Com **230 px** de largura, o painel do menu cortava textos longos (ex: "Proteção da bateria") e apertava as linhas com rótulo + controle à direita.
+- As trilhas dos sliders usavam `pal->border` em `LV_PART_MAIN`, cor quase idêntica à superfície do painel nos dois temas: só o preenchimento accent aparecia, sem referência visual do limite (0–100%).
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Largura do painel | 320 px (`menu_panel`) | Elimina o corte de texto; cabe com folga nas orientações paisagem (1280 px) e retrato (720 px) mantendo o canto superior esquerdo |
+| D2 | Trilha dos sliders | `pal->text_muted` com `LV_OPA_40` em `LV_PART_MAIN` | Contraste garantido sobre a superfície do painel em claro e escuro; aplicado nos três sliders (Brilho e Volume via `apply_menu_theme`, Volume do app Música na criação e no `refresh_theme`) |
+
+## 3. Estrutura de Arquivos & Componentes
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `components/os/shell/ui_bar.cpp` | Largura do `menu_panel` (230 → 320 px) e trilha dos sliders Brilho/Volume no `apply_menu_theme()` |
+| `components/apps/music/ui_music.cpp` | Trilha do slider de volume na criação e no `ui_music_refresh_theme()` |
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Painel**: largura 320 px; todas as páginas do menu (Configuração, Tema, Protetor de Tela, Desligar Tela e Energia) herdam automaticamente.
+- [x] **Etapa 2 — Trilhas**: `bg_color = text_muted` + `bg_opa = LV_OPA_40` em `LV_PART_MAIN`; indicador accent e knob preservados.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Trilha competindo com o indicador accent | Opacidade de 40% mantém a trilha discreta porém legível |
+| Painel largo cobrindo mais conteúdo atrás | Overlay transparente já engole toques fora e fecha o menu ao clicar |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Menu Configuração aberto: nenhum texto cortado; linhas com switch/slider respirando.
+2. Sliders de Brilho e Volume: trilha cinza visível do início ao fim nos temas claro e escuro.
+3. App Música: slider de volume com a mesma trilha de referência.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Validado em hardware real** (ago/2026): painel sem cortes de texto e trilhas dos três sliders visíveis nos dois temas.
 
 ---
 

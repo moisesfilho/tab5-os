@@ -961,7 +961,8 @@ lv_obj_t *ui_music_create(void)
     lv_obj_set_size(vol_slider, lv_pct(65), 10);
     lv_slider_set_range(vol_slider, 0, 100);
     lv_slider_set_value(vol_slider, music_player_get_volume(), LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->text_muted), 0);
+    lv_obj_set_style_bg_opa(vol_slider, LV_OPA_40, 0);
     lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->accent), LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->accent), LV_PART_KNOB);
     lv_obj_add_event_cb(vol_slider, vol_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -1118,7 +1119,8 @@ void ui_music_refresh_theme(void)
         update_loop_btn_style();
 
         lv_obj_set_style_text_color(vol_icon_label, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->surface_alt), 0);
+        lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->text_muted), 0);
+        lv_obj_set_style_bg_opa(vol_slider, LV_OPA_40, 0);
         lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->accent), LV_PART_INDICATOR);
         lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->accent), LV_PART_KNOB);
         lv_obj_set_style_text_color(vol_value_label, lv_color_hex(pal->text_muted), 0);
