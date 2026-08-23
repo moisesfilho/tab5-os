@@ -2058,7 +2058,7 @@ components/os/
 
 ---
 
-## Sugestões de Novas Aplicações (Não Planejadas)
+## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)
 
 > [!NOTE]
 > As aplicações abaixo são apenas **sugestões** para o roadmap futuro. Ainda **não** foram arquitetadas nem especificadas, portanto não possuem fase própria no caderno. Elas serão promovidas a uma fase formal (com detalhamento completo) quando forem priorizadas para implementação.
@@ -2070,3 +2070,6 @@ components/os/
 | **Cronômetro / Timer / Alarme** | Temporizadores com aviso sonoro via ES8388, aproveitando o RTC. |
 | **Jogo simples (Snake / 2048)** | Jogo leve para demonstrar loop de animação e entrada por toque. |
 | **Desenho / Pintura (Canvas)** | Tela de desenho livre com toque/mouse e salvamento de imagem no SD. |
+| **Chat AI** | Manter contexto e salvar conversas como notas. |
+| **Arquivos** | Permitir controlar visualização de diretórios ocultos (definidos por inicar com "."). |
+| **OS** | Salvar arquivos de configuração do sistema em pasta oculta. |
