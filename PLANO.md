@@ -41,6 +41,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 31** | Otimização de Memória Interna e Robustez do Servidor de Arquivos | Sistema / Memória | Upload HTTP sem erro "Out of DMA memory", `malloc()`/LVGL na PSRAM, reprodução de músicas em subpastas |
 | `[x]` | **Fase 32** | Ativação Manual do Servidor de Arquivos | Aplicativo / Segurança | Servidor HTTP não inicia mais ao abrir o app; ativação apenas pelo botão "Iniciar Servidor", desliga ao fechar o app |
 | `[x]` | **Fase 33** | Estabilidade do Relógio da Barra Superior | Sistema / UI | Fonte monoespaçada JetBrains Mono no relógio (`dd/mm/aaaa hh:mm`), largura fixa e alinhamento à direita: zero deslocamento lateral dos ícones |
+| `[x]` | **Fase 34** | Desligamento Automático da Tela (Screen-Off) | Sistema / Display / Energia | Timeout configurável (30s–10min), backlight 0 via PWM, apps continuam rodando, despertar por duplo toque, mouse/teclado BLE e persistência em NVS |
 
 
 ---
@@ -1766,6 +1767,70 @@ O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cob
 
 ## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 - **Estabilidade do Relógio**: validado em hardware; barra totalmente estável com fonte monoespaçada.
+
+---
+
+# [x] Fase 34: Desligamento Automático da Tela (Screen-Off) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Economizar energia do painel MIPI-DSI desligando o **backlight** após um período configurável de inatividade, **sem** suspender o sistema: os aplicativos em execução (ex: Player de Música) continuam rodando normalmente em segundo plano.
+- **Configuração persistente**: timeout ajustável no Menu de Configurações com as opções **Desativado, 30 segundos, 1 minuto, 2 minutos, 5 minutos e 10 minutos**, armazenado em NVS e restaurado no boot (padrão: 2 minutos).
+- **Despertar por duplo toque**: um toque único na tela apagada é engolido (não gera clique fantasma no app por baixo) e não desperta; apenas o **segundo toque dentro de 400 ms** religa a tela. Mouse e teclado Bluetooth HID despertam imediatamente.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Desligamento do display | `bsp_display_brightness_set(0)` (PWM LEDC duty 0) | Desliga apenas o backlight, mantendo CPU, rádios e tasks dos apps ativos — reprodução de música e conectividade seguem intactas |
+| D2 | Mecanismo de despertar no touch | Tela preta dedicada que engole o toque + detecção de duplo clique via `lv_tick_get()` (janela `DOUBLE_CLICK_MS 400`) | O primeiro toque não é propagado ao app (evita clique acidental); o segundo dentro da janela dispara `ui_screen_off_hide()` |
+| D3 | Despertar por mouse/teclado BLE | `ui_screen_off_wake_up()` ao lado do `ui_screensaver_wake_up()` no `ui_mouse` e `ui_keyboard` | Input físico deliberado (movimento/clique/tecla) religa a tela imediatamente, como já ocorria com o screensaver |
+| D4 | Persistência | NVS (namespace `tab5`, chave `screen_off`) | Mesmo padrão do timeout do screensaver (`ss_timeout`); rápido e independente do cartão microSD |
+| D5 | Interação com o screensaver | Screen-off **assume** sobre o protetor de tela | Se o protetor estiver ativo quando o timeout do screen-off chegar, ele é ocultado e a tela apaga; no wake retorna direto ao app. Enquanto a tela está off, a checagem do screensaver é suprimida |
+| D6 | Restauração do brilho | Brilho anterior salvo em `s_prev_brightness` via `display_storage_load_brightness()` | No wake, o backlight volta exatamente ao nível configurado (não fixo em 100%) |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/
+├── shell/
+│   ├── ui_screen_off.h          # [NEW] API do módulo (init/show/hide/check/wake/set_timeout)
+│   ├── ui_screen_off.cpp        # [NEW] NVS, tela preta com duplo toque, backlight e restauração
+│   ├── ui_shell.cpp             # [MODIFY] ui_screen_off_init() + checagem no inactivity_timer_cb
+│   ├── ui_mouse.cpp             # [MODIFY] ui_screen_off_wake_up() no mouse BLE
+│   ├── ui_keyboard.cpp          # [MODIFY] ui_screen_off_wake_up() no teclado BLE
+│   └── ui_bar.cpp               # [MODIFY] Subpágina MENU_PAGE_SCREEN_OFF no menu de configurações
+└── CMakeLists.txt               # [MODIFY] Registro de ui_screen_off.cpp
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Módulo `ui_screen_off`**: NVS (`screen_off`, default 120 s), tela preta dedicada que engole toques, `show()` (salva brilho + backlight 0 + oculta barra/cursor/teclado), `hide()` (restaura brilho + tela anterior + `lv_display_trigger_activity`) e `check_inactivity()` via `lv_display_get_inactive_time`.
+- [x] **Etapa 2 — Despertar por duplo toque**: Handler `LV_EVENT_CLICKED` da tela preta com timestamps `lv_tick_get()` — o 1º toque apenas registra o instante; o 2º dentro de 400 ms chama `hide()`.
+- [x] **Etapa 3 — Despertar por mouse/teclado BLE**: `ui_screen_off_wake_up()` adicionado em `ui_mouse.cpp` (movimento/clique) e `ui_keyboard.cpp` (char/tecla), ao lado das chamadas do screensaver.
+- [x] **Etapa 4 — Integração no shell**: `ui_screen_off_init()` no `ui_shell_init`; no `inactivity_timer_cb` o screen-off é checado primeiro e o screensaver é suprimido enquanto a tela estiver off.
+- [x] **Etapa 5 — Menu de configurações**: Linha "Desligar Tela" na página principal e subpágina `MENU_PAGE_SCREEN_OFF` com rádios Desativado / 30 segundos / 1 minuto / 2 minutos / 5 minutos / 10 minutos + Voltar, seguindo o padrão do screensaver.
+- [x] **Etapa 6 — Validação em hardware**: Flash via USB-JTAG; timeout 30 s apagou o backlight (log `tela desligada (brilho anterior=10%)`), wake restaurou o brilho, NVS persistiu a mudança de 30 s → 120 s e o screensaver assumiu depois conforme o design.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Clique fantasma no app ao despertar | O toque de wake é consumido pela tela preta; apenas o 2º toque (duplo) religa e nenhum toque é propagado ao app por baixo |
+| Despertar acidental por toque único | Janela de duplo clique de 400 ms: um toque isolado é engolido e não acorda a tela |
+| Tela presa apagada sem volta | Mouse/teclado BLE despertam imediatamente; o duplo toque também funciona em qualquer ponto da tela |
+| Screensaver e screen-off competindo | Screen-off assume sobre o protetor (`ui_screensaver_hide()` no show) e a checagem do screensaver é suprimida com a tela off |
+| Brilho restaurado incorretamente | Brilho anterior lido de `display_storage_load_brightness()` (mesma fonte do slider do menu) e salvo em `s_prev_brightness` |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Configurar timeout de 30 s no menu: aguardar e validar que o backlight apaga com o app em segundo plano ainda rodando.
+2. Toque único na tela apagada: NÃO deve religar nem gerar clique no app.
+3. Duplo toque (janela de 400 ms): religa a tela restaurando o brilho anterior, sem clique fantasma.
+4. Movimento/clique do mouse BLE e tecla do teclado BLE: religam a tela imediatamente.
+5. Reiniciar o Tab5: o timeout escolhido é restaurado da NVS.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Screen-Off**: timeout configurável e persistente, backlight 0 mantendo apps ativos, despertar por duplo toque (touch) e imediato (mouse/teclado BLE) — validado em hardware real.
 
 ---
 

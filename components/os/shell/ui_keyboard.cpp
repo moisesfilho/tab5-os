@@ -1,5 +1,6 @@
 #include "ui_keyboard.h"
 #include "ui_screensaver.h"
+#include "ui_screen_off.h"
 #include "ui_theme.h"
 #include "ui_font.h"
 #include "ui_shell.h"
@@ -330,6 +331,7 @@ void ui_keyboard_inject_char(char c)
         if (ui_screensaver_is_active()) {
             ui_screensaver_wake_up();
         }
+        ui_screen_off_wake_up();
 
         lv_obj_t *target = kb_target;
         if (target == nullptr || !lv_obj_is_valid(target)) {
@@ -366,6 +368,7 @@ void ui_keyboard_inject_key(uint32_t key)
         if (ui_screensaver_is_active()) {
             ui_screensaver_wake_up();
         }
+        ui_screen_off_wake_up();
 
         lv_obj_t *target = kb_target;
         if (target == nullptr || !lv_obj_is_valid(target)) {

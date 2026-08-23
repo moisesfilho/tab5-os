@@ -4,6 +4,7 @@
 #include "ui_font.h"
 #include "ui_shell.h"
 #include "ui_screensaver.h"
+#include "ui_screen_off.h"
 #include "display_storage.h"
 #include "timezone_mgr.h"
 #include "imu_reader.h"
@@ -19,6 +20,7 @@ enum menu_page_t {
     MENU_PAGE_MAIN,
     MENU_PAGE_THEME,
     MENU_PAGE_SCREENSAVER,
+    MENU_PAGE_SCREEN_OFF,
 };
 
 lv_obj_t *bar = nullptr;
@@ -48,6 +50,20 @@ lv_obj_t *menu_row_ss_2m = nullptr;
 lv_obj_t *menu_row_ss_2m_label = nullptr;
 lv_obj_t *menu_row_ss_5m = nullptr;
 lv_obj_t *menu_row_ss_5m_label = nullptr;
+lv_obj_t *menu_row_soff = nullptr;
+lv_obj_t *menu_row_soff_label = nullptr;
+lv_obj_t *menu_row_soff_off = nullptr;
+lv_obj_t *menu_row_soff_off_label = nullptr;
+lv_obj_t *menu_row_soff_30s = nullptr;
+lv_obj_t *menu_row_soff_30s_label = nullptr;
+lv_obj_t *menu_row_soff_1m = nullptr;
+lv_obj_t *menu_row_soff_1m_label = nullptr;
+lv_obj_t *menu_row_soff_2m = nullptr;
+lv_obj_t *menu_row_soff_2m_label = nullptr;
+lv_obj_t *menu_row_soff_5m = nullptr;
+lv_obj_t *menu_row_soff_5m_label = nullptr;
+lv_obj_t *menu_row_soff_10m = nullptr;
+lv_obj_t *menu_row_soff_10m_label = nullptr;
 lv_obj_t *menu_row_rotation_label = nullptr;
 lv_obj_t *menu_row_rotation_switch = nullptr;
 lv_obj_t *menu_row_wifi_label = nullptr;
@@ -106,6 +122,20 @@ void close_menu(void)
     menu_row_ss_2m_label = nullptr;
     menu_row_ss_5m = nullptr;
     menu_row_ss_5m_label = nullptr;
+    menu_row_soff = nullptr;
+    menu_row_soff_label = nullptr;
+    menu_row_soff_off = nullptr;
+    menu_row_soff_off_label = nullptr;
+    menu_row_soff_30s = nullptr;
+    menu_row_soff_30s_label = nullptr;
+    menu_row_soff_1m = nullptr;
+    menu_row_soff_1m_label = nullptr;
+    menu_row_soff_2m = nullptr;
+    menu_row_soff_2m_label = nullptr;
+    menu_row_soff_5m = nullptr;
+    menu_row_soff_5m_label = nullptr;
+    menu_row_soff_10m = nullptr;
+    menu_row_soff_10m_label = nullptr;
     menu_row_rotation_label = nullptr;
     menu_row_rotation_switch = nullptr;
     menu_row_wifi_label = nullptr;
@@ -231,6 +261,30 @@ void apply_menu_theme(void)
         apply_theme_item(menu_row_ss_5m, menu_row_ss_5m_label, current_ss == 300);
     }
 
+    if (menu_row_soff_label != nullptr) {
+        lv_obj_set_style_text_color(menu_row_soff_label, lv_color_hex(pal->text), 0);
+    }
+
+    uint32_t current_soff = ui_screen_off_get_timeout();
+    if (menu_row_soff_off_label != nullptr && menu_row_soff_off != nullptr) {
+        apply_theme_item(menu_row_soff_off, menu_row_soff_off_label, current_soff == 0);
+    }
+    if (menu_row_soff_30s_label != nullptr && menu_row_soff_30s != nullptr) {
+        apply_theme_item(menu_row_soff_30s, menu_row_soff_30s_label, current_soff == 30);
+    }
+    if (menu_row_soff_1m_label != nullptr && menu_row_soff_1m != nullptr) {
+        apply_theme_item(menu_row_soff_1m, menu_row_soff_1m_label, current_soff == 60);
+    }
+    if (menu_row_soff_2m_label != nullptr && menu_row_soff_2m != nullptr) {
+        apply_theme_item(menu_row_soff_2m, menu_row_soff_2m_label, current_soff == 120);
+    }
+    if (menu_row_soff_5m_label != nullptr && menu_row_soff_5m != nullptr) {
+        apply_theme_item(menu_row_soff_5m, menu_row_soff_5m_label, current_soff == 300);
+    }
+    if (menu_row_soff_10m_label != nullptr && menu_row_soff_10m != nullptr) {
+        apply_theme_item(menu_row_soff_10m, menu_row_soff_10m_label, current_soff == 600);
+    }
+
     if (menu_row_rotation_label != nullptr) {
         lv_obj_set_style_text_color(menu_row_rotation_label, lv_color_hex(pal->text), 0);
     }
@@ -318,6 +372,12 @@ void menu_screensaver_cb(lv_event_t *event)
     open_menu(MENU_PAGE_SCREENSAVER);
 }
 
+void menu_screen_off_cb(lv_event_t *event)
+{
+    (void)event;
+    open_menu(MENU_PAGE_SCREEN_OFF);
+}
+
 void menu_light_cb(lv_event_t *event)
 {
     (void)event;
@@ -357,6 +417,48 @@ void menu_ss_5m_cb(lv_event_t *event)
 {
     (void)event;
     ui_screensaver_set_timeout(300);
+    close_menu();
+}
+
+void menu_soff_off_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_screen_off_set_timeout(0);
+    close_menu();
+}
+
+void menu_soff_30s_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_screen_off_set_timeout(30);
+    close_menu();
+}
+
+void menu_soff_1m_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_screen_off_set_timeout(60);
+    close_menu();
+}
+
+void menu_soff_2m_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_screen_off_set_timeout(120);
+    close_menu();
+}
+
+void menu_soff_5m_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_screen_off_set_timeout(300);
+    close_menu();
+}
+
+void menu_soff_10m_cb(lv_event_t *event)
+{
+    (void)event;
+    ui_screen_off_set_timeout(600);
     close_menu();
 }
 
@@ -768,6 +870,7 @@ void open_menu(menu_page_t page)
         menu_header_create("Configuração");
         menu_row_create("Tema", menu_theme_cb, &menu_row_theme, &menu_row_theme_label, true);
         menu_row_create("Protetor de Tela", menu_screensaver_cb, &menu_row_ss, &menu_row_ss_label, true);
+        menu_row_create("Desligar Tela", menu_screen_off_cb, &menu_row_soff, &menu_row_soff_label, true);
         menu_rotation_row_create();
         menu_wifi_row_create();
         menu_bluetooth_row_create();
@@ -785,6 +888,15 @@ void open_menu(menu_page_t page)
         menu_row_create("1 minuto", menu_ss_1m_cb, &menu_row_ss_1m, &menu_row_ss_1m_label, false);
         menu_row_create("2 minutos", menu_ss_2m_cb, &menu_row_ss_2m, &menu_row_ss_2m_label, false);
         menu_row_create("5 minutos", menu_ss_5m_cb, &menu_row_ss_5m, &menu_row_ss_5m_label, false);
+        menu_row_create("Voltar", menu_back_cb, &menu_row_back, &menu_row_back_label, false);
+    } else if (page == MENU_PAGE_SCREEN_OFF) {
+        menu_header_create("Desligar Tela");
+        menu_row_create("Desativado", menu_soff_off_cb, &menu_row_soff_off, &menu_row_soff_off_label, false);
+        menu_row_create("30 segundos", menu_soff_30s_cb, &menu_row_soff_30s, &menu_row_soff_30s_label, false);
+        menu_row_create("1 minuto", menu_soff_1m_cb, &menu_row_soff_1m, &menu_row_soff_1m_label, false);
+        menu_row_create("2 minutos", menu_soff_2m_cb, &menu_row_soff_2m, &menu_row_soff_2m_label, false);
+        menu_row_create("5 minutos", menu_soff_5m_cb, &menu_row_soff_5m, &menu_row_soff_5m_label, false);
+        menu_row_create("10 minutos", menu_soff_10m_cb, &menu_row_soff_10m, &menu_row_soff_10m_label, false);
         menu_row_create("Voltar", menu_back_cb, &menu_row_back, &menu_row_back_label, false);
     }
 

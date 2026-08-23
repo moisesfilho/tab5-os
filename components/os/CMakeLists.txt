@@ -15,6 +15,7 @@ idf_component_register(
         "shell/ui_bar.cpp"
         "shell/ui_status.cpp"
         "shell/ui_screensaver.cpp"
+        "shell/ui_screen_off.cpp"
         "shell/ui_keyboard.cpp"
         "shell/ui_mouse.cpp"
         "shell/ui_theme.cpp"
