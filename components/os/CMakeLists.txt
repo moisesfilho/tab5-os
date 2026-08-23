@@ -4,6 +4,7 @@ idf_component_register(
         "core/file_assoc.cpp"
         "core/timezone_mgr.cpp"
         "core/display_storage.cpp"
+        "core/audio_storage.cpp"
         "core/wifi_mgr.cpp"
         "core/wifi_storage.cpp"
         "core/bt_mgr.cpp"

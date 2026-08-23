@@ -7,6 +7,7 @@
 #include "ui_screen_off.h"
 #include "ui_keyboard.h"
 #include "display_storage.h"
+#include "audio_storage.h"
 #include "timezone_mgr.h"
 #include "imu_reader.h"
 #include "battery_reader.h"
@@ -995,6 +996,8 @@ void volume_slider_cb(lv_event_t *event)
             lv_label_set_text(menu_row_volume_val_label, buf);
         }
         music_player_set_volume(val);
+    } else if (code == LV_EVENT_RELEASED) {
+        audio_storage_save_volume(val);
     }
 }
 
@@ -1053,6 +1056,7 @@ void menu_volume_row_create(void)
     lv_slider_set_value(menu_row_volume_slider, cur_vol, LV_ANIM_OFF);
 
     lv_obj_add_event_cb(menu_row_volume_slider, volume_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(menu_row_volume_slider, volume_slider_cb, LV_EVENT_RELEASED, nullptr);
 }
 
 static void tz_btn_cb(lv_event_t *e)

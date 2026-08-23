@@ -44,6 +44,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 34** | Desligamento Automático da Tela (Screen-Off) | Sistema / Display / Energia | Timeout configurável (30s–10min), backlight 0 via PWM, apps continuam rodando, despertar por duplo toque, mouse/teclado BLE e persistência em NVS |
 | `[x]` | **Fase 35** | Botão de Energia na Barra Superior (Power Menu) | Sistema / Energia / UI | Ícone de power na ponta esquerda da barra, painel com Desligar Tela / Reiniciar (`esp_restart`) / Desligar (deep sleep), confirmação modal antes de ações destrutivas |
 | `[x]` | **Fase 36** | Monitor de Bateria INA226 e Proteção de Carregamento | Sistema / Energia / UI | Driver próprio do INA226 (I2C 0x41, shunt 5 mΩ), ícone com percentual e popup de detalhes na barra, estados Carregando/Na tomada/Na bateria/Somente cabo, corte de carga em 90% via `CHG_EN` com retomada em 85% e switch persistido em NVS |
+| `[x]` | **Fase 37** | Persistência do Volume Geral de Áudio | Sistema / Áudio / UI | Volume geral (menu Configuração e app Música) salvo ao soltar o slider em NVS (`tab5/volume`) e SD (`/sdcard/tab5_os/audio.cfg`), restaurado no boot via lazy-load no player, seguindo o padrão do brilho (`display_storage`) |
 
 
 ---
@@ -1961,6 +1962,55 @@ components/os/
 ## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 - **Monitor + proteção validados em hardware real** (ago/2026): carregamento medido a −310 mA, corte executado em 94% com VSYS 8326 mV, flutuação pós-corte a +2 mA só no cabo, estados de tomada/bateria/sem-bateria confirmados por telemetria.
 - **Pós-validação**: descoberta de que o carregador vem desabilitado (`CHG_EN` obrigatório no boot) e de que `CHG_STAT` não reflete o estado real — documentados nas decisões D2/D3.
+
+---
+
+# [x] Fase 37: Persistência do Volume Geral de Áudio `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- O volume geral do sistema (0–100%), controlado pelo slider "Volume" no menu Configuração e pelo slider no app Música, era aplicado apenas em runtime (`music_player_set_volume`) e voltava ao padrão de 80% a cada boot.
+- Persistir o valor seguindo o mesmo modelo do brilho (`display_storage`): NVS como fonte primária e SD como fallback inspecionável, com restauração automática no boot.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Módulo de persistência | `core/audio_storage.{h,cpp}` (**novo**): NVS `tab5/volume` + `/sdcard/tab5_os/audio.cfg` (linha `volume=N`) | Mesmo padrão dos demais domínios (`wifi_storage`, `bt_storage`, `display_storage`); load NVS → SD → 80%, save grava ambos |
+| D2 | Carga do valor salvo | Lazy-load único (`ensure_volume_loaded()`) em `music_player_init/get/set_volume` | Valor correto independente da ordem boot × abertura do app × abertura do menu, sem acoplar áudio ao `app_main` |
+| D3 | Momento da gravação | Somente no `LV_EVENT_RELEASED` dos sliders (padrão do brilho) | `LV_EVENT_VALUE_CHANGED` dispara a cada passo do arraste; gravar em cada tick desgastaria flash à toa |
+
+## 3. Estrutura de Arquivos & Componentes
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `components/os/core/audio_storage.{h,cpp}` (**novo**) | `audio_storage_load_volume()` / `audio_storage_save_volume()` com clamp 0–100 |
+| `components/os/CMakeLists.txt` | Registro do novo source |
+| `components/apps/music/music_player.cpp` | Lazy-load antes de aplicar o volume no codec |
+| `components/os/shell/ui_bar.cpp` | Slider "Volume" do menu Configuração grava no soltar |
+| `components/apps/music/ui_music.cpp` | Slider de volume do app Música grava no soltar |
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Storage**: módulo `audio_storage` com NVS primário, fallback SD (`wifi_storage_mount`) e padrão 80%.
+- [x] **Etapa 2 — Player**: lazy-load integrado a init/get/set; valor restaurado é aplicado ao codec na inicialização do speaker.
+- [x] **Etapa 3 — UIs**: handlers `LV_EVENT_RELEASED` nos dois sliders chamando `audio_storage_save_volume()`.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Escrita em flash a cada tick do arraste do slider | Gravação somente no release (`LV_EVENT_RELEASED`) |
+| SD ausente ou falha de montagem | Load cai no NVS; save sempre grava NVS e só escreve SD se a montagem ok |
+| Valor fora de faixa/corrompido no arquivo | Clamp 0–100 na leitura e na gravação; fallback para 80% |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Ajustar o volume no menu Configuração ou no app Música: log `tab5_audio_storage: volume salvo: N%`.
+2. Reiniciar: log `volume carregado do NVS: N%`; menu e app Música iniciam sincronizados no valor salvo.
+3. Primeiro boot sem configuração prévia: adota 80%.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Validado em hardware real** (ago/2026): volume ajustado a 32% na UI sobreviveu ao reboot — boot exibiu `volume carregado do NVS: 32%`.
 
 ---
 
