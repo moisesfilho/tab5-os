@@ -9,6 +9,7 @@ idf_component_register(
         "core/bt_mgr.cpp"
         "core/bt_storage.cpp"
         "core/imu_reader.cpp"
+        "core/battery_reader.cpp"
         "core/orientation.cpp"
         "shell/ui_shell.cpp"
         "shell/ui_desktop.cpp"

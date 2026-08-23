@@ -43,6 +43,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 33** | Estabilidade do Relógio da Barra Superior | Sistema / UI | Fonte monoespaçada JetBrains Mono no relógio (`dd/mm/aaaa hh:mm`), largura fixa e alinhamento à direita: zero deslocamento lateral dos ícones |
 | `[x]` | **Fase 34** | Desligamento Automático da Tela (Screen-Off) | Sistema / Display / Energia | Timeout configurável (30s–10min), backlight 0 via PWM, apps continuam rodando, despertar por duplo toque, mouse/teclado BLE e persistência em NVS |
 | `[x]` | **Fase 35** | Botão de Energia na Barra Superior (Power Menu) | Sistema / Energia / UI | Ícone de power na ponta esquerda da barra, painel com Desligar Tela / Reiniciar (`esp_restart`) / Desligar (deep sleep), confirmação modal antes de ações destrutivas |
+| `[x]` | **Fase 36** | Monitor de Bateria INA226 e Proteção de Carregamento | Sistema / Energia / UI | Driver próprio do INA226 (I2C 0x41, shunt 5 mΩ), ícone com percentual e popup de detalhes na barra, estados Carregando/Na tomada/Na bateria/Somente cabo, corte de carga em 90% via `CHG_EN` com retomada em 85% e switch persistido em NVS |
 
 
 ---
@@ -1900,6 +1901,69 @@ components/os/
 
 ---
 
+# [x] Fase 36: Monitor de Bateria INA226 e Proteção de Carregamento `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- O Tab5 possui circuito de monitoramento de energia **INA226** que o BSP oficial não expõe (`BSP_CAPS_BAT 0`); a bateria é uma NP-F550 removível de 2S (2000 mAh, 6,0–8,4 V).
+- Adicionar um **ícone de bateria com percentual** na barra superior, entre o Wi-Fi e o relógio, indicando em tempo real se o aparelho está **carregando**, **na tomada (carregado)**, **na bateria** ou **somente no cabo sem bateria**.
+- Toque no ícone abre **popup de detalhes** (Estado, Tensão, Corrente e Nível), atualizado pelo poll de 1 s da barra enquanto visível.
+- Adicionar opção **"Proteção da bateria"** no menu Configuração: quando ligada, corta a carga em **90%** mesmo com o cabo conectado (o aparelho passa a consumir apenas energia do cabo) e retoma automaticamente em **85%**.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Acesso ao INA226 | Driver próprio (`core/battery_reader.cpp`) sobre `bsp_i2c_get_handle()` | Sem dependência nova; endereço 0x41, config `0x4527`, cal `0x0D55` (shunt 5 mΩ, 300 µA/LSB corrente, 1,25 mV/LSB barramento) conforme referências públicas do hardware |
+| D2 | Detecção de carregamento | Corrente negativa < −15 mA no shunt | O pino `CHG_STAT` (expansor B P6) leu 1 mesmo durante carga e com ela cortada — não confiável; o shunt é inequívoco (+descarrega / −carrega) |
+| D3 | Habilitação do carregador | `CHG_EN` (expansor B P7, push-pull alto) ativado no boot | O IP2326 vem **desabilitado por padrão**: sem isso o aparelho nunca carrega (bug da v1) |
+| D4 | Percentual | Coulomb counting (mA/72000 por segundo, negativo soma) + estimativa inicial pela tensão 6,0–8,4 V | A INA226 mede VSYS (~8,1–8,4 V na tomada), não VBAT direto; integração evita saltos sob carga |
+| D5 | Estados "tomada" e "sem bateria" | Votação incremental com clamp ±10: tomada = \|I\|<15 mA e VSYS ≥ 7900 mV; sem bateria = VSYS ≥ 8330 mV sustentado | Sem bateria o VSYS fica em ~8381 mV estável, mas pulsos do carregador geram glitches para ~4250 mV — glitch custa −1 voto, não zera a série |
+| D6 | Proteção de carga | Corte em percent ≥ 90% **e** VSYS ≥ 8200 mV (sob carga), retomada ≤ 85%; `CHG_EN=0` mantém o aparelho só no cabo | A guarda de tensão impede que a estimativa otimista de boot corte a carga antes da hora; histerese 85–90% evita oscilação |
+| D7 | UI | Par btn+label no padrão dos ícones de status (`ui_status.cpp`), popup com backdrop no `layer_top` e switch no padrão "Rotação" (`ui_bar.cpp`), persistência NVS `tab5/chg_protect` (padrão ligada) | Consistência com o shell; tema próprio do popup pois `apply_menu_theme()` retorna cedo sem painel |
+
+## 3. Estrutura de Arquivos & Componentes
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `components/os/core/battery_reader.{h,cpp}` (**novo**) | Driver INA226 + leitura `CHG_STAT`/`CHG_EN` no expansor B (0x44), máquina de estados por votação, coulomb counting, proteção de carga e NVS |
+| `components/os/shell/ui_status.cpp` | Ícone de bateria com percentual, cores por estado, popup de detalhes no `layer_top` |
+| `components/os/shell/ui_bar.cpp` | Switch "Proteção da bateria" no menu Configuração |
+| `main/app_main.cpp` | `battery_reader_start()` após `imu_reader_start()` |
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Driver INA226**: dispositivo I2C @0x41, config/calibração, leitura de barramento/corrente a cada 1 s na task LVGL (`lv_timer`, padrão `imu_reader`).
+- [x] **Etapa 2 — Carregador**: configuração de `CHG_STAT` (entrada pull-up open-drain) e ativação de `CHG_EN`; telemetria `V/I/chg_stat/fonte/pct` a cada 10 s.
+- [x] **Etapa 3 — Máquina de estados**: Carregando (corrente), Na tomada / Sem bateria (votação por tensão), Na bateria (fallback); ocultação após 3 erros I2C consecutivos.
+- [x] **Etapa 4 — Ícone na barra**: símbolo por nível (FULL/3/2/1/EMPTY) + percentual; raio quando carregando; PLUS accent sem percentual sem bateria; vermelho fixo ≤15% na bateria.
+- [x] **Etapa 5 — Popup**: backdrop que engole toques fora, título/X, Estado/Tensão/Corrente/Nível, tematização própria e atualização pelo poll existente.
+- [x] **Etapa 6 — Proteção**: NVS + lógica de corte/retomada com guarda de tensão; reação imediata ao desligar o switch (religa `CHG_EN`).
+- [x] **Etapa 7 — Menu**: row "Proteção da bateria" com switch no painel Configuração.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Estimativa inicial otimista corta a carga cedo demais | Guarda adicional de tensão ≥ 8200 mV sob carga; coulomb counting corrige o percentual ao longo do uso |
+| Glitches de VSYS (~4250 mV) sem bateria quebram a detecção | Votação incremental (glitch = −1 voto) em vez de reset instantâneo |
+| Leitura I2C travando a task LVGL | Transações curtas (100 ms timeout) a 1 Hz; 3 falhas consecutivas ocultam o ícone |
+| Bateria cheia flutuando acima do limiar de "sem bateria" | Limiar 8330 mV acima da flutuação típica (~8,25 V); monitorar via telemetria |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Com cabo e bateria: ícone raio em cor de destaque; log `fonte=2`; corrente ~−310 mA.
+2. Só cabo (sem bateria): ícone PLUS sem percentual; popup "Somente cabo (sem bateria)"; estado converge mesmo com glitches periódicos de VSYS.
+3. Cabo fora: símbolo de nível na cor de texto; percentual decresce devagar; ≤15% fica vermelho.
+4. Proteção ligada + carga atingindo 90%: log `protecao: carga cortada`, corrente → ~0, popup "Na tomada (proteção 90%)"; desligar o switch religa o carregador imediatamente.
+5. Reinício persistindo a opção (NVS): boot mostra `protecao de carregamento ...: ligada/desligada` conforme o último estado.
+6. Popup abre/fecha por toque fora ou X, com fonte Latin-1 e cores corretas nos dois temas.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Monitor + proteção validados em hardware real** (ago/2026): carregamento medido a −310 mA, corte executado em 94% com VSYS 8326 mV, flutuação pós-corte a +2 mA só no cabo, estados de tomada/bateria/sem-bateria confirmados por telemetria.
+- **Pós-validação**: descoberta de que o carregador vem desabilitado (`CHG_EN` obrigatório no boot) e de que `CHG_STAT` não reflete o estado real — documentados nas decisões D2/D3.
+
+---
+
 ## Sugestões de Novas Aplicações (Não Planejadas)
 
 > [!NOTE]
@@ -1910,6 +1974,5 @@ components/os/
 | **Calculadora** | Calculadora simples com botões em grade e histórico de operações. |
 | **Calendário / Agenda** | Visão mensal com lembretes persistidos no microSD, usando o RTC RX8130CE. |
 | **Cronômetro / Timer / Alarme** | Temporizadores com aviso sonoro via ES8388, aproveitando o RTC. |
-| **Monitor de Bateria (INA226)** | Telemetria de tensão, corrente e carga em tempo real com gráfico. |
 | **Jogo simples (Snake / 2048)** | Jogo leve para demonstrar loop de animação e entrada por toque. |
 | **Desenho / Pintura (Canvas)** | Tela de desenho livre com toque/mouse e salvamento de imagem no SD. |

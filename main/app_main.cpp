@@ -8,6 +8,7 @@
 #include "bsp/esp-bsp.h"
 #include "ui_shell.h"
 #include "imu_reader.h"
+#include "battery_reader.h"
 #include "wifi_mgr.h"
 #include "wifi_storage.h"
 #include "bt_mgr.h"
@@ -88,6 +89,9 @@ extern "C" void app_main(void)
     }
 
     imu_reader_start(disp);
+
+    /* Inicia o monitor de bateria INA226 (poll de 1 s na task LVGL) */
+    battery_reader_start();
 
     /* Liga o radio WiFi (ESP32-C6 companion via SDIO) e inicia o STA + scan */
     wifi_mgr_start();
