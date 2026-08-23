@@ -205,7 +205,7 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 
 void ai_client_task(void *pvParameters)
 {
-    RequestContext req;
+    RequestContext req{};
     if (xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
         req = s_req;
         xSemaphoreGive(s_mutex);
