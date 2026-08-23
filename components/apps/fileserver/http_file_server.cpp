@@ -428,6 +428,59 @@ static esp_err_t upload_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t api_mkdir_handler(httpd_req_t *req)
+{
+    char query[512] = {0};
+    std::string path;
+    std::string name;
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        path = get_query_param(query, "path");
+        name = get_query_param(query, "name");
+    }
+
+    if (path.empty() || name.empty()) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing 'path' or 'name' parameter");
+        return ESP_FAIL;
+    }
+
+    if (!is_safe_sd_path(path)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid path");
+        return ESP_FAIL;
+    }
+
+    if (name == "." || name == ".." || name.find('/') != std::string::npos || name.find('\\') != std::string::npos) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid name");
+        return ESP_FAIL;
+    }
+
+    std::string fullpath = path;
+    if (fullpath.back() != '/') {
+        fullpath += "/";
+    }
+    fullpath += name;
+
+    wifi_storage_mount();
+
+    struct stat st;
+    if (stat(fullpath.c_str(), &st) == 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Already exists");
+        return ESP_FAIL;
+    }
+
+    if (mkdir(fullpath.c_str(), 0775) != 0) {
+        ESP_LOGE(TAG, "Falha ao criar pasta %s (errno=%d)", fullpath.c_str(), errno);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create directory");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Pasta criada: %s", fullpath.c_str());
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"success\":true}", 16);
+    return ESP_OK;
+}
+
 static esp_err_t api_delete_handler(httpd_req_t *req)
 {
     char query[512] = {0};
@@ -1080,6 +1133,7 @@ static esp_err_t index_handler(httpd_req_t *req)
         << "<div>"
         << "<input type='file' id='file-upload-input' multiple style='display:none;' "
            "onchange='handleFileSelect(event)'>"
+        << "<button class='btn btn-secondary btn-sm' onclick='createFolder()'>📁 Nova Pasta</button>"
         << "<button class='btn btn-primary btn-sm' onclick='document.getElementById(\"file-upload-input\").click()'>📤 "
            "Enviar Arquivo(s)</button>"
         << "</div>"
@@ -1486,6 +1540,18 @@ static esp_err_t index_handler(httpd_req_t *req)
         << "else{const t=await resp.text();showToast('Erro: '+t);}"
         << "}catch(e){showToast('Erro de rede: '+e.message);}"
         << "}"
+        << "async function createFolder(){"
+        << "const name = prompt('Nome da nova pasta:');"
+        << "if(!name || !name.trim()) return;"
+        << "const n = name.trim();"
+        << "if(n==='.'||n==='..'||n.includes('/')||n.includes('\\\\')){showToast('Nome invalido');return;}"
+        << "try{"
+        << "const resp = await "
+           "fetch('/api/mkdir?path='+encodeURIComponent(currentPath)+'&name='+encodeURIComponent(n),{method:'POST'});"
+        << "if(resp.ok){showToast('📁 Pasta \"'+n+'\" criada');loadFileList(currentPath);}"
+        << "else{const t=await resp.text();showToast('Erro: '+t);}"
+        << "}catch(e){showToast('Erro de rede: '+e.message);}"
+        << "}"
         << "function handleFileSelect(event){"
         << "const files = event.target.files;"
         << "if(files && files.length>0){uploadFiles(Array.from(files));}"
@@ -1768,6 +1834,10 @@ esp_err_t http_file_server_start(void)
     httpd_uri_t uri_delete = {
         .uri = "/api/delete", .method = HTTP_POST, .handler = api_delete_handler, .user_ctx = nullptr};
     httpd_register_uri_handler(s_server, &uri_delete);
+
+    httpd_uri_t uri_mkdir = {
+        .uri = "/api/mkdir", .method = HTTP_POST, .handler = api_mkdir_handler, .user_ctx = nullptr};
+    httpd_register_uri_handler(s_server, &uri_mkdir);
 
     /* Rotas de Status & Configurações do Sistema */
     httpd_uri_t uri_sys_status = {
