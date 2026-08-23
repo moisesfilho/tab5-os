@@ -130,6 +130,7 @@ Localizado em [`ui_font.h`](file:///home/moises/Projetos/tab5-os/components/os/s
 - `lv_font_montserrat_14_latin1`: Fonte padrão do sistema configurada globalmente no tema do display (`lv_theme_default_init`). Possui suporte completo ao range Latin-1 (`0x20-0x7F`, `0xA0-0xFF`: á, é, í, ó, ú, ç, ã, õ, etc.) + símbolos do LVGL.
 - `lv_font_montserrat_28_latin1`: Fonte grande para ícones do desktop, contadores e cabeçalhos de destaque.
 - `lv_font_montserrat_56_latin1`: Fonte extra grande usada no relógio do protetor de tela. Gerada com o mesmo comando/cobertura da de 28px (`--size 56` via `lv_font_conv`).
+- `lv_font_jetbrains_mono_14_clock`: Fonte **monoespaçada** (JetBrains Mono Regular 14px) com subconjunto mínimo (`espaço`, `/`, `:`, `0-9`), usada no relógio da barra superior. Como todo glifo ocupa exatamente a mesma largura, a mudança de valores não desloca o texto nem os ícones vizinhos. Gerada via `lv_font_conv --no-kerning`.
 
 > [!TIP]
 > **Herança e Ortografia PT-BR:**

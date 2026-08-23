@@ -800,7 +800,7 @@ void clock_update(void)
     struct tm t;
     if (timezone_mgr_get_localtime(&t) != nullptr) {
         char buf[32];
-        strftime(buf, sizeof(buf), "%d/%m/%Y %H:%M:%S", &t);
+        strftime(buf, sizeof(buf), "%d/%m/%Y %H:%M", &t);
         lv_label_set_text(clock_label, buf);
     }
 }
@@ -891,9 +891,16 @@ void ui_bar_init(lv_obj_t *parent)
     /* Badge de orientacao integrado a barra (compacto). */
     ui_status_init(bar);
 
-    /* Relogio no formato brasileiro (dd/mm/aaaa hh:mm:ss). */
+    /* Relogio no formato brasileiro (dd/mm/aaaa hh:mm). Fonte monoespacada
+     * + largura fixa + alinhamento a direita: nenhuma mudanca de valor
+     * desloca o texto ou empurra os icones. */
     clock_label = lv_label_create(bar);
-    lv_obj_set_style_text_font(clock_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(clock_label, &lv_font_jetbrains_mono_14_clock, 0);
+    lv_point_t clock_max = {0, 0};
+    lv_text_get_size(&clock_max, "88/88/8888 88:88", &lv_font_jetbrains_mono_14_clock, 0, 0, LV_COORD_MAX,
+                     LV_TEXT_FLAG_NONE);
+    lv_obj_set_width(clock_label, clock_max.x);
+    lv_obj_set_style_text_align(clock_label, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_style_margin_right(clock_label, 12, 0);
     lv_timer_create(clock_timer_cb, 1000, nullptr);
     clock_update();

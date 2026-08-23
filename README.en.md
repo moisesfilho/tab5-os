@@ -29,7 +29,7 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 - **PT-BR virtual keyboard** — LVGL native keyboard + textarea, works in portrait and landscape, with symbols (`*`, `@`, `#`, etc.) and an accents page (ç, accented lowercase and uppercase vowels) reachable through the "1#" key
 - **Reactive window resizing** — application windows and modals automatically adapt their height and position when the virtual keyboard opens and closes
 - **Orientation Persistence** — display rotation is automatically saved to the SD card and restored upon boot
-- **OS-style top bar** — gear button, Wi-Fi status indicator, Bluetooth connection indicator, and live clock
+- **OS-style top bar** — gear button, Wi-Fi status indicator, Bluetooth connection indicator, and live clock in a monospaced font (`dd/mm/yyyy hh:mm`), with fixed width and right alignment that eliminate any sideways shifting when values change
 - **Auto-rotation by IMU** — BMI270 gravity vector drives `lv_display_set_rotation` (0/90/180/270) with debounce
 - **Settings menu** — quick panel integrated into the top bar with theme toggle (light/dark), screensaver timeout selector (Disabled, 1 min, 2 min, 5 min), IMU auto-rotation switch, and independent power switches for Wi-Fi and Bluetooth with NVS persistence, radio control, and smart auto-reconnection
 - **RTC clock** — RX8130CE seeds the system clock at boot (`settimeofday`)

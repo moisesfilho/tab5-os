@@ -11,6 +11,12 @@ extern const lv_font_t lv_font_montserrat_14_latin1;
  * e no splash. Gerada em paralelo (nao editar o arquivo da fonte). */
 extern const lv_font_t lv_font_montserrat_28_latin1;
 
+/* JetBrains Mono Regular 14px, fonte MONOESPACADA (todo glifo ocupa a mesma
+ * largura), subconjunto " ", "/" , ":" e numeros; usada no relogio da barra
+ * para nao haver deslocamento lateral quando os valores mudam. Gerada em
+ * paralelo (nao editar o arquivo da fonte). */
+extern const lv_font_t lv_font_jetbrains_mono_14_clock;
+
 /* Montserrat Medium 56px, mesma cobertura de caracteres; usada no relogio
  * do protetor de tela. Gerada em paralelo (nao editar o arquivo da fonte). */
 extern const lv_font_t lv_font_montserrat_56_latin1;

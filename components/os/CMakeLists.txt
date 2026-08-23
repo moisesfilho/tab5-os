@@ -20,6 +20,7 @@ idf_component_register(
         "shell/ui_theme.cpp"
         "shell/ui_app_bar.cpp"
         "fonts/lv_font_montserrat_14_latin1.c"
+        "fonts/lv_font_jetbrains_mono_14_clock.c"
         "fonts/lv_font_montserrat_28_latin1.c"
         "fonts/lv_font_montserrat_56_latin1.c"
     INCLUDE_DIRS "core" "shell" "fonts" "."

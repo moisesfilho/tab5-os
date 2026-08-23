@@ -29,7 +29,7 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 - **Teclado virtual PT-BR** — teclado nativo LVGL + textarea, funciona em retrato e paisagem, com símbolos (`*`, `@`, `#`, etc.) e página de acentos (ç, vogais acentuadas minúsculas e maiúsculas) acessada pela tecla "1#"
 - **Redimensionamento reativo** — janelas de aplicativos e modais ajustam sua altura e posição visível automaticamente ao abrir e fechar o teclado virtual
 - **Persistência de Orientação** — a posição da tela é persistida automaticamente no cartão SD e restaurada no boot
-- **Barra superior estilo SO** — botão de engrenagem, ícone de status Wi-Fi, ícone de status Bluetooth e relógio ao vivo
+- **Barra superior estilo SO** — botão de engrenagem, ícone de status Wi-Fi, ícone de status Bluetooth e relógio ao vivo em fonte monoespaçada (`dd/mm/aaaa hh:mm`), com largura fixa e alinhamento à direita que eliminam qualquer deslocamento lateral na mudança de valores
 - **Rotação automática por IMU** — o vetor de gravidade do BMI270 aciona `lv_display_set_rotation` (0/90/180/270) com debounce
 - **Menu de configurações** — painel rápido integrado à barra superior com alternância de tema (claro/escuro), seletor de timeout do protetor de tela (Desativado, 1 min, 2 min, 5 min), controle de rotação por IMU e interruptores para ligar/desligar Wi-Fi e Bluetooth com persistência em NVS, controle de rádio e auto-reconexão inteligente
 - **Relógio RTC** — RX8130CE semeia o relógio do sistema no boot (`settimeofday`)

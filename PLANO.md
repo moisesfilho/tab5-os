@@ -40,6 +40,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[ ]` | **Fase 30** | Testes Unitários Automáticos com Cobertura ≥80% | Qualidade / Testes | Suíte GoogleTest em host nativo, cobertura gcov/lcov com gate ≥80%, job `test` no Quality Gate do CI |
 | `[x]` | **Fase 31** | Otimização de Memória Interna e Robustez do Servidor de Arquivos | Sistema / Memória | Upload HTTP sem erro "Out of DMA memory", `malloc()`/LVGL na PSRAM, reprodução de músicas em subpastas |
 | `[x]` | **Fase 32** | Ativação Manual do Servidor de Arquivos | Aplicativo / Segurança | Servidor HTTP não inicia mais ao abrir o app; ativação apenas pelo botão "Iniciar Servidor", desliga ao fechar o app |
+| `[x]` | **Fase 33** | Estabilidade do Relógio da Barra Superior | Sistema / UI | Fonte monoespaçada JetBrains Mono no relógio (`dd/mm/aaaa hh:mm`), largura fixa e alinhamento à direita: zero deslocamento lateral dos ícones |
 
 
 ---
@@ -1720,6 +1721,51 @@ O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cob
 
 ## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 - **Ativação Manual do Servidor**: validado em hardware; comportamento conforme solicitado (servidor só ativo por solicitação explícita).
+
+---
+
+# [x] Fase 33: Estabilidade do Relógio da Barra Superior `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- O relógio da barra superior usava a fonte proporcional Montserrat, na qual os dígitos possuem larguras diferentes (ex: `1` = 370 unidades vs `4` = 669). A cada mudança de segundo, o label redimensionava e empurrava os ícones de status lateralmente.
+- Objetivo: eliminar qualquer deslocamento horizontal da barra durante a atualização do relógio.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Fonte do relógio | JetBrains Mono Regular 14px (monoespaçada) | Todo glifo ocupa exatamente o mesmo bloco horizontal; mudança de valores não altera a largura do texto. Variante tabular do Montserrat foi testada e rejeitada visualmente |
+| D2 | Formato exibido | `dd/mm/aaaa hh:mm` (sem segundos) | Reduz a frequência de atualização para 1×/minuto |
+| D3 | Largura do label | Fixa via `lv_text_get_size("88/88/8888 88:88")` + `LV_TEXT_ALIGN_RIGHT` | Com fonte monoespaçada, qualquer combinação de valores mede idêntico; o texto ancora à direita |
+
+## 3. Estrutura de Arquivos & Componentes
+
+- **`components/os/fonts/lv_font_jetbrains_mono_14_clock.c`**: Nova fonte LVGL — subconjunto mínimo (`espaço`, `/`, `:`, `0-9`) com `lv_font_conv --no-kerning`, ~7 KB.
+- **`components/os/shell/ui_font.h`**: Declaração `extern const lv_font_t lv_font_jetbrains_mono_14_clock`.
+- **`components/os/shell/ui_bar.cpp`**: Relógio passa a usar a fonte monoespaçada, largura fixa medida na nova fonte e formato sem segundos.
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Diagnóstico**: Confirmação via fontTools dos avanços desiguais dos dígitos do Montserrat (causa raiz do deslocamento).
+- [x] **Etapa 2 — Geração da fonte**: Download do `JetBrainsMono-Regular.ttf`, geração do subconjunto via `npx lv_font_conv@1.5.3` e ajuste do include para `lvgl.h`.
+- [x] **Etapa 3 — Integração no shell**: Troca da fonte no `ui_bar`, remoção dos segundos e registro no build (`CMakeLists.txt`).
+- [x] **Etapa 4 — Validação em hardware**: Flash via USB-JTAG; boot limpo, ícones estáveis e relógio imóvel a cada minuto.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Estética divergente entre relógio (mono) e demais textos (Montserrat) | Aceito pelo usuário após teste visual; monospace é tipografia consagrada em relógios/terminais |
+| Caracteres ausentes no subconjunto renderizam como tofu | Formato do relógio é fixo (`dd/mm/aaaa hh:mm`) e usa apenas os glifos presentes |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Relógio exibe `dd/mm/aaaa hh:mm` em JetBrains Mono na barra superior.
+2. Ao trocar o minuto, nenhum ícone ou elemento da barra se desloca (verificação visual).
+3. Boot limpo sem erros no monitor serial.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Estabilidade do Relógio**: validado em hardware; barra totalmente estável com fonte monoespaçada.
 
 ---
 
