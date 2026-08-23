@@ -7,6 +7,7 @@
 #include "ui_shell.h"
 #include "ui_theme.h"
 #include "wifi_storage.h"
+#include "audio_storage.h"
 #include "bsp/m5stack_tab5.h"
 #include "esp_log.h"
 
@@ -338,6 +339,9 @@ void vol_slider_cb(lv_event_t *event)
     char buf[16];
     snprintf(buf, sizeof(buf), "%d%%", val);
     lv_label_set_text(vol_value_label, buf);
+    if (lv_event_get_code(event) == LV_EVENT_RELEASED) {
+        audio_storage_save_volume(music_player_get_volume());
+    }
 }
 
 void delete_item_cb(lv_event_t *event)
@@ -957,10 +961,12 @@ lv_obj_t *ui_music_create(void)
     lv_obj_set_size(vol_slider, lv_pct(65), 10);
     lv_slider_set_range(vol_slider, 0, 100);
     lv_slider_set_value(vol_slider, music_player_get_volume(), LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->text_muted), 0);
+    lv_obj_set_style_bg_opa(vol_slider, LV_OPA_40, 0);
     lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->accent), LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->accent), LV_PART_KNOB);
     lv_obj_add_event_cb(vol_slider, vol_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(vol_slider, vol_slider_cb, LV_EVENT_RELEASED, nullptr);
 
     vol_value_label = lv_label_create(vol_row);
     char v_buf[16];
@@ -1113,7 +1119,8 @@ void ui_music_refresh_theme(void)
         update_loop_btn_style();
 
         lv_obj_set_style_text_color(vol_icon_label, lv_color_hex(pal->text_muted), 0);
-        lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->surface_alt), 0);
+        lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->text_muted), 0);
+        lv_obj_set_style_bg_opa(vol_slider, LV_OPA_40, 0);
         lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->accent), LV_PART_INDICATOR);
         lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->accent), LV_PART_KNOB);
         lv_obj_set_style_text_color(vol_value_label, lv_color_hex(pal->text_muted), 0);

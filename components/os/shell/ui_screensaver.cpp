@@ -3,12 +3,15 @@
 #include "ui_keyboard.h"
 #include "ui_mouse.h"
 #include "ui_font.h"
+#include "ui_theme.h"
+#include "music_player.h"
 #include "timezone_mgr.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "nvs_flash.h"
 #include <time.h>
 #include <stdio.h>
+#include <string.h>
 
 static const char *TAG = "tab5_screensaver";
 
@@ -16,6 +19,7 @@ static const char *TAG = "tab5_screensaver";
 #define NVS_KEY_SS_TIMEOUT "ss_timeout"
 #define DEFAULT_TIMEOUT_SEC 120
 #define MARGIN_PX 20
+#define TRACK_TITLE_MAX 128
 
 namespace {
 
@@ -25,6 +29,10 @@ lv_obj_t *s_box = nullptr;
 lv_obj_t *s_version_label = nullptr;
 lv_obj_t *s_time_label = nullptr;
 lv_obj_t *s_date_label = nullptr;
+lv_obj_t *s_track_label = nullptr;
+
+char s_last_track_title[TRACK_TITLE_MAX] = "";
+int32_t s_track_max_w = 0;
 
 lv_timer_t *s_clock_timer = nullptr;
 lv_timer_t *s_reloc_timer = nullptr;
@@ -142,11 +150,61 @@ void relocate_box(void)
              (long)screen_w, (long)screen_h, (long)box_w, (long)box_h);
 }
 
+int32_t track_max_width(void)
+{
+    lv_display_t *disp = lv_display_get_default();
+    int32_t w = (disp != nullptr) ? lv_display_get_horizontal_resolution(disp) : 1280;
+    return (w * 9) / 10;
+}
+
+void update_track_label(void)
+{
+    if (s_track_label == nullptr) {
+        return;
+    }
+
+    int32_t max_w = track_max_width();
+    if (max_w != s_track_max_w) {
+        s_track_max_w = max_w;
+        lv_obj_set_width(s_track_label, max_w);
+    }
+
+    music_player_status_t status = {};
+    music_player_get_status(&status);
+
+    if (status.state != MUSIC_PLAYER_STATE_PLAYING || status.current_filepath[0] == '\0') {
+        if (s_last_track_title[0] != '\0') {
+            s_last_track_title[0] = '\0';
+            lv_obj_add_flag(s_track_label, LV_OBJ_FLAG_HIDDEN);
+        }
+        return;
+    }
+
+    const char *basename = strrchr(status.current_filepath, '/');
+    basename = (basename != nullptr) ? basename + 1 : status.current_filepath;
+
+    const char *dot = strrchr(basename, '.');
+    size_t len = (dot != nullptr && dot != basename) ? (size_t)(dot - basename) : strlen(basename);
+    if (len >= sizeof(s_last_track_title)) {
+        len = sizeof(s_last_track_title) - 1;
+    }
+
+    char title[TRACK_TITLE_MAX];
+    snprintf(title, sizeof(title), LV_SYMBOL_AUDIO " %.*s", (int)len, basename);
+
+    if (strcmp(title, s_last_track_title) != 0) {
+        snprintf(s_last_track_title, sizeof(s_last_track_title), "%s", title);
+        lv_label_set_text(s_track_label, title);
+    }
+    lv_obj_clear_flag(s_track_label, LV_OBJ_FLAG_HIDDEN);
+}
+
 void clock_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
     if (s_is_active) {
         update_clock_and_date();
+        update_track_label();
     }
 }
 
@@ -202,24 +260,35 @@ void ui_screensaver_init(void)
     lv_obj_set_flex_align(s_box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     s_version_label = lv_label_create(s_box);
-    lv_label_set_text(s_version_label, "tab5-os v0.2.0");
-    lv_obj_set_style_text_font(s_version_label, &lv_font_montserrat_14_latin1, 0);
+    lv_label_set_text(s_version_label, "tab5-os v0.3.0");
+    lv_obj_set_style_text_font(s_version_label, &lv_font_montserrat_28_latin1, 0);
     lv_obj_set_style_text_color(s_version_label, lv_color_hex(0xA0A0A0), 0);
     lv_obj_set_style_pad_bottom(s_version_label, 4, 0);
     lv_obj_add_flag(s_version_label, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     s_time_label = lv_label_create(s_box);
     lv_label_set_text(s_time_label, "00:00:00");
-    lv_obj_set_style_text_font(s_time_label, &lv_font_montserrat_28_latin1, 0);
+    lv_obj_set_style_text_font(s_time_label, &lv_font_montserrat_56_latin1, 0);
     lv_obj_set_style_text_color(s_time_label, lv_color_hex(0xFFFFFFFF), 0);
     lv_obj_set_style_pad_bottom(s_time_label, 4, 0);
     lv_obj_add_flag(s_time_label, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     s_date_label = lv_label_create(s_box);
     lv_label_set_text(s_date_label, "");
-    lv_obj_set_style_text_font(s_date_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(s_date_label, &lv_font_montserrat_28_latin1, 0);
     lv_obj_set_style_text_color(s_date_label, lv_color_hex(0xD0D0D0), 0);
     lv_obj_add_flag(s_date_label, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    const ui_palette_t *pal = ui_theme_get();
+    s_track_label = lv_label_create(s_box);
+    lv_label_set_text(s_track_label, "");
+    lv_obj_set_style_text_font(s_track_label, &lv_font_montserrat_28_latin1, 0);
+    lv_obj_set_style_text_color(s_track_label, lv_color_hex(pal->accent), 0);
+    lv_obj_set_style_pad_top(s_track_label, 8, 0);
+    lv_label_set_long_mode(s_track_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_style_text_align(s_track_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_add_flag(s_track_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_track_label, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     s_clock_timer = lv_timer_create(clock_timer_cb, 1000, nullptr);
     s_reloc_timer = lv_timer_create(reloc_timer_cb, 30000, nullptr);
@@ -247,6 +316,7 @@ void ui_screensaver_show(void)
     ui_mouse_set_cursor_visible(false);
 
     update_clock_and_date();
+    update_track_label();
     relocate_box();
 
     lv_timer_resume(s_clock_timer);

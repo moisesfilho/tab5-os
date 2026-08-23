@@ -1,5 +1,6 @@
 #include "ui_mouse.h"
 #include "ui_screensaver.h"
+#include "ui_screen_off.h"
 #include "lvgl.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -122,6 +123,7 @@ void mouse_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
         if (ui_screensaver_is_active()) {
             ui_screensaver_wake_up();
         }
+        ui_screen_off_wake_up();
     }
 
     lv_display_t *disp = lv_display_get_default();

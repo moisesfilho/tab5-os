@@ -40,6 +40,12 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[ ]` | **Fase 30** | Testes Unitários Automáticos com Cobertura ≥80% | Qualidade / Testes | Suíte GoogleTest em host nativo, cobertura gcov/lcov com gate ≥80%, job `test` no Quality Gate do CI |
 | `[x]` | **Fase 31** | Otimização de Memória Interna e Robustez do Servidor de Arquivos | Sistema / Memória | Upload HTTP sem erro "Out of DMA memory", `malloc()`/LVGL na PSRAM, reprodução de músicas em subpastas |
 | `[x]` | **Fase 32** | Ativação Manual do Servidor de Arquivos | Aplicativo / Segurança | Servidor HTTP não inicia mais ao abrir o app; ativação apenas pelo botão "Iniciar Servidor", desliga ao fechar o app |
+| `[x]` | **Fase 33** | Estabilidade do Relógio da Barra Superior | Sistema / UI | Fonte monoespaçada JetBrains Mono no relógio (`dd/mm/aaaa hh:mm`), largura fixa e alinhamento à direita: zero deslocamento lateral dos ícones |
+| `[x]` | **Fase 34** | Desligamento Automático da Tela (Screen-Off) | Sistema / Display / Energia | Timeout configurável (30s–10min), backlight 0 via PWM, apps continuam rodando, despertar por duplo toque, mouse/teclado BLE e persistência em NVS |
+| `[x]` | **Fase 35** | Botão de Energia na Barra Superior (Power Menu) | Sistema / Energia / UI | Ícone de power na ponta esquerda da barra, painel com Desligar Tela / Reiniciar (`esp_restart`) / Desligar (deep sleep), confirmação modal antes de ações destrutivas |
+| `[x]` | **Fase 36** | Monitor de Bateria INA226 e Proteção de Carregamento | Sistema / Energia / UI | Driver próprio do INA226 (I2C 0x41, shunt 5 mΩ), ícone com percentual e popup de detalhes na barra, estados Carregando/Na tomada/Na bateria/Somente cabo, corte de carga em 90% via `CHG_EN` com retomada em 85% e switch persistido em NVS |
+| `[x]` | **Fase 37** | Persistência do Volume Geral de Áudio | Sistema / Áudio / UI | Volume geral (menu Configuração e app Música) salvo ao soltar o slider em NVS (`tab5/volume`) e SD (`/sdcard/tab5_os/audio.cfg`), restaurado no boot via lazy-load no player, seguindo o padrão do brilho (`display_storage`) |
+| `[x]` | **Fase 38** | Ajustes de Usabilidade do Menu de Configuração | Sistema / UI | Painel alargado de 230 px para 320 px eliminando texto cortado, e trilha dos sliders visível nos dois temas (`text_muted` com 40% de opacidade em `LV_PART_MAIN`) no Brilho/Volume do menu e no app Música |
 
 
 ---
@@ -763,7 +769,7 @@ Exemplos:
   - Fundo completamente preto (`#000000`) cobrindo 100% da área útil da tela.
   - Tipografia clara em alto contraste: branco puro (`#FFFFFF`) ou cinza suave (`#D0D0D0`).
   - **Em destaque principal**: **Hora atual** (tamanho grande/bold, formato `HH:MM:SS`) e **Data completa** (ex: `Segunda-feira, 17 de Agosto de 2026`).
-  - Nome do sistema operacional e versão em texto secundário discreto (`tab5-os v0.2.0`).
+  - Nome do sistema operacional e versão em texto secundário discreto (`tab5-os v0.3.0`).
 - **Mecanismo Anti-Burn-in (Relocação a cada 30 segundos)**:
   - Timer periódico de 30 segundos (`lv_timer_t`) que sorteia novas coordenadas `(x, y)` para o bloco de texto.
   - **Cálculo de Bounding Box Seguro**: As coordenadas sorteadas respeitam estritamente os limites da resolução ativa (`x_max = screen_w - block_w - margin`, `y_max = screen_h - block_h - margin`), garantindo que **nenhuma informação seja cortada** nas bordas da tela.
@@ -801,14 +807,14 @@ components/app/
 ┌─────────────────────────────────────────────────────────┐
 │                                                         │
 │        ┌─────────────────────────────┐                  │
-│        │  tab5-os v0.2.0             │                  │
+│        │  tab5-os v0.3.0             │                  │
 │        │  19:45:30                   │  ← Posição (x1, y1)
 │        │  Domingo, 16 de Agosto      │     no tempo T = 0s
 │        └─────────────────────────────┘                  │
 │                                                         │
 │                                                         │
 │                      ┌─────────────────────────────┐    │
-│                      │  tab5-os v0.2.0             │    │
+│                      │  tab5-os v0.3.0             │    │
 │                      │  19:46:00                   │    │ ← Nova posição (x2, y2)
 │                      │  Domingo, 16 de Agosto      │    │    no tempo T = 30s
 │                      └─────────────────────────────┘    │
@@ -1723,7 +1729,336 @@ O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cob
 
 ---
 
-## Sugestões de Novas Aplicações (Não Planejadas)
+# [x] Fase 33: Estabilidade do Relógio da Barra Superior `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- O relógio da barra superior usava a fonte proporcional Montserrat, na qual os dígitos possuem larguras diferentes (ex: `1` = 370 unidades vs `4` = 669). A cada mudança de segundo, o label redimensionava e empurrava os ícones de status lateralmente.
+- Objetivo: eliminar qualquer deslocamento horizontal da barra durante a atualização do relógio.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Fonte do relógio | JetBrains Mono Regular 14px (monoespaçada) | Todo glifo ocupa exatamente o mesmo bloco horizontal; mudança de valores não altera a largura do texto. Variante tabular do Montserrat foi testada e rejeitada visualmente |
+| D2 | Formato exibido | `dd/mm/aaaa hh:mm` (sem segundos) | Reduz a frequência de atualização para 1×/minuto |
+| D3 | Largura do label | Fixa via `lv_text_get_size("88/88/8888 88:88")` + `LV_TEXT_ALIGN_RIGHT` | Com fonte monoespaçada, qualquer combinação de valores mede idêntico; o texto ancora à direita |
+
+## 3. Estrutura de Arquivos & Componentes
+
+- **`components/os/fonts/lv_font_jetbrains_mono_14_clock.c`**: Nova fonte LVGL — subconjunto mínimo (`espaço`, `/`, `:`, `0-9`) com `lv_font_conv --no-kerning`, ~7 KB.
+- **`components/os/shell/ui_font.h`**: Declaração `extern const lv_font_t lv_font_jetbrains_mono_14_clock`.
+- **`components/os/shell/ui_bar.cpp`**: Relógio passa a usar a fonte monoespaçada, largura fixa medida na nova fonte e formato sem segundos.
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Diagnóstico**: Confirmação via fontTools dos avanços desiguais dos dígitos do Montserrat (causa raiz do deslocamento).
+- [x] **Etapa 2 — Geração da fonte**: Download do `JetBrainsMono-Regular.ttf`, geração do subconjunto via `npx lv_font_conv@1.5.3` e ajuste do include para `lvgl.h`.
+- [x] **Etapa 3 — Integração no shell**: Troca da fonte no `ui_bar`, remoção dos segundos e registro no build (`CMakeLists.txt`).
+- [x] **Etapa 4 — Validação em hardware**: Flash via USB-JTAG; boot limpo, ícones estáveis e relógio imóvel a cada minuto.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Estética divergente entre relógio (mono) e demais textos (Montserrat) | Aceito pelo usuário após teste visual; monospace é tipografia consagrada em relógios/terminais |
+| Caracteres ausentes no subconjunto renderizam como tofu | Formato do relógio é fixo (`dd/mm/aaaa hh:mm`) e usa apenas os glifos presentes |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Relógio exibe `dd/mm/aaaa hh:mm` em JetBrains Mono na barra superior.
+2. Ao trocar o minuto, nenhum ícone ou elemento da barra se desloca (verificação visual).
+3. Boot limpo sem erros no monitor serial.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Estabilidade do Relógio**: validado em hardware; barra totalmente estável com fonte monoespaçada.
+
+---
+
+# [x] Fase 34: Desligamento Automático da Tela (Screen-Off) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Economizar energia do painel MIPI-DSI desligando o **backlight** após um período configurável de inatividade, **sem** suspender o sistema: os aplicativos em execução (ex: Player de Música) continuam rodando normalmente em segundo plano.
+- **Configuração persistente**: timeout ajustável no Menu de Configurações com as opções **Desativado, 30 segundos, 1 minuto, 2 minutos, 5 minutos e 10 minutos**, armazenado em NVS e restaurado no boot (padrão: 2 minutos).
+- **Despertar por duplo toque**: um toque único na tela apagada é engolido (não gera clique fantasma no app por baixo) e não desperta; apenas o **segundo toque dentro de 400 ms** religa a tela. Mouse e teclado Bluetooth HID despertam imediatamente.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Desligamento do display | `bsp_display_brightness_set(0)` (PWM LEDC duty 0) | Desliga apenas o backlight, mantendo CPU, rádios e tasks dos apps ativos — reprodução de música e conectividade seguem intactas |
+| D2 | Mecanismo de despertar no touch | Tela preta dedicada que engole o toque + detecção de duplo clique via `lv_tick_get()` (janela `DOUBLE_CLICK_MS 400`) | O primeiro toque não é propagado ao app (evita clique acidental); o segundo dentro da janela dispara `ui_screen_off_hide()` |
+| D3 | Despertar por mouse/teclado BLE | `ui_screen_off_wake_up()` ao lado do `ui_screensaver_wake_up()` no `ui_mouse` e `ui_keyboard` | Input físico deliberado (movimento/clique/tecla) religa a tela imediatamente, como já ocorria com o screensaver |
+| D4 | Persistência | NVS (namespace `tab5`, chave `screen_off`) | Mesmo padrão do timeout do screensaver (`ss_timeout`); rápido e independente do cartão microSD |
+| D5 | Interação com o screensaver | Screen-off **assume** sobre o protetor de tela | Se o protetor estiver ativo quando o timeout do screen-off chegar, ele é ocultado e a tela apaga; no wake retorna direto ao app. Enquanto a tela está off, a checagem do screensaver é suprimida |
+| D6 | Restauração do brilho | Brilho anterior salvo em `s_prev_brightness` via `display_storage_load_brightness()` | No wake, o backlight volta exatamente ao nível configurado (não fixo em 100%) |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/
+├── shell/
+│   ├── ui_screen_off.h          # [NEW] API do módulo (init/show/hide/check/wake/set_timeout)
+│   ├── ui_screen_off.cpp        # [NEW] NVS, tela preta com duplo toque, backlight e restauração
+│   ├── ui_shell.cpp             # [MODIFY] ui_screen_off_init() + checagem no inactivity_timer_cb
+│   ├── ui_mouse.cpp             # [MODIFY] ui_screen_off_wake_up() no mouse BLE
+│   ├── ui_keyboard.cpp          # [MODIFY] ui_screen_off_wake_up() no teclado BLE
+│   └── ui_bar.cpp               # [MODIFY] Subpágina MENU_PAGE_SCREEN_OFF no menu de configurações
+└── CMakeLists.txt               # [MODIFY] Registro de ui_screen_off.cpp
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Módulo `ui_screen_off`**: NVS (`screen_off`, default 120 s), tela preta dedicada que engole toques, `show()` (salva brilho + backlight 0 + oculta barra/cursor/teclado), `hide()` (restaura brilho + tela anterior + `lv_display_trigger_activity`) e `check_inactivity()` via `lv_display_get_inactive_time`.
+- [x] **Etapa 2 — Despertar por duplo toque**: Handler `LV_EVENT_CLICKED` da tela preta com timestamps `lv_tick_get()` — o 1º toque apenas registra o instante; o 2º dentro de 400 ms chama `hide()`.
+- [x] **Etapa 3 — Despertar por mouse/teclado BLE**: `ui_screen_off_wake_up()` adicionado em `ui_mouse.cpp` (movimento/clique) e `ui_keyboard.cpp` (char/tecla), ao lado das chamadas do screensaver.
+- [x] **Etapa 4 — Integração no shell**: `ui_screen_off_init()` no `ui_shell_init`; no `inactivity_timer_cb` o screen-off é checado primeiro e o screensaver é suprimido enquanto a tela estiver off.
+- [x] **Etapa 5 — Menu de configurações**: Linha "Desligar Tela" na página principal e subpágina `MENU_PAGE_SCREEN_OFF` com rádios Desativado / 30 segundos / 1 minuto / 2 minutos / 5 minutos / 10 minutos + Voltar, seguindo o padrão do screensaver.
+- [x] **Etapa 6 — Validação em hardware**: Flash via USB-JTAG; timeout 30 s apagou o backlight (log `tela desligada (brilho anterior=10%)`), wake restaurou o brilho, NVS persistiu a mudança de 30 s → 120 s e o screensaver assumiu depois conforme o design.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Clique fantasma no app ao despertar | O toque de wake é consumido pela tela preta; apenas o 2º toque (duplo) religa e nenhum toque é propagado ao app por baixo |
+| Despertar acidental por toque único | Janela de duplo clique de 400 ms: um toque isolado é engolido e não acorda a tela |
+| Tela presa apagada sem volta | Mouse/teclado BLE despertam imediatamente; o duplo toque também funciona em qualquer ponto da tela |
+| Screensaver e screen-off competindo | Screen-off assume sobre o protetor (`ui_screensaver_hide()` no show) e a checagem do screensaver é suprimida com a tela off |
+| Brilho restaurado incorretamente | Brilho anterior lido de `display_storage_load_brightness()` (mesma fonte do slider do menu) e salvo em `s_prev_brightness` |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Configurar timeout de 30 s no menu: aguardar e validar que o backlight apaga com o app em segundo plano ainda rodando.
+2. Toque único na tela apagada: NÃO deve religar nem gerar clique no app.
+3. Duplo toque (janela de 400 ms): religa a tela restaurando o brilho anterior, sem clique fantasma.
+4. Movimento/clique do mouse BLE e tecla do teclado BLE: religam a tela imediatamente.
+5. Reiniciar o Tab5: o timeout escolhido é restaurado da NVS.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Screen-Off**: timeout configurável e persistente, backlight 0 mantendo apps ativos, despertar por duplo toque (touch) e imediato (mouse/teclado BLE) — validado em hardware real.
+
+---
+
+# [x] Fase 35: Botão de Energia na Barra Superior (Power Menu) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Adicionar um **botão de energia** (ícone `LV_SYMBOL_POWER`) na barra superior do sistema, na **ponta esquerda**, antes do botão de configurações (engrenagem).
+- O botão abre um painel com três opções: **Desligar Tela**, **Reiniciar** e **Desligar**.
+- O desligamento manual da tela deve reutilizar **exatamente o mesmo caminho** do desligamento automático por inatividade (Fase 34): duplo toque para despertar, brilho anterior restaurado e wake imediato por mouse/teclado BLE.
+- Ações destrutivas (**Reiniciar** e **Desligar**) exigem **confirmação modal** antes de executar, evitando reboot/apagamento acidental por toque.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Ícone do botão | `LV_SYMBOL_POWER` (U+F011) na fonte `lv_font_montserrat_14_latin1` | Glifo já presente no subconjunto FontAwesome da fonte custom (verificado em `unicode_list_2`); zero custo de nova fonte |
+| D2 | Posição na barra | Primeiro item do flex row (`ui_bar_init` cria o botão **antes** do gear) | Ordem de criação define a posição no layout flex; mesmo estilo visual do gear |
+| D3 | Desligar Tela | `close_menu()` + `ui_screen_off_show()` | Caminho idêntico ao timeout automático: tela preta que engole toque, backlight 0, duplo toque desperta, brilho restaurado — sem duplicação de lógica |
+| D4 | Reiniciar | Modal de confirmação → `esp_restart()` | Reinicialização limpa do firmware; confirmação evita toque acidental |
+| D5 | Desligar | Modal de confirmação → `esp_deep_sleep_start()` sem fontes de despertar | ESP32-P4 suporta deep sleep (`SOC_DEEP_SLEEP_SUPPORTED=1`); consumo ~µA; não há API de power-off no BSP (botão físico é controlado pelo hardware). Acordar = 1 toque no botão físico do Tab5 (boot limpo) |
+| D6 | Antes de reiniciar/desligar | `music_player_stop()` + `bsp_display_brightness_set(0)` + `vTaskDelay(150 ms)` | Backlight 0 antes do reset esconde o artefato azul/branco do painel MIPI-DSI durante o reboot; para o amplificador não gerar ruído na transição; log registra a ação no console USB-JTAG |
+| D7 | Modal de confirmação | Overlay escuro em `lv_layer_top()` que cancela ao tocar fora + card centralizado em flex coluna (título, mensagem com `LONG_WRAP`, Cancelar/Confirmar) | Padrão dos modais dos apps (`ui_gallery`, `ui_music`, `ui_recorder`), elevado ao layer_top por ser ação de sistema; toda label define `lv_font_montserrat_14_latin1` explicitamente — sem herança, o fallback ASCII do `LV_FONT_DEFAULT` renderiza acentos como glifos inválidos |
+| D8 | Espaçamento dos botões da barra | Power e gear com pad 6/4 e margens de 2 px, iguais aos ícones de status (`ui_status`) | Gap visual entre power↔gear (~14 px) fica coerente com o ritmo dos ícones Wi-Fi/BT/Música (pad 12 criava vão de 24 px) |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/
+└── shell/
+    └── ui_bar.cpp               # [MODIFY] Botão de energia, página MENU_PAGE_POWER,
+                                 #          callbacks power_*_cb e show_power_confirm()
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Botão de energia**: criado como primeiro item do flex row da barra (antes da engrenagem), ícone `LV_SYMBOL_POWER`, mesmo estilo do gear (fundo transparente, radius 8, pressed accent).
+- [x] **Etapa 2 — Painel "Energia"**: nova página `MENU_PAGE_POWER` no menu overlay ancorado sob a barra à esquerda, com as linhas Desligar Tela / Reiniciar / Desligar.
+- [x] **Etapa 3 — Desligar Tela**: fecha o painel e chama `ui_screen_off_show()` (mesmo comportamento do automatismo da Fase 34).
+- [x] **Etapa 4 — Confirmação**: `show_power_confirm()` constrói overlay+card no `layer_top`; "Confirmar" executa `power_confirm_ok_cb`; tocar fora ou "Cancelar" apenas descarta.
+- [x] **Etapa 5 — Reiniciar**: backlight 0 + delay curto (log chega ao console) + `esp_restart()`, sem flash azul do painel.
+- [x] **Etapa 6 — Desligar**: para o player se houver música tocando, zera o backlight, oculta o teclado e entra em `esp_deep_sleep_start()`.
+- [x] **Etapa 7 — Tema**: botão e painel seguem a paleta ativa via `ui_bar_refresh_theme()` e `apply_menu_theme()`; modal é reestilizado se aberto durante troca de tema.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Reboot/shutdown acidental | Modal de confirmação obrigatório; overlay externo cancela |
+| Ruído do PA durante transição ao sleep | Player parado antes do `esp_deep_sleep_start()` |
+| Dispositivo "preso" após deep sleep | Botão físico do Tab5 reseta e inicia boot limpo (comportamento documentado) |
+| Painel/modal abertos durante screen-off automático | `close_menu()` também descarta o modal de confirmação |
+| Texto do modal escuro/ilegível ou acentos inválidos | Toda label define `lv_font_montserrat_14_latin1` e cores explicitamente via `apply_power_confirm_theme()` — o modal vive fora do ciclo do menu (`apply_menu_theme` retorna cedo sem painel) e herança no `layer_top` cai no fallback ASCII |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Botão de energia visível na ponta esquerda da barra, antes da engrenagem, nos temas claro e escuro.
+2. Toque no botão abre o painel "Energia"; toque fora fecha.
+3. "Desligar Tela": backlight apaga imediatamente; duplo toque religa com brilho anterior; mouse/teclado BLE despertam — idêntico ao timeout automático.
+4. "Reiniciar" → Confirmar: tela apaga e dispositivo reinicia direto ao desktop (sem flash azul); Cancelar/toque fora não faz nada.
+5. "Desligar" → Confirmar: tela apaga e dispositivo entra em deep sleep; 1 toque no botão físico reinicia o sistema.
+6. Mensagens do modal com acentuação correta (fonte Latin-1), alinhadas em flex coluna; gap power↔gear igual ao dos ícones de status.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Power Menu**: botão de energia na ponta esquerda, painel com Desligar Tela (caminho do screen-off) / Reiniciar / Desligar (deep sleep), ambos com confirmação modal — validado em hardware real.
+- **Refinamentos pós-validação**: fonte Latin-1 explícita e tematização própria do modal (texto legível nos dois temas), backlight 0 antes do `esp_restart()` (sem flash azul do painel) e pad/margens dos botões power/gear igualados aos ícones de status.
+
+---
+
+# [x] Fase 36: Monitor de Bateria INA226 e Proteção de Carregamento `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- O Tab5 possui circuito de monitoramento de energia **INA226** que o BSP oficial não expõe (`BSP_CAPS_BAT 0`); a bateria é uma NP-F550 removível de 2S (2000 mAh, 6,0–8,4 V).
+- Adicionar um **ícone de bateria com percentual** na barra superior, entre o Wi-Fi e o relógio, indicando em tempo real se o aparelho está **carregando**, **na tomada (carregado)**, **na bateria** ou **somente no cabo sem bateria**.
+- Toque no ícone abre **popup de detalhes** (Estado, Tensão, Corrente e Nível), atualizado pelo poll de 1 s da barra enquanto visível.
+- Adicionar opção **"Proteção da bateria"** no menu Configuração: quando ligada, corta a carga em **90%** mesmo com o cabo conectado (o aparelho passa a consumir apenas energia do cabo) e retoma automaticamente em **85%**.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Acesso ao INA226 | Driver próprio (`core/battery_reader.cpp`) sobre `bsp_i2c_get_handle()` | Sem dependência nova; endereço 0x41, config `0x4527`, cal `0x0D55` (shunt 5 mΩ, 300 µA/LSB corrente, 1,25 mV/LSB barramento) conforme referências públicas do hardware |
+| D2 | Detecção de carregamento | Corrente negativa < −15 mA no shunt | O pino `CHG_STAT` (expansor B P6) leu 1 mesmo durante carga e com ela cortada — não confiável; o shunt é inequívoco (+descarrega / −carrega) |
+| D3 | Habilitação do carregador | `CHG_EN` (expansor B P7, push-pull alto) ativado no boot | O IP2326 vem **desabilitado por padrão**: sem isso o aparelho nunca carrega (bug da v1) |
+| D4 | Percentual | Coulomb counting (mA/72000 por segundo, negativo soma) + estimativa inicial pela tensão 6,0–8,4 V | A INA226 mede VSYS (~8,1–8,4 V na tomada), não VBAT direto; integração evita saltos sob carga |
+| D5 | Estados "tomada" e "sem bateria" | Votação incremental com clamp ±10: tomada = \|I\|<15 mA e VSYS ≥ 7900 mV; sem bateria = VSYS ≥ 8330 mV sustentado | Sem bateria o VSYS fica em ~8381 mV estável, mas pulsos do carregador geram glitches para ~4250 mV — glitch custa −1 voto, não zera a série |
+| D6 | Proteção de carga | Corte em percent ≥ 90% **e** VSYS ≥ 8200 mV (sob carga), retomada ≤ 85%; `CHG_EN=0` mantém o aparelho só no cabo | A guarda de tensão impede que a estimativa otimista de boot corte a carga antes da hora; histerese 85–90% evita oscilação |
+| D7 | UI | Par btn+label no padrão dos ícones de status (`ui_status.cpp`), popup com backdrop no `layer_top` e switch no padrão "Rotação" (`ui_bar.cpp`), persistência NVS `tab5/chg_protect` (padrão ligada) | Consistência com o shell; tema próprio do popup pois `apply_menu_theme()` retorna cedo sem painel |
+
+## 3. Estrutura de Arquivos & Componentes
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `components/os/core/battery_reader.{h,cpp}` (**novo**) | Driver INA226 + leitura `CHG_STAT`/`CHG_EN` no expansor B (0x44), máquina de estados por votação, coulomb counting, proteção de carga e NVS |
+| `components/os/shell/ui_status.cpp` | Ícone de bateria com percentual, cores por estado, popup de detalhes no `layer_top` |
+| `components/os/shell/ui_bar.cpp` | Switch "Proteção da bateria" no menu Configuração |
+| `main/app_main.cpp` | `battery_reader_start()` após `imu_reader_start()` |
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Driver INA226**: dispositivo I2C @0x41, config/calibração, leitura de barramento/corrente a cada 1 s na task LVGL (`lv_timer`, padrão `imu_reader`).
+- [x] **Etapa 2 — Carregador**: configuração de `CHG_STAT` (entrada pull-up open-drain) e ativação de `CHG_EN`; telemetria `V/I/chg_stat/fonte/pct` a cada 10 s.
+- [x] **Etapa 3 — Máquina de estados**: Carregando (corrente), Na tomada / Sem bateria (votação por tensão), Na bateria (fallback); ocultação após 3 erros I2C consecutivos.
+- [x] **Etapa 4 — Ícone na barra**: símbolo por nível (FULL/3/2/1/EMPTY) + percentual; raio quando carregando; PLUS accent sem percentual sem bateria; vermelho fixo ≤15% na bateria.
+- [x] **Etapa 5 — Popup**: backdrop que engole toques fora, título/X, Estado/Tensão/Corrente/Nível, tematização própria e atualização pelo poll existente.
+- [x] **Etapa 6 — Proteção**: NVS + lógica de corte/retomada com guarda de tensão; reação imediata ao desligar o switch (religa `CHG_EN`).
+- [x] **Etapa 7 — Menu**: row "Proteção da bateria" com switch no painel Configuração.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Estimativa inicial otimista corta a carga cedo demais | Guarda adicional de tensão ≥ 8200 mV sob carga; coulomb counting corrige o percentual ao longo do uso |
+| Glitches de VSYS (~4250 mV) sem bateria quebram a detecção | Votação incremental (glitch = −1 voto) em vez de reset instantâneo |
+| Leitura I2C travando a task LVGL | Transações curtas (100 ms timeout) a 1 Hz; 3 falhas consecutivas ocultam o ícone |
+| Bateria cheia flutuando acima do limiar de "sem bateria" | Limiar 8330 mV acima da flutuação típica (~8,25 V); monitorar via telemetria |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Com cabo e bateria: ícone raio em cor de destaque; log `fonte=2`; corrente ~−310 mA.
+2. Só cabo (sem bateria): ícone PLUS sem percentual; popup "Somente cabo (sem bateria)"; estado converge mesmo com glitches periódicos de VSYS.
+3. Cabo fora: símbolo de nível na cor de texto; percentual decresce devagar; ≤15% fica vermelho.
+4. Proteção ligada + carga atingindo 90%: log `protecao: carga cortada`, corrente → ~0, popup "Na tomada (proteção 90%)"; desligar o switch religa o carregador imediatamente.
+5. Reinício persistindo a opção (NVS): boot mostra `protecao de carregamento ...: ligada/desligada` conforme o último estado.
+6. Popup abre/fecha por toque fora ou X, com fonte Latin-1 e cores corretas nos dois temas.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Monitor + proteção validados em hardware real** (ago/2026): carregamento medido a −310 mA, corte executado em 94% com VSYS 8326 mV, flutuação pós-corte a +2 mA só no cabo, estados de tomada/bateria/sem-bateria confirmados por telemetria.
+- **Pós-validação**: descoberta de que o carregador vem desabilitado (`CHG_EN` obrigatório no boot) e de que `CHG_STAT` não reflete o estado real — documentados nas decisões D2/D3.
+
+---
+
+# [x] Fase 37: Persistência do Volume Geral de Áudio `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- O volume geral do sistema (0–100%), controlado pelo slider "Volume" no menu Configuração e pelo slider no app Música, era aplicado apenas em runtime (`music_player_set_volume`) e voltava ao padrão de 80% a cada boot.
+- Persistir o valor seguindo o mesmo modelo do brilho (`display_storage`): NVS como fonte primária e SD como fallback inspecionável, com restauração automática no boot.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Módulo de persistência | `core/audio_storage.{h,cpp}` (**novo**): NVS `tab5/volume` + `/sdcard/tab5_os/audio.cfg` (linha `volume=N`) | Mesmo padrão dos demais domínios (`wifi_storage`, `bt_storage`, `display_storage`); load NVS → SD → 80%, save grava ambos |
+| D2 | Carga do valor salvo | Lazy-load único (`ensure_volume_loaded()`) em `music_player_init/get/set_volume` | Valor correto independente da ordem boot × abertura do app × abertura do menu, sem acoplar áudio ao `app_main` |
+| D3 | Momento da gravação | Somente no `LV_EVENT_RELEASED` dos sliders (padrão do brilho) | `LV_EVENT_VALUE_CHANGED` dispara a cada passo do arraste; gravar em cada tick desgastaria flash à toa |
+
+## 3. Estrutura de Arquivos & Componentes
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `components/os/core/audio_storage.{h,cpp}` (**novo**) | `audio_storage_load_volume()` / `audio_storage_save_volume()` com clamp 0–100 |
+| `components/os/CMakeLists.txt` | Registro do novo source |
+| `components/apps/music/music_player.cpp` | Lazy-load antes de aplicar o volume no codec |
+| `components/os/shell/ui_bar.cpp` | Slider "Volume" do menu Configuração grava no soltar |
+| `components/apps/music/ui_music.cpp` | Slider de volume do app Música grava no soltar |
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Storage**: módulo `audio_storage` com NVS primário, fallback SD (`wifi_storage_mount`) e padrão 80%.
+- [x] **Etapa 2 — Player**: lazy-load integrado a init/get/set; valor restaurado é aplicado ao codec na inicialização do speaker.
+- [x] **Etapa 3 — UIs**: handlers `LV_EVENT_RELEASED` nos dois sliders chamando `audio_storage_save_volume()`.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Escrita em flash a cada tick do arraste do slider | Gravação somente no release (`LV_EVENT_RELEASED`) |
+| SD ausente ou falha de montagem | Load cai no NVS; save sempre grava NVS e só escreve SD se a montagem ok |
+| Valor fora de faixa/corrompido no arquivo | Clamp 0–100 na leitura e na gravação; fallback para 80% |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Ajustar o volume no menu Configuração ou no app Música: log `tab5_audio_storage: volume salvo: N%`.
+2. Reiniciar: log `volume carregado do NVS: N%`; menu e app Música iniciam sincronizados no valor salvo.
+3. Primeiro boot sem configuração prévia: adota 80%.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Validado em hardware real** (ago/2026): volume ajustado a 32% na UI sobreviveu ao reboot — boot exibiu `volume carregado do NVS: 32%`.
+
+---
+
+# [x] Fase 38: Ajustes de Usabilidade do Menu de Configuração `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Com **230 px** de largura, o painel do menu cortava textos longos (ex: "Proteção da bateria") e apertava as linhas com rótulo + controle à direita.
+- As trilhas dos sliders usavam `pal->border` em `LV_PART_MAIN`, cor quase idêntica à superfície do painel nos dois temas: só o preenchimento accent aparecia, sem referência visual do limite (0–100%).
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Largura do painel | 320 px (`menu_panel`) | Elimina o corte de texto; cabe com folga nas orientações paisagem (1280 px) e retrato (720 px) mantendo o canto superior esquerdo |
+| D2 | Trilha dos sliders | `pal->text_muted` com `LV_OPA_40` em `LV_PART_MAIN` | Contraste garantido sobre a superfície do painel em claro e escuro; aplicado nos três sliders (Brilho e Volume via `apply_menu_theme`, Volume do app Música na criação e no `refresh_theme`) |
+
+## 3. Estrutura de Arquivos & Componentes
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `components/os/shell/ui_bar.cpp` | Largura do `menu_panel` (230 → 320 px) e trilha dos sliders Brilho/Volume no `apply_menu_theme()` |
+| `components/apps/music/ui_music.cpp` | Trilha do slider de volume na criação e no `ui_music_refresh_theme()` |
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Painel**: largura 320 px; todas as páginas do menu (Configuração, Tema, Protetor de Tela, Desligar Tela e Energia) herdam automaticamente.
+- [x] **Etapa 2 — Trilhas**: `bg_color = text_muted` + `bg_opa = LV_OPA_40` em `LV_PART_MAIN`; indicador accent e knob preservados.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Trilha competindo com o indicador accent | Opacidade de 40% mantém a trilha discreta porém legível |
+| Painel largo cobrindo mais conteúdo atrás | Overlay transparente já engole toques fora e fecha o menu ao clicar |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Menu Configuração aberto: nenhum texto cortado; linhas com switch/slider respirando.
+2. Sliders de Brilho e Volume: trilha cinza visível do início ao fim nos temas claro e escuro.
+3. App Música: slider de volume com a mesma trilha de referência.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Validado em hardware real** (ago/2026): painel sem cortes de texto e trilhas dos três sliders visíveis nos dois temas.
+
+---
+
+## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)
 
 > [!NOTE]
 > As aplicações abaixo são apenas **sugestões** para o roadmap futuro. Ainda **não** foram arquitetadas nem especificadas, portanto não possuem fase própria no caderno. Elas serão promovidas a uma fase formal (com detalhamento completo) quando forem priorizadas para implementação.
@@ -1733,6 +2068,8 @@ O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cob
 | **Calculadora** | Calculadora simples com botões em grade e histórico de operações. |
 | **Calendário / Agenda** | Visão mensal com lembretes persistidos no microSD, usando o RTC RX8130CE. |
 | **Cronômetro / Timer / Alarme** | Temporizadores com aviso sonoro via ES8388, aproveitando o RTC. |
-| **Monitor de Bateria (INA226)** | Telemetria de tensão, corrente e carga em tempo real com gráfico. |
 | **Jogo simples (Snake / 2048)** | Jogo leve para demonstrar loop de animação e entrada por toque. |
 | **Desenho / Pintura (Canvas)** | Tela de desenho livre com toque/mouse e salvamento de imagem no SD. |
+| **Chat AI** | Manter contexto e salvar conversas como notas. |
+| **Arquivos** | Permitir controlar visualização de diretórios ocultos (definidos por inicar com "."). |
+| **OS** | Salvar arquivos de configuração do sistema em pasta oculta. |

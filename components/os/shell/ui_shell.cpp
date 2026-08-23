@@ -14,6 +14,7 @@
 #include "ui_chat.h"
 #include "ui_music.h"
 #include "ui_screensaver.h"
+#include "ui_screen_off.h"
 #include "ui_theme.h"
 #include "ui_font.h"
 #include "app_registry.h"
@@ -44,7 +45,10 @@ lv_obj_t *splash_label = nullptr;
 void inactivity_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
-    ui_screensaver_check_inactivity();
+    ui_screen_off_check_inactivity();
+    if (!ui_screen_off_is_active()) {
+        ui_screensaver_check_inactivity();
+    }
 }
 
 void splash_timer_cb(lv_timer_t *timer)
@@ -154,6 +158,7 @@ void ui_shell_init(void)
     chat_scr = ui_chat_create();
     music_scr = ui_music_create();
     ui_screensaver_init();
+    ui_screen_off_init();
 
     lv_timer_create(inactivity_timer_cb, 1000, nullptr);
 

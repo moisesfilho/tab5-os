@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 #include "freertos/idf_additions.h"
 #include "wifi_storage.h"
+#include "audio_storage.h"
 
 #include <algorithm>
 #include <cctype>
@@ -47,6 +48,7 @@ esp_codec_dev_handle_t s_spk_dev = nullptr;
 TaskHandle_t s_task_handle = nullptr;
 volatile bool s_stop_requested = false;
 int s_current_volume = 80;
+bool s_volume_loaded = false;
 bool s_decoders_registered = false;
 
 music_player_status_t s_status = {
@@ -58,6 +60,17 @@ music_player_status_t s_status = {
     .bits_per_sample = 16,
     .current_filepath = {0},
 };
+
+void ensure_volume_loaded(void)
+{
+    if (s_volume_loaded) {
+        return;
+    }
+    int vol = AUDIO_DEFAULT_VOLUME;
+    audio_storage_load_volume(&vol);
+    s_current_volume = vol;
+    s_volume_loaded = true;
+}
 
 void ensure_music_dir_exists(void)
 {
@@ -611,6 +624,7 @@ esp_err_t music_player_init(void)
     if (s_spk_dev == nullptr) {
         s_spk_dev = bsp_audio_codec_speaker_init();
         if (s_spk_dev) {
+            ensure_volume_loaded();
             esp_codec_dev_set_out_mute(s_spk_dev, true);
             esp_codec_dev_set_out_vol(s_spk_dev, s_current_volume);
             ESP_LOGI(TAG, "Codec de speaker ES8388 inicializado para player de musica");
@@ -744,6 +758,7 @@ bool music_player_is_playing(void)
 
 esp_err_t music_player_set_volume(int volume)
 {
+    ensure_volume_loaded();
     if (volume < 0)
         volume = 0;
     if (volume > 100)
@@ -757,5 +772,6 @@ esp_err_t music_player_set_volume(int volume)
 
 int music_player_get_volume(void)
 {
+    ensure_volume_loaded();
     return s_current_volume;
 }
