@@ -39,6 +39,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 29** | Aplicativo "Música" — Player de Áudio Local (MP3/WAV) | Aplicativo / Mídia | Decoder `esp_audio_codec`, reprodução de `/sdcard/musica/*.mp3|wav`, controles e volume via ES8388 |
 | `[ ]` | **Fase 30** | Testes Unitários Automáticos com Cobertura ≥80% | Qualidade / Testes | Suíte GoogleTest em host nativo, cobertura gcov/lcov com gate ≥80%, job `test` no Quality Gate do CI |
 | `[x]` | **Fase 31** | Otimização de Memória Interna e Robustez do Servidor de Arquivos | Sistema / Memória | Upload HTTP sem erro "Out of DMA memory", `malloc()`/LVGL na PSRAM, reprodução de músicas em subpastas |
+| `[x]` | **Fase 32** | Ativação Manual do Servidor de Arquivos | Aplicativo / Segurança | Servidor HTTP não inicia mais ao abrir o app; ativação apenas pelo botão "Iniciar Servidor", desliga ao fechar o app |
 
 
 ---
@@ -1678,6 +1679,47 @@ O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cob
 
 ## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 - **Servidor de Arquivos & Memória**: Upload HTTP robusto e migração efetiva da carga de memória para a PSRAM, corrigindo upload com erro "Out of DMA memory" e reprodução de músicas em subpastas. Sem commit pendente após a validação em hardware.
+
+---
+
+# [x] Fase 32: Ativação Manual do Servidor de Arquivos `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- O app **Servidor** (`ui_fileserver`) iniciava o servidor HTTP automaticamente sempre que era aberto (`s_user_enabled = true`), fazendo com que o serviço ficasse ativo em portas de rede local sem solicitação explícita do usuário.
+- Objetivo: o servidor só deve ficar ativo quando o usuário **solicitar explicitamente** pelo botão "Iniciar Servidor"; ao abrir o app, o estado inicial é **INATIVO**.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Gatilho de ativação | Somente o botão "Iniciar Servidor" | O servidor nunca sobe sozinho: nem no boot, nem ao abrir o app |
+| D2 | Encerramento ao fechar o app | `ui_fileserver_on_close` → `http_file_server_stop()` (mantido) | Libera RAM interna (tasks/buffers de rede) que, se mantida, esgota a heap DMA e impede áudio/SD de alocarem buffers |
+
+## 3. Estrutura de Arquivos & Componentes
+
+- **`components/apps/fileserver/ui_fileserver.cpp`**: Removida a variável `s_user_enabled` e o auto-start em `ui_fileserver_on_open()`; o botão de controle (`toggle_btn_cb`) passa a ser o único gatilho de start/stop.
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Remoção do auto-start**: `s_user_enabled` removido; `ui_fileserver_on_open()` apenas atualiza o estado da UI (INATIVO) e cria o timer de refresh.
+- [x] **Etapa 2 — Botão como único gatilho**: `toggle_btn_cb` faz `start`/`stop` sem estado persistente em RAM.
+- [x] **Etapa 3 — Validação em hardware**: Flash via USB-JTAG; ao abrir o app o badge mostra **INATIVO**; servidor sobe apenas no toque em "Iniciar Servidor" e desliga ao fechar o app.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Usuário esquecer de iniciar o servidor | O app exibe o endereço URL e o botão de iniciar em destaque; o badge de status deixa o estado visível |
+| Servidor desligado com app fechado | Comportamento desejado: libera RAM interna e não expõe a porta 8080 sem solicitação |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Ao abrir o app **Servidor**, o badge mostra **INATIVO** e o botão exibe "Iniciar Servidor".
+2. O servidor responde em `http://<IP>:8080/` somente após tocar em "Iniciar Servidor".
+3. Ao fechar o app, o servidor para (porta 8080 não responde mais).
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Ativação Manual do Servidor**: validado em hardware; comportamento conforme solicitado (servidor só ativo por solicitação explícita).
 
 ---
 

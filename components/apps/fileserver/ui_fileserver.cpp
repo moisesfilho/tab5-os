@@ -50,10 +50,6 @@ lv_obj_t *stats_info_label = nullptr;
 
 lv_timer_t *refresh_timer = nullptr;
 
-/* Lembra a escolha do usuario: o servidor so auto-inicia ao abrir o app se
- * estiver habilitado. Desligar pelo botao desabilita ate reativar manualmente. */
-bool s_user_enabled = true;
-
 void update_ui_state(void)
 {
     bool running = http_file_server_is_running();
@@ -147,10 +143,8 @@ void toggle_btn_cb(lv_event_t *e)
     (void)e;
     if (http_file_server_is_running()) {
         http_file_server_stop();
-        s_user_enabled = false;
     } else {
         http_file_server_start();
-        s_user_enabled = true;
     }
     update_ui_state();
 }
@@ -334,9 +328,6 @@ lv_obj_t *ui_fileserver_create(void)
 void ui_fileserver_on_open(void)
 {
     ESP_LOGI(TAG, "abrindo app Servidor de Arquivos");
-    if (s_user_enabled) {
-        http_file_server_start();
-    }
     update_ui_state();
     if (refresh_timer == nullptr) {
         refresh_timer = lv_timer_create(timer_cb, 2000, nullptr);
