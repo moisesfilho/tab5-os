@@ -21,6 +21,7 @@ idf_component_register(
         "shell/ui_app_bar.cpp"
         "fonts/lv_font_montserrat_14_latin1.c"
         "fonts/lv_font_montserrat_28_latin1.c"
+        "fonts/lv_font_montserrat_56_latin1.c"
     INCLUDE_DIRS "core" "shell" "fonts" "."
     REQUIRES lvgl m5stack_tab5 sensor_hub nvs_flash esp_wifi esp_netif esp_event
             fatfs sdmmc bt apps

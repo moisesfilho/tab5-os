@@ -10,3 +10,7 @@ extern const lv_font_t lv_font_montserrat_14_latin1;
 /* Montserrat Medium 28px, mesma cobertura de caracteres; usada em titulos
  * e no splash. Gerada em paralelo (nao editar o arquivo da fonte). */
 extern const lv_font_t lv_font_montserrat_28_latin1;
+
+/* Montserrat Medium 56px, mesma cobertura de caracteres; usada no relogio
+ * do protetor de tela. Gerada em paralelo (nao editar o arquivo da fonte). */
+extern const lv_font_t lv_font_montserrat_56_latin1;
