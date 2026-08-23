@@ -42,6 +42,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 32** | Ativação Manual do Servidor de Arquivos | Aplicativo / Segurança | Servidor HTTP não inicia mais ao abrir o app; ativação apenas pelo botão "Iniciar Servidor", desliga ao fechar o app |
 | `[x]` | **Fase 33** | Estabilidade do Relógio da Barra Superior | Sistema / UI | Fonte monoespaçada JetBrains Mono no relógio (`dd/mm/aaaa hh:mm`), largura fixa e alinhamento à direita: zero deslocamento lateral dos ícones |
 | `[x]` | **Fase 34** | Desligamento Automático da Tela (Screen-Off) | Sistema / Display / Energia | Timeout configurável (30s–10min), backlight 0 via PWM, apps continuam rodando, despertar por duplo toque, mouse/teclado BLE e persistência em NVS |
+| `[x]` | **Fase 35** | Botão de Energia na Barra Superior (Power Menu) | Sistema / Energia / UI | Ícone de power na ponta esquerda da barra, painel com Desligar Tela / Reiniciar (`esp_restart`) / Desligar (deep sleep), confirmação modal antes de ações destrutivas |
 
 
 ---
@@ -1831,6 +1832,71 @@ components/os/
 
 ## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 - **Screen-Off**: timeout configurável e persistente, backlight 0 mantendo apps ativos, despertar por duplo toque (touch) e imediato (mouse/teclado BLE) — validado em hardware real.
+
+---
+
+# [x] Fase 35: Botão de Energia na Barra Superior (Power Menu) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Adicionar um **botão de energia** (ícone `LV_SYMBOL_POWER`) na barra superior do sistema, na **ponta esquerda**, antes do botão de configurações (engrenagem).
+- O botão abre um painel com três opções: **Desligar Tela**, **Reiniciar** e **Desligar**.
+- O desligamento manual da tela deve reutilizar **exatamente o mesmo caminho** do desligamento automático por inatividade (Fase 34): duplo toque para despertar, brilho anterior restaurado e wake imediato por mouse/teclado BLE.
+- Ações destrutivas (**Reiniciar** e **Desligar**) exigem **confirmação modal** antes de executar, evitando reboot/apagamento acidental por toque.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Ícone do botão | `LV_SYMBOL_POWER` (U+F011) na fonte `lv_font_montserrat_14_latin1` | Glifo já presente no subconjunto FontAwesome da fonte custom (verificado em `unicode_list_2`); zero custo de nova fonte |
+| D2 | Posição na barra | Primeiro item do flex row (`ui_bar_init` cria o botão **antes** do gear) | Ordem de criação define a posição no layout flex; mesmo estilo visual do gear |
+| D3 | Desligar Tela | `close_menu()` + `ui_screen_off_show()` | Caminho idêntico ao timeout automático: tela preta que engole toque, backlight 0, duplo toque desperta, brilho restaurado — sem duplicação de lógica |
+| D4 | Reiniciar | Modal de confirmação → `esp_restart()` | Reinicialização limpa do firmware; confirmação evita toque acidental |
+| D5 | Desligar | Modal de confirmação → `esp_deep_sleep_start()` sem fontes de despertar | ESP32-P4 suporta deep sleep (`SOC_DEEP_SLEEP_SUPPORTED=1`); consumo ~µA; não há API de power-off no BSP (botão físico é controlado pelo hardware). Acordar = 1 toque no botão físico do Tab5 (boot limpo) |
+| D6 | Antes de reiniciar/desligar | `music_player_stop()` + `bsp_display_brightness_set(0)` + `vTaskDelay(150 ms)` | Backlight 0 antes do reset esconde o artefato azul/branco do painel MIPI-DSI durante o reboot; para o amplificador não gerar ruído na transição; log registra a ação no console USB-JTAG |
+| D7 | Modal de confirmação | Overlay escuro em `lv_layer_top()` que cancela ao tocar fora + card centralizado em flex coluna (título, mensagem com `LONG_WRAP`, Cancelar/Confirmar) | Padrão dos modais dos apps (`ui_gallery`, `ui_music`, `ui_recorder`), elevado ao layer_top por ser ação de sistema; toda label define `lv_font_montserrat_14_latin1` explicitamente — sem herança, o fallback ASCII do `LV_FONT_DEFAULT` renderiza acentos como glifos inválidos |
+| D8 | Espaçamento dos botões da barra | Power e gear com pad 6/4 e margens de 2 px, iguais aos ícones de status (`ui_status`) | Gap visual entre power↔gear (~14 px) fica coerente com o ritmo dos ícones Wi-Fi/BT/Música (pad 12 criava vão de 24 px) |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/
+└── shell/
+    └── ui_bar.cpp               # [MODIFY] Botão de energia, página MENU_PAGE_POWER,
+                                 #          callbacks power_*_cb e show_power_confirm()
+```
+
+## 4. Fases de Execução da Funcionalidade
+
+- [x] **Etapa 1 — Botão de energia**: criado como primeiro item do flex row da barra (antes da engrenagem), ícone `LV_SYMBOL_POWER`, mesmo estilo do gear (fundo transparente, radius 8, pressed accent).
+- [x] **Etapa 2 — Painel "Energia"**: nova página `MENU_PAGE_POWER` no menu overlay ancorado sob a barra à esquerda, com as linhas Desligar Tela / Reiniciar / Desligar.
+- [x] **Etapa 3 — Desligar Tela**: fecha o painel e chama `ui_screen_off_show()` (mesmo comportamento do automatismo da Fase 34).
+- [x] **Etapa 4 — Confirmação**: `show_power_confirm()` constrói overlay+card no `layer_top`; "Confirmar" executa `power_confirm_ok_cb`; tocar fora ou "Cancelar" apenas descarta.
+- [x] **Etapa 5 — Reiniciar**: backlight 0 + delay curto (log chega ao console) + `esp_restart()`, sem flash azul do painel.
+- [x] **Etapa 6 — Desligar**: para o player se houver música tocando, zera o backlight, oculta o teclado e entra em `esp_deep_sleep_start()`.
+- [x] **Etapa 7 — Tema**: botão e painel seguem a paleta ativa via `ui_bar_refresh_theme()` e `apply_menu_theme()`; modal é reestilizado se aberto durante troca de tema.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Reboot/shutdown acidental | Modal de confirmação obrigatório; overlay externo cancela |
+| Ruído do PA durante transição ao sleep | Player parado antes do `esp_deep_sleep_start()` |
+| Dispositivo "preso" após deep sleep | Botão físico do Tab5 reseta e inicia boot limpo (comportamento documentado) |
+| Painel/modal abertos durante screen-off automático | `close_menu()` também descarta o modal de confirmação |
+| Texto do modal escuro/ilegível ou acentos inválidos | Toda label define `lv_font_montserrat_14_latin1` e cores explicitamente via `apply_power_confirm_theme()` — o modal vive fora do ciclo do menu (`apply_menu_theme` retorna cedo sem painel) e herança no `layer_top` cai no fallback ASCII |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Botão de energia visível na ponta esquerda da barra, antes da engrenagem, nos temas claro e escuro.
+2. Toque no botão abre o painel "Energia"; toque fora fecha.
+3. "Desligar Tela": backlight apaga imediatamente; duplo toque religa com brilho anterior; mouse/teclado BLE despertam — idêntico ao timeout automático.
+4. "Reiniciar" → Confirmar: tela apaga e dispositivo reinicia direto ao desktop (sem flash azul); Cancelar/toque fora não faz nada.
+5. "Desligar" → Confirmar: tela apaga e dispositivo entra em deep sleep; 1 toque no botão físico reinicia o sistema.
+6. Mensagens do modal com acentuação correta (fonte Latin-1), alinhadas em flex coluna; gap power↔gear igual ao dos ícones de status.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Power Menu**: botão de energia na ponta esquerda, painel com Desligar Tela (caminho do screen-off) / Reiniciar / Desligar (deep sleep), ambos com confirmação modal — validado em hardware real.
+- **Refinamentos pós-validação**: fonte Latin-1 explícita e tematização própria do modal (texto legível nos dois temas), backlight 0 antes do `esp_restart()` (sem flash azul do painel) e pad/margens dos botões power/gear igualados aos ícones de status.
 
 ---
 
