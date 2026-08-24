@@ -11,6 +11,7 @@
 #include "timezone_mgr.h"
 #include "imu_reader.h"
 #include "battery_reader.h"
+#include "screenshot.h"
 #include "wifi_mgr.h"
 #include "bt_mgr.h"
 #include "music_player.h"
@@ -45,6 +46,8 @@ lv_obj_t *power_btn = nullptr;
 lv_obj_t *power_label = nullptr;
 lv_obj_t *gear = nullptr;
 lv_obj_t *gear_label = nullptr;
+lv_obj_t *screenshot_btn = nullptr;
+lv_obj_t *screenshot_label = nullptr;
 lv_obj_t *clock_label = nullptr;
 
 /* Menu Configuracao (overlay + painel) */
@@ -1148,6 +1151,12 @@ void power_click_cb(lv_event_t *event)
     open_menu(MENU_PAGE_POWER);
 }
 
+void screenshot_click_cb(lv_event_t *event)
+{
+    (void)event;
+    screenshot_take();
+}
+
 /* Popover ancorado sob a engrenagem, com overlay transparente que fecha
  * ao tocar fora. `page` escolhe a pagina inicial do painel. */
 void open_menu(menu_page_t page)
@@ -1270,6 +1279,13 @@ void ui_bar_refresh_theme(void)
         lv_obj_set_style_bg_color(gear, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
     }
 
+    if (screenshot_label != nullptr) {
+        lv_obj_set_style_text_color(screenshot_label, lv_color_hex(pal->text), 0);
+        lv_obj_set_style_text_color(screenshot_label, lv_color_hex(pal->accent), LV_STATE_PRESSED);
+        lv_obj_set_style_text_color(screenshot_label, lv_color_hex(pal->accent), LV_STATE_FOCUSED);
+        lv_obj_set_style_bg_color(screenshot_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
+    }
+
     if (clock_label != nullptr) {
         lv_obj_set_style_text_color(clock_label, lv_color_hex(pal->text), 0);
     }
@@ -1342,6 +1358,27 @@ void ui_bar_init(lv_obj_t *parent)
     gear_label = lv_label_create(gear);
     lv_label_set_text(gear_label, LV_SYMBOL_SETTINGS);
     lv_obj_set_style_text_font(gear_label, &lv_font_montserrat_14_latin1, 0);
+
+    /* Camera: captura a tela atual (print) gravando BMP no SD. Mesmo pad
+     * dos icones de status para manter o ritmo de espacamento da barra. */
+    screenshot_btn = lv_obj_create(bar);
+    lv_obj_set_size(screenshot_btn, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(screenshot_btn, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(screenshot_btn, 0, 0);
+    lv_obj_set_style_shadow_width(screenshot_btn, 0, 0);
+    lv_obj_set_style_radius(screenshot_btn, 8, 0);
+    lv_obj_set_style_pad_left(screenshot_btn, 6, 0);
+    lv_obj_set_style_pad_right(screenshot_btn, 6, 0);
+    lv_obj_set_style_pad_top(screenshot_btn, 4, 0);
+    lv_obj_set_style_pad_bottom(screenshot_btn, 4, 0);
+    lv_obj_set_style_margin_right(screenshot_btn, 2, 0);
+    /* Sem scroll: remove os scrollbars e o arraste do botao. */
+    lv_obj_clear_flag(screenshot_btn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(screenshot_btn, screenshot_click_cb, LV_EVENT_CLICKED, nullptr);
+
+    screenshot_label = lv_label_create(screenshot_btn);
+    lv_label_set_text(screenshot_label, LV_SYMBOL_IMAGE);
+    lv_obj_set_style_text_font(screenshot_label, &lv_font_montserrat_14_latin1, 0);
 
     /* Espacador flexivel empurra badge e relogio para a direita. */
     lv_obj_t *spacer = lv_obj_create(bar);

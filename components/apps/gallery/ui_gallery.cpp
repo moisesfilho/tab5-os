@@ -111,7 +111,7 @@ static int tjpgd_outfunc(JDEC *jd, void *bitmap, JRECT *rect)
     return 1;
 }
 
-bool decode_bmp(FILE *fp, uint8_t *dst_rgb565, int max_w, int max_h)
+bool decode_bmp(FILE *fp, uint8_t *dst_rgb565, int max_w, int max_h, int *out_w, int *out_h)
 {
     uint8_t header[54];
     if (fread(header, 1, 54, fp) < 54)
@@ -133,31 +133,42 @@ bool decode_bmp(FILE *fp, uint8_t *dst_rgb565, int max_w, int max_h)
     if (bpp != 24 && bpp != 32)
         return false;
 
+    /* Reducao por potencias de 2 (como o caminho JPEG) ate caber no canvas */
+    int step = 1;
+    while ((width + step - 1) / step > max_w || (height + step - 1) / step > max_h) {
+        step <<= 1;
+    }
+    int render_w = (width + step - 1) / step;
+    int render_h = (height + step - 1) / step;
+
     fseek(fp, offset, SEEK_SET);
     int row_stride = ((width * (bpp / 8) + 3) / 4) * 4;
     std::vector<uint8_t> row_buf(row_stride);
 
     uint16_t *dst = (uint16_t *)dst_rgb565;
-    memset(dst, 0, max_w * max_h * 2);
-
-    int render_w = std::min(width, max_w);
-    int render_h = std::min(height, max_h);
+    memset(dst, 0, (size_t)max_w * max_h * 2);
 
     for (int y = 0; y < height; y++) {
         if (fread(row_buf.data(), 1, row_stride, fp) < (size_t)row_stride)
             break;
-        int dst_y = flip ? (height - 1 - y) : y;
-        if (dst_y < render_h) {
-            for (int x = 0; x < render_w; x++) {
-                int px_idx = x * (bpp / 8);
-                uint8_t b = row_buf[px_idx];
-                uint8_t g = row_buf[px_idx + 1];
-                uint8_t r = row_buf[px_idx + 2];
-                uint16_t color = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
-                dst[dst_y * max_w + x] = color;
-            }
+        if (y % step != 0) {
+            continue;
+        }
+        int dst_y = flip ? (height - 1 - y) / step : y / step;
+        for (int x = 0; x < width; x += step) {
+            int px_idx = x * (bpp / 8);
+            uint8_t b = row_buf[px_idx];
+            uint8_t g = row_buf[px_idx + 1];
+            uint8_t r = row_buf[px_idx + 2];
+            uint16_t color = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+            dst[dst_y * render_w + (x / step)] = color;
         }
     }
+
+    if (out_w)
+        *out_w = render_w;
+    if (out_h)
+        *out_h = render_h;
     return true;
 }
 
@@ -175,7 +186,7 @@ bool decode_jpeg_to_canvas(const char *filepath, uint8_t *dst_rgb565, int *out_w
         fseek(fp, 0, SEEK_SET);
         int max_w = (out_w && *out_w > 0) ? *out_w : 640;
         int max_h = (out_h && *out_h > 0) ? *out_h : 640;
-        bool res = decode_bmp(fp, dst_rgb565, max_w, max_h);
+        bool res = decode_bmp(fp, dst_rgb565, max_w, max_h, out_w, out_h);
         fclose(fp);
         return res;
     }
@@ -422,7 +433,7 @@ void load_and_display_current_photo(void)
 
     if (gallery_canvas_buf != nullptr && image_canvas != nullptr) {
         int img_w = 640;
-        int img_h = 480;
+        int img_h = 640;
         if (decode_jpeg_to_canvas(photo.fullpath.c_str(), gallery_canvas_buf, &img_w, &img_h)) {
             lv_canvas_set_buffer(image_canvas, gallery_canvas_buf, img_w, img_h, LV_COLOR_FORMAT_RGB565);
             lv_obj_set_size(image_canvas, img_w, img_h);

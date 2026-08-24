@@ -2058,6 +2058,60 @@ components/os/
 
 ---
 
+# [x] Fase 39: Screenshot pela Barra do Sistema `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- O Tab5 OS não tinha forma nativa de capturar a tela; prints exigiam fotografar o painel ou acessar via fileserver.
+- Objetivo: botão de captura na barra do sistema que grava a imagem exatamente como exibida (barra superior, teclado, modais e overlays incluídos) no cartão microSD, visível no visualizador do dispositivo.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Fonte da captura | `lv_snapshot_take` da tela ativa (RGB565) + `lv_snapshot_take` do `layer_top` (ARGB8888) com blend por alpha | Primeira tentativa (dump do framebuffer MIPI-DSI com transposição física→lógica) falhou: a varredura do painel tem compensação de montagem que invertia o retrato em 180°. O snapshot é feito na orientação lógica, correto por construção em qualquer rotação (0/90/180/270), e o blend do `layer_top` garante barra, teclado e modais na imagem |
+| D2 | Habilitação da API | `CONFIG_LV_USE_SNAPSHOT=y` no sdkconfig e sdkconfig.defaults | Snapshot vem desabilitado por padrão no Kconfig do LVGL 9 |
+| D3 | Gravação | Task one-shot FreeRTOS gravando BMP 24-bit linha a linha (RGB565→BGR888) em `/sdcard/screenshots` | Evita travar a UI ~1–3 s de escrita no SD; conversão streaming gasta só uma linha de buffer interno (3,8 KB); pasta na raiz do SD para acesso direto |
+| D4 | Feedback | Flash branco overlay (~300 ms) imediato + toast com resultado (2,5 s) | Confirmação visual padrão de sistemas desktop; toast informa nome do arquivo ou falha; flash criado APÓS o snapshot para não sair na foto |
+| D5 | Visualizador | `decode_bmp` da Galeria escala por potências de 2 até caber em 640×640 e usa stride = largura final | Antes cortava a parte direita/inferior e não atualizava as dimensões do canvas; prints em retrato ficavam distorcidos (stride 640 em canvas de 360) |
+
+## 3. Estrutura de Arquivos & Componentes
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `components/os/core/screenshot.{h,cpp}` | Snapshot duplo + blend alpha, flash, task de gravação BMP e toast de resultado |
+| `components/os/shell/ui_bar.cpp` | Botão de câmera após a engrenagem, callback e tema |
+| `components/os/CMakeLists.txt` | Registro de `core/screenshot.cpp` |
+| `components/apps/gallery/ui_gallery.cpp` | `decode_bmp` com escala por potências de 2, stride correto e teto 640×640 |
+| `sdkconfig` / `sdkconfig.defaults` | `CONFIG_LV_USE_SNAPSHOT=y` |
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Módulo core**: captura, flash, writer task, BMP 24-bit bottom-up e toast.
+- [x] **Etapa 2 — UI**: ícone `LV_SYMBOL_IMAGE` à esquerda, após a engrenagem, com tema claro/escuro.
+- [x] **Etapa 3 — Correção de orientação**: dump do fb físico substituído por snapshot lógico + blend do `layer_top` (retrato saía invertido 180° pela compensação de montagem do painel).
+- [x] **Etapa 4 — Galeria**: `decode_bmp` com escala e stride corretos para imagens maiores que o canvas.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Pico de memória no snapshot duplo (base + ARGB8888 + destino ≈ 6–7 MB PSRAM) | Buffers liberados imediatamente após o blend; PSRAM de 32 MB comporta com folga |
+| Escrita SD lenta congelando UI | Gravação fora da task LVGL; captura síncrona custa só snapshot + blend (~100 ms) |
+| Flash/toast aparecendo no print | Flash criado após o snapshot; toast só existe após a gravação |
+| `layer_top` com dimensões diferentes da tela | Blend pulado com warning; print sai sem barra em vez de corrompido |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Print com app aberto: conteúdo, barra superior e relógio corretos, sem espelhamento. ✓
+2. Print nas orientações retrato e paisagem (IMU): imagens orientadas corretamente. ✓
+3. Arquivo `.bmp` abre no PC (via fileserver) com cores fiéis; toast mostra o nome gerado. ✓
+4. Print abre no visualizador do dispositivo sem corte nem distorção, nas duas orientações. ✓
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Validado em hardware real** (ago/2026): prints corretos em retrato e paisagem, salvos em `/sdcard/screenshots`, visualizados no PC e no visualizador do Tab5.
+
+---
+
 ## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)
 
 > [!NOTE]
