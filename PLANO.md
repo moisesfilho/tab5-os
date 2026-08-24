@@ -37,7 +37,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 27** | Padronização do Shell e Registro Modular de Apps | Sistema / Arquitetura | Barra de título padronizada `ui_app_bar`, registro `app_registry`, desktop dinâmico, manifesto descentralizado de arquivos |
 | `[~]` | **Fase 28** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
 | `[x]` | **Fase 29** | Aplicativo "Música" — Player de Áudio Local (MP3/WAV) | Aplicativo / Mídia | Decoder `esp_audio_codec`, reprodução de `/sdcard/musica/*.mp3|wav`, controles e volume via ES8388 |
-| `[ ]` | **Fase 30** | Testes Unitários Automáticos com Cobertura ≥80% | Qualidade / Testes | Suíte GoogleTest em host nativo, cobertura gcov/lcov com gate ≥80%, job `test` no Quality Gate do CI |
+| `[x]` | **Fase 30** | Testes Unitários Automáticos com Cobertura ≥80% | Qualidade / Testes | Suíte GoogleTest em host nativo, cobertura gcov/lcov com gate ≥80%, job `test` no Quality Gate do CI |
 | `[x]` | **Fase 31** | Otimização de Memória Interna e Robustez do Servidor de Arquivos | Sistema / Memória | Upload HTTP sem erro "Out of DMA memory", `malloc()`/LVGL na PSRAM, reprodução de músicas em subpastas |
 | `[x]` | **Fase 32** | Ativação Manual do Servidor de Arquivos | Aplicativo / Segurança | Servidor HTTP não inicia mais ao abrir o app; ativação apenas pelo botão "Iniciar Servidor", desliga ao fechar o app |
 | `[x]` | **Fase 33** | Estabilidade do Relógio da Barra Superior | Sistema / UI | Fonte monoespaçada JetBrains Mono no relógio (`dd/mm/aaaa hh:mm`), largura fixa e alinhamento à direita: zero deslocamento lateral dos ícones |
@@ -1551,7 +1551,7 @@ main/
 
 ---
 
-# [ ] Fase 30: Testes Unitários Automáticos com Cobertura ≥80% `⏳ PLANEJADO`
+# [x] Fase 30: Testes Unitários Automáticos com Cobertura ≥80% `✅ IMPLEMENTADO`
 
 ## 1. Contexto & Objetivos
 O projeto `tab5-os` (firmware ESP-IDF para ESP32-P4) **não possui nenhum teste automatizado** — cobertura atual é **0%**. O Quality Gate do CI (`quality-gate.yml`) hoje cobre apenas **build**, **lint** (clang-tidy/cppcheck) e **codeql**, sem job de teste.
@@ -1622,13 +1622,13 @@ O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cob
 | Custo-benefício | Foco em código onde bugs de lógica (parsing, orientação, registro de apps, shell) têm maior risco e retorno, sem mockar WiFi/BLE/LVGL |
 
 ## 7. Fases de Execução da Funcionalidade
-1. Criar `tests/host/CMakeLists.txt` + `stubs/` + `mocks/` (layer mínimo p/ compilar os 9 módulos, com `--wrap`).
-2. Escrever testes do **Grupo A** (5 módulos).
-3. Escrever testes do **Grupo B** (4 módulos) com redirect `/sdcard`→tmpdir.
-4. Criar `tools/ci/run_host_tests.sh` + `lcovrc` com gate 80%.
-5. Adicionar job `test` ao quality-gate + upload de artefato do relatório.
-6. Validar localmente: rodar o script, medir %, ajustar testes até ≥80%.
-7. Rodar pre-commit (clang-format/codespell/cmake-lint) nos novos arquivos.
+- [x] **Etapa 1 — Infraestrutura host**: `tests/host/CMakeLists.txt` (GoogleTest via FetchContent, `--coverage`, `-Wl,--wrap=fopen/open/mkdir`) + `stubs/` + `mocks/` (NVS em memória, redirect `/sdcard`→tmpdir, `bsp_sdcard_mount` no-op).
+- [x] **Etapa 2 — Testes do Grupo A**: `test_orientation`, `test_file_assoc`, `test_app_registry`, `test_terminal_cmd` (tmpdir real como cwd) e `test_timezone_mgr`.
+- [x] **Etapa 3 — Testes do Grupo B**: `test_wifi_storage`, `test_bt_storage` (cache resetado via `save_all` por teste), `test_ai_storage` e `test_display_storage`.
+- [x] **Etapa 4 — Gate local**: `tools/ci/run_host_tests.sh` + `tools/ci/lcovrc`; métrica restrita aos `.cpp` de produção via `--extract`.
+- [x] **Etapa 5 — CI**: job `test` no `quality-gate.yml` (ubuntu-latest, apt g++/cmake/lcov) com resumo e artefato HTML do relatório.
+- [x] **Etapa 6 — Validação local**: 84 testes aprovados; cobertura de **92,4% de linhas** (866/937) sobre os 9 módulos — gate ≥80% atendido.
+- [x] **Etapa 7 — Qualidade**: pre-commit (clang-format/cmake-lint/codespell) aprovado nos novos arquivos.
 
 ## 8. Critérios de Validação
 1. `tools/ci/run_host_tests.sh` roda no host e exibe relatório `lcov` com **≥80% de linhas** no conjunto-alvo.
@@ -1636,8 +1636,10 @@ O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cob
 3. O job `test` do GitHub Actions executa no PR e bloqueia merge se a cobertura cair abaixo de 80%.
 4. Nenhum código de produção foi modificado para viabilizar os testes (usando stubs + `--wrap`).
 
-## 9. Status de Conclusão: `[ ] PLANEJADO`
-- Plano arquitetado e especificado, aguardando início de implementação.
+## 9. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Suíte host-native operacional**: 84 testes GoogleTest cobrindo os 9 módulos-alvo (lógica pura + persistência), rodando em segundos sem hardware.
+- **Cobertura 92,4%** de linhas sobre o núcleo testável (meta ≥80%), com relatório lcov/genhtml e gate aplicado localmente e no Quality Gate.
+- **Zero alterações em código de produção**: isolamento garantido por stubs de headers ESP-IDF/LVGL, NVS mockado e redirecionamento de `/sdcard` via `--wrap` do linker.
 
 ---
 
