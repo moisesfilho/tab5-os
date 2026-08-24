@@ -29,6 +29,10 @@ add_executable(tab5_host_tests
     src/test_app_registry.cpp
     src/test_terminal_cmd.cpp
     src/test_timezone_mgr.cpp
+    src/test_wifi_storage.cpp
+    src/test_bt_storage.cpp
+    src/test_ai_storage.cpp
+    src/test_display_storage.cpp
     mocks/path_redirect.cpp
     mocks/link_wrappers.cpp
     mocks/nvs_mock.cpp

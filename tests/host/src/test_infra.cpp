@@ -1,8 +1,9 @@
 #include "nvs_mock.hpp"
 #include "path_redirect.hpp"
 
-#include <fstream>
+#include <cerrno>
 #include <fcntl.h>
+#include <fstream>
 
 #include "esp_err.h"
 #include "nvs.h"
@@ -31,7 +32,9 @@ TEST(HostInfraTest, WrapFopenRedirecionaSdcardParaTmpdir)
 
 TEST(HostInfraTest, WrapMkdirCriaDiretoriosDentroDoTmpdir)
 {
-    ASSERT_EQ(mkdir("/sdcard/tab5_os", 0755), 0);
+    /* O tmproot ja provisiona tab5_os; recriar deve falhar apenas com EEXIST */
+    const int rc = mkdir("/sdcard/tab5_os", 0755);
+    ASSERT_TRUE(rc == 0 || errno == EEXIST);
     std::ifstream entrada(hostmock::host_of("/sdcard/tab5_os"));
     EXPECT_TRUE(entrada.good());
 }

@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
 
@@ -15,7 +16,10 @@ const std::string &make_root()
         std::vector<char> buf(tmpl.begin(), tmpl.end());
         buf.push_back('\0');
         const char *dir = mkdtemp(buf.data());
-        return dir != nullptr ? std::string(dir) : tmpl;
+        const std::string base = dir != nullptr ? dir : tmpl;
+        /* Provisiona o diretorio padrao do sistema, como o mount real */
+        mkdir((base + "/tab5_os").c_str(), 0755);
+        return base;
     }();
     return root;
 }
