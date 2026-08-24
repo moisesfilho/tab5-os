@@ -24,6 +24,11 @@ set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 add_executable(tab5_host_tests
     src/test_infra.cpp
+    src/test_orientation.cpp
+    src/test_file_assoc.cpp
+    src/test_app_registry.cpp
+    src/test_terminal_cmd.cpp
+    src/test_timezone_mgr.cpp
     mocks/path_redirect.cpp
     mocks/link_wrappers.cpp
     mocks/nvs_mock.cpp
