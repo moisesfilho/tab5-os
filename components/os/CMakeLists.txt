@@ -9,6 +9,7 @@ idf_component_register(
         "core/wifi_storage.cpp"
         "core/bt_mgr.cpp"
         "core/bt_storage.cpp"
+        "core/hid_report_map.cpp"
         "core/imu_reader.cpp"
         "core/battery_reader.cpp"
         "core/screenshot.cpp"
@@ -29,5 +30,5 @@ idf_component_register(
         "fonts/lv_font_montserrat_56_latin1.c"
     INCLUDE_DIRS "core" "shell" "fonts" "."
     REQUIRES lvgl m5stack_tab5 sensor_hub nvs_flash esp_wifi esp_netif esp_event
-            fatfs sdmmc bt apps
+            fatfs sdmmc bt apps espressif__esp_hosted
 )

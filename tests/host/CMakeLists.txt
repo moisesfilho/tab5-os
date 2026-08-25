@@ -31,6 +31,7 @@ add_executable(tab5_host_tests
     src/test_timezone_mgr.cpp
     src/test_wifi_storage.cpp
     src/test_bt_storage.cpp
+    src/test_bt_report_map.cpp
     src/test_ai_storage.cpp
     src/test_display_storage.cpp
     mocks/path_redirect.cpp
@@ -43,6 +44,7 @@ add_executable(tab5_host_tests
     ${REPO_ROOT}/components/os/core/timezone_mgr.cpp
     ${REPO_ROOT}/components/os/core/wifi_storage.cpp
     ${REPO_ROOT}/components/os/core/bt_storage.cpp
+    ${REPO_ROOT}/components/os/core/hid_report_map.cpp
     ${REPO_ROOT}/components/os/core/display_storage.cpp
     ${REPO_ROOT}/components/apps/chat/ai_storage.cpp
     ${REPO_ROOT}/components/apps/terminal/terminal_cmd.cpp

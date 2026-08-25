@@ -1,10 +1,14 @@
 #include "bt_mgr.h"
 #include "bt_storage.h"
+#include "hid_report_map.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include "esp_log.h"
+extern "C" {
+#include "esp_hosted_misc.h"
+}
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
@@ -35,13 +39,34 @@ struct active_conn_t {
     uint8_t addr_type;
     uint16_t conn_handle;
     bool connected;
+    char id_mac[18]; /* endereco identidade distribuido no bonding (estavel) */
+    uint8_t id_addr_type;
 };
 
 #define MAX_ACTIVE_CONNS 4
 
+/* Tentativa de conexao em andamento (procedimento GAP ocupado) */
+struct pending_conn_t {
+    bool active;
+    bool user_initiated;
+    bool cancel_expected; /* cancelamento disparado por nos (scan/forget): nao conta backoff */
+    char mac[18];
+};
+
+#define AUTOCONN_BACKOFF_MS 15000
+#define AUTOCONN_FAIL_SLOTS 4
+struct autoconn_fail_t {
+    char mac[18];
+    TickType_t tick;
+};
+
 SemaphoreHandle_t s_bt_mutex = nullptr;
 active_conn_t s_active_conns[MAX_ACTIVE_CONNS] = {};
 int s_active_count = 0;
+pending_conn_t s_pending = {};
+autoconn_fail_t s_autoconn_fails[AUTOCONN_FAIL_SLOTS] = {};
+bt_conn_cb_t s_conn_cb = nullptr;
+void *s_conn_ctx = nullptr;
 
 bool s_bt_enabled = true;
 bool s_nimble_inited = false;
@@ -104,6 +129,128 @@ bool parse_mac_addr(const char *str, ble_addr_t *out_addr)
         out_addr->val[i] = (uint8_t)b[i];
     }
     return true;
+}
+
+/* Notifica resultado de conexao SEM segurar o mutex (callback pode marshallar
+ * para a task de UI). Copia o MAC pois o chamador costuma passar ponteiro
+ * interno protegido pelo mutex. */
+void notify_conn_event(const char *mac, bt_conn_event_t event, int reason)
+{
+    if (s_conn_cb == nullptr || mac == nullptr || mac[0] == '\0') {
+        return;
+    }
+    char mac_copy[18];
+    snprintf(mac_copy, sizeof(mac_copy), "%s", mac);
+    s_conn_cb(mac_copy, event, reason, s_conn_ctx);
+}
+
+bool any_connected_locked(void)
+{
+    for (int i = 0; i < s_active_count; i++) {
+        if (s_active_conns[i].connected) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void remove_slot_locked(int idx)
+{
+    if (idx < 0 || idx >= s_active_count) {
+        return;
+    }
+    for (int j = idx; j < s_active_count - 1; j++) {
+        s_active_conns[j] = s_active_conns[j + 1];
+    }
+    memset(&s_active_conns[s_active_count - 1], 0, sizeof(active_conn_t));
+    s_active_count--;
+}
+
+active_conn_t *find_slot_by_handle_locked(uint16_t conn_handle)
+{
+    for (int i = 0; i < s_active_count; i++) {
+        if (s_active_conns[i].conn_handle == conn_handle) {
+            return &s_active_conns[i];
+        }
+    }
+    return nullptr;
+}
+
+/* Backoff por MAC: evita que o auto-conect martele um dispositivo que acabou
+ * de recusar a conexao (ou cujo endereco rotacionou), monopolizando o GAP. */
+bool autoconn_backoff_active_locked(const char *mac)
+{
+    TickType_t now = xTaskGetTickCount();
+    for (int i = 0; i < AUTOCONN_FAIL_SLOTS; i++) {
+        if (s_autoconn_fails[i].mac[0] != '\0' && strcasecmp(s_autoconn_fails[i].mac, mac) == 0) {
+            return (now - s_autoconn_fails[i].tick) < pdMS_TO_TICKS(AUTOCONN_BACKOFF_MS);
+        }
+    }
+    return false;
+}
+
+void autoconn_mark_failed_locked(const char *mac)
+{
+    if (mac == nullptr || mac[0] == '\0') {
+        return;
+    }
+    int oldest = 0;
+    for (int i = 0; i < AUTOCONN_FAIL_SLOTS; i++) {
+        if (s_autoconn_fails[i].mac[0] == '\0') {
+            oldest = i;
+            break;
+        }
+        /* Aritmetica modular de ticks: negativo significa tick[i] < tick[oldest] */
+        if ((int32_t)(s_autoconn_fails[i].tick - s_autoconn_fails[oldest].tick) < 0) {
+            oldest = i;
+        }
+    }
+    snprintf(s_autoconn_fails[oldest].mac, sizeof(s_autoconn_fails[oldest].mac), "%s", mac);
+    s_autoconn_fails[oldest].tick = xTaskGetTickCount();
+}
+
+void autoconn_clear_locked(const char *mac)
+{
+    for (int i = 0; i < AUTOCONN_FAIL_SLOTS; i++) {
+        if (s_autoconn_fails[i].mac[0] != '\0' && strcasecmp(s_autoconn_fails[i].mac, mac) == 0) {
+            memset(&s_autoconn_fails[i], 0, sizeof(autoconn_fail_t));
+        }
+    }
+}
+
+/* Persiste o dispositivo como pareado APENAS quando a inicializacao HID foi
+ * concluida (GAP conectado + descoberta GATT + CCCDs gravados). Usa o endereco
+ * identidade distribuido no bonding quando disponivel (estavel entre reboots,
+ * diferente do RPA rotativo anunciado por mouses como o Logitech Lift). */
+void persist_paired_device_locked(uint16_t conn_handle, char *out_mac, size_t out_mac_len)
+{
+    active_conn_t *slot = find_slot_by_handle_locked(conn_handle);
+    if (slot == nullptr || slot->mac[0] == '\0') {
+        return;
+    }
+
+    const char *key_mac = (slot->id_mac[0] != '\0') ? slot->id_mac : slot->mac;
+    uint8_t key_type = (slot->id_mac[0] != '\0') ? slot->id_addr_type : slot->addr_type;
+
+    bt_saved_device_t dev = {};
+    snprintf(dev.mac, sizeof(dev.mac), "%s", key_mac);
+    snprintf(dev.name, sizeof(dev.name), "%s", slot->name);
+    dev.type = slot->type;
+    dev.addr_type = key_type;
+    dev.paired = true;
+    dev.auto_connect = true;
+    esp_err_t err = bt_storage_add_or_update(&dev);
+
+    /* O endereço rotativo antigo não deve continuar ocupando espaço como
+     * entrada "fantasma" no bt.cfg. */
+    if (err == ESP_OK && strcasecmp(key_mac, slot->mac) != 0) {
+        bt_storage_remove(slot->mac);
+    }
+
+    ESP_LOGI(TAG, "Dispositivo %s [%s] persistido como pareado (HID pronto)", slot->name, key_mac);
+    if (out_mac != nullptr && out_mac_len > 0) {
+        snprintf(out_mac, out_mac_len, "%s", key_mac);
+    }
 }
 
 bt_dev_type_t classify_device(const struct ble_hs_adv_fields *fields)
@@ -201,6 +348,52 @@ uint16_t s_curr_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 uint16_t s_hid_cp_handle = 0;
 uint16_t s_proto_mode_handle = 0;
 
+/* Report Map (0x2A4B) do dispositivo conectado: permite rotear notificacoes
+ * pelo report ID real em vez de IDs fixos no codigo. */
+#define HID_MAP_RAW_MAX 512
+uint8_t s_report_map_raw[HID_MAP_RAW_MAX] = {};
+int s_report_map_len = 0;
+hid_report_entry_t s_report_entries[HID_REPORT_MAP_MAX] = {};
+int s_report_count = 0;
+
+void reset_report_map(void)
+{
+    memset(s_report_map_raw, 0, sizeof(s_report_map_raw));
+    s_report_map_len = 0;
+    memset(s_report_entries, 0, sizeof(s_report_entries));
+    s_report_count = 0;
+}
+
+int on_read_report_map(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg)
+{
+    (void)conn_handle;
+    (void)arg;
+    if (error != nullptr && error->status != 0) {
+        ESP_LOGW(TAG, "Falha ao ler Report Map (0x2A4B): status=%d (usando heuristica de relatorios)", error->status);
+        return 0;
+    }
+    if (attr == nullptr) {
+        return 0;
+    }
+
+    uint16_t len = os_mbuf_len(attr->om);
+    if (len > HID_MAP_RAW_MAX) {
+        len = HID_MAP_RAW_MAX;
+    }
+    os_mbuf_copydata(attr->om, 0, len, s_report_map_raw);
+    s_report_map_len = len;
+
+    s_report_count =
+        hid_report_map_parse(s_report_map_raw, (size_t)s_report_map_len, s_report_entries, HID_REPORT_MAP_MAX);
+
+    ESP_LOGI(TAG, "Report Map lido (%d bytes): %d report ID(s) classificado(s)", s_report_map_len, s_report_count);
+    for (int i = 0; i < s_report_count; i++) {
+        static const char *kind_names[] = {"UNKNOWN", "MOUSE", "KEYBOARD", "CONSUMER"};
+        ESP_LOGI(TAG, "  Report ID=0x%02X -> %s", s_report_entries[i].report_id, kind_names[s_report_entries[i].kind]);
+    }
+    return 0;
+}
+
 /* Pipeline Sequencial de GATT, Descritores 0x2902 e CCCD */
 int on_write_cccd_seq(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg);
 
@@ -209,6 +402,14 @@ void write_next_cccd(void)
     if (s_cccd_queue_idx >= s_cccd_queue_count || s_curr_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
         ESP_LOGI(TAG, "Todas as notificacoes (%d CCCDs) foram ativadas com sucesso! Teclado e Mouse ativos.",
                  s_cccd_queue_count);
+
+        char ready_mac[18] = {};
+        if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            persist_paired_device_locked(s_curr_conn_handle, ready_mac, sizeof(ready_mac));
+            xSemaphoreGive(s_bt_mutex);
+        }
+        notify_conn_event(ready_mac, BT_CONN_READY, 0);
+
         ui_keyboard_notify_hardware_change();
         return;
     }
@@ -314,6 +515,11 @@ int on_disc_chr_seq(uint16_t conn_handle, const struct ble_gatt_error *error, co
                 s_hid_cp_handle = chr->val_handle;
             } else if (uuid16 == 0x2A4E) { /* Protocol Mode */
                 s_proto_mode_handle = chr->val_handle;
+            } else if (uuid16 == 0x2A4B) { /* Report Map: base para rotear os relatorios */
+                int rc = ble_gattc_read(conn_handle, chr->val_handle, on_read_report_map, nullptr);
+                if (rc != 0) {
+                    ESP_LOGW(TAG, "ble_gattc_read Report Map falhou: rc=%d", rc);
+                }
             }
             return 0;
         }
@@ -400,6 +606,7 @@ static int handle_gap_disc(struct ble_gap_event *event)
         /* 1. Verificação prioritária de Auto-Conexão para dispositivos pareados */
         bt_saved_device_t saved = {};
         bool is_paired = false;
+        bool matched_by_name = false;
         if (bt_storage_find(mac_str, &saved) && saved.paired) {
             is_paired = true;
         } else if (name_str[0] != '\0') {
@@ -409,13 +616,43 @@ static int handle_gap_disc(struct ble_gap_event *event)
                     if (strcasecmp(list.items[k].name, name_str) == 0 && list.items[k].paired) {
                         saved = list.items[k];
                         is_paired = true;
+                        matched_by_name = true;
                         break;
                     }
                 }
             }
         }
 
-        if (is_paired && saved.auto_connect && s_active_count == 0 && !ble_gap_conn_active()) {
+        /* Dispositivos com endereco privado rotativo (RPA), como mouses
+         * Logitech, mudam de MAC a cada anuncio. O pareamento por nome permite
+         * atualizar o registro para o endereco atual em vez de tentar conectar
+         * a um endereco ja invalido. */
+        if (is_paired && matched_by_name && strcasecmp(saved.mac, mac_str) != 0) {
+            ESP_LOGI(TAG, "MAC do dispositivo \"%s\" rotacionou (%s -> %s): atualizando registro", name_str, saved.mac,
+                     mac_str);
+            bt_saved_list_t list = {};
+            if (bt_storage_load_all(&list) == ESP_OK) {
+                bool updated = false;
+                for (int k = 0; k < list.count; k++) {
+                    if (strcasecmp(list.items[k].mac, saved.mac) == 0) {
+                        snprintf(list.items[k].mac, sizeof(list.items[k].mac), "%s", mac_str);
+                        list.items[k].addr_type = event->disc.addr.type;
+                        updated = true;
+                        break;
+                    }
+                }
+                if (updated && bt_storage_save_all(&list) == ESP_OK) {
+                    snprintf(saved.mac, sizeof(saved.mac), "%s", mac_str);
+                    saved.addr_type = event->disc.addr.type;
+                }
+            }
+        }
+
+        bool any_connected = any_connected_locked();
+        bool pending_busy = s_pending.active;
+
+        if (is_paired && saved.auto_connect && !any_connected && !pending_busy && !ble_gap_conn_active() &&
+            !autoconn_backoff_active_locked(saved.mac)) {
             ESP_LOGI(TAG, "Dispositivo pareado detectado no ar! Auto-conectando imediatamente: %s [%s] (addr_type=%d)",
                      saved.name[0] ? saved.name : name_str, mac_str, (int)event->disc.addr.type);
             char target_mac[18];
@@ -477,6 +714,7 @@ static int handle_gap_connect(struct ble_gap_event *event)
     if (event->connect.status == 0) {
         ESP_LOGI(TAG, "GAP Conectado com sucesso! conn_handle=%d", event->connect.conn_handle);
         s_curr_conn_handle = event->connect.conn_handle;
+        reset_report_map();
 
         struct ble_gap_conn_desc desc = {};
         char mac_str[18] = {0};
@@ -527,6 +765,18 @@ static int handle_gap_connect(struct ble_gap_event *event)
                 }
             }
 
+            /* Endereco identidade do peer (estavel; o MAC anunciado pode ser
+             * RPA rotativo). Atualizado de novo no ENC_CHANGE apos bonding. */
+            active_conn_t *conn_slot = find_slot_by_handle_locked(event->connect.conn_handle);
+            if (conn_slot != nullptr && ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
+                format_mac_addr(desc.peer_id_addr.val, conn_slot->id_mac, sizeof(conn_slot->id_mac));
+                conn_slot->id_addr_type = desc.peer_id_addr.type;
+            }
+
+            if (s_pending.active) {
+                autoconn_clear_locked(s_pending.mac);
+            }
+
             for (int i = 0; i < s_discovered_count; i++) {
                 for (int j = 0; j < s_active_count; j++) {
                     if (s_active_conns[j].connected && strcasecmp(s_discovered[i].mac, s_active_conns[j].mac) == 0) {
@@ -538,6 +788,9 @@ static int handle_gap_connect(struct ble_gap_event *event)
             xSemaphoreGive(s_bt_mutex);
         }
 
+        s_pending.active = false;
+        notify_conn_event(mac_str, BT_CONN_CONNECTED, 0);
+
         ble_gap_security_initiate(event->connect.conn_handle);
 
         s_hid_start_handle = 0;
@@ -545,15 +798,37 @@ static int handle_gap_connect(struct ble_gap_event *event)
         ble_gattc_disc_all_svcs(event->connect.conn_handle, on_disc_svc_seq, nullptr);
     } else {
         ESP_LOGW(TAG, "GAP Falha na conexao fisica status=%d", event->connect.status);
+
+        char failed_mac[18] = {};
+        bool cancel_expected = false;
         if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            /* Remove o slot pendente da tentativa que falhou (antes ele ficava
+             * "zumbi" para sempre, bloqueando rescan e reconexao automatica). */
             for (int i = 0; i < s_active_count; i++) {
-                if (s_active_conns[i].conn_handle == 0) {
-                    s_active_conns[i].connected = false;
+                if (!s_active_conns[i].connected) {
+                    snprintf(failed_mac, sizeof(failed_mac), "%s",
+                             s_pending.mac[0] != '\0' ? s_pending.mac : s_active_conns[i].mac);
+                    remove_slot_locked(i);
+                    break;
                 }
+            }
+            if (s_pending.active) {
+                cancel_expected = s_pending.cancel_expected;
+                if (!cancel_expected && failed_mac[0] != '\0') {
+                    autoconn_mark_failed_locked(s_pending.mac);
+                }
+                s_pending.active = false;
             }
             xSemaphoreGive(s_bt_mutex);
         }
-        if (s_active_count == 0) {
+
+        if (!cancel_expected) {
+            notify_conn_event(failed_mac, BT_CONN_FAILED, event->connect.status);
+        }
+
+        /* Rescan passivo so quando ninguem cancelou de proposito (ex.: o
+         * usuario ja iniciou um scan novo) e nao ha conexao viva. */
+        if (!cancel_expected && !any_connected_locked()) {
             bt_mgr_scan(nullptr, nullptr);
         }
     }
@@ -567,11 +842,14 @@ static int handle_gap_disconnect(struct ble_gap_event *event)
     if (s_curr_conn_handle == event->disconnect.conn.conn_handle) {
         s_curr_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     }
+
+    char gone_mac[18] = {};
     if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         for (int i = 0; i < s_active_count; i++) {
             if (s_active_conns[i].conn_handle == event->disconnect.conn.conn_handle) {
-                s_active_conns[i].connected = false;
-                s_active_conns[i].conn_handle = BLE_HS_CONN_HANDLE_NONE;
+                snprintf(gone_mac, sizeof(gone_mac), "%s", s_active_conns[i].mac);
+                remove_slot_locked(i);
+                break;
             }
         }
         for (int i = 0; i < s_discovered_count; i++) {
@@ -579,6 +857,11 @@ static int handle_gap_disconnect(struct ble_gap_event *event)
         }
         xSemaphoreGive(s_bt_mutex);
     }
+
+    if (gone_mac[0] != '\0') {
+        notify_conn_event(gone_mac, BT_CONN_DISCONNECTED, event->disconnect.reason);
+    }
+
     ui_keyboard_notify_hardware_change();
     ui_mouse_set_connected(false);
 
@@ -600,6 +883,50 @@ static int handle_gap_disconnect(struct ble_gap_event *event)
     return 0;
 }
 
+void handle_mouse_report(const uint8_t *rpt, uint16_t len)
+{
+    if (rpt == nullptr || len < 3) {
+        return;
+    }
+    uint8_t buttons = rpt[0];
+    int8_t dx = (int8_t)rpt[1];
+    int8_t dy = (int8_t)rpt[2];
+    int8_t wheel = (len > 3) ? (int8_t)rpt[3] : 0;
+    ESP_LOGI(TAG, "HID Mouse Padrão: btn=0x%02X dx=%d dy=%d wheel=%d", buttons, dx, dy, wheel);
+    ui_mouse_inject_motion(dx, dy, buttons, wheel);
+}
+
+/* Decide se uma notificacao pode ser roteada pelo Report Map real do
+ * dispositivo (lido na descoberta GATT) em vez das heuristicas fixas.
+ * Retorna o tipo e o offset do payload (1 quando ha Report ID no primeiro
+ * byte, 0 quando o dispositivo nao usa IDs). */
+bool route_by_report_map(const uint8_t *data, uint16_t len, hid_report_kind_t *kind_out, int *offset_out)
+{
+    if (s_report_count <= 0 || data == nullptr || len < 1 || kind_out == nullptr || offset_out == nullptr) {
+        return false;
+    }
+
+    for (int i = 0; i < s_report_count; i++) {
+        if (s_report_entries[i].report_id != 0 && s_report_entries[i].report_id == data[0]) {
+            if (s_report_entries[i].kind == HID_REPORT_UNKNOWN) {
+                return false;
+            }
+            *kind_out = s_report_entries[i].kind;
+            *offset_out = 1;
+            return true;
+        }
+    }
+
+    for (int i = 0; i < s_report_count; i++) {
+        if (s_report_entries[i].report_id == 0 && s_report_entries[i].kind != HID_REPORT_UNKNOWN) {
+            *kind_out = s_report_entries[i].kind;
+            *offset_out = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
 static int handle_gap_notify_rx(struct ble_gap_event *event)
 {
     uint16_t len = os_mbuf_len(event->notify_rx.om);
@@ -617,15 +944,24 @@ static int handle_gap_notify_rx(struct ble_gap_event *event)
         }
         ESP_LOGI(TAG, "NOTIFY len=%d [%s]", (int)len, hex_buf);
 
+        /* 0. Roteamento pelo Report Map (0x2A4B) lido na descoberta GATT */
+        hid_report_kind_t rkind = HID_REPORT_UNKNOWN;
+        int roffset = -1;
+        bool mapped = route_by_report_map(data, len, &rkind, &roffset);
+        bool kbd_routed = (mapped && rkind == HID_REPORT_KEYBOARD && (int)(len - roffset) >= 8);
+
+        if (mapped && rkind == HID_REPORT_MOUSE) {
+            handle_mouse_report(data + roffset, (uint16_t)(len - roffset));
+            return 0;
+        }
+        if (mapped && rkind == HID_REPORT_CONSUMER) {
+            ESP_LOGI(TAG, "HID Consumer (midia/volume): ID=0x%02X len=%d", data[roffset], (int)len);
+            return 0;
+        }
+
         /* 1. Relatório de Mouse Padrão (Report ID 0x02 ou len 3..5 sem ID) */
-        if ((len <= 7 && data[0] == 0x02) || (len <= 5 && data[0] != 0x01)) {
-            int offset = (data[0] == 0x02) ? 1 : 0;
-            uint8_t buttons = data[offset];
-            int8_t dx = (int8_t)data[offset + 1];
-            int8_t dy = (int8_t)data[offset + 2];
-            int8_t wheel = (len > (uint16_t)(offset + 3)) ? (int8_t)data[offset + 3] : 0;
-            ESP_LOGI(TAG, "HID Mouse Padrão: btn=0x%02X dx=%d dy=%d wheel=%d", buttons, dx, dy, wheel);
-            ui_mouse_inject_motion(dx, dy, buttons, wheel);
+        if (!mapped && ((len <= 7 && data[0] == 0x02) || (len <= 5 && data[0] != 0x01))) {
+            handle_mouse_report(data + (data[0] == 0x02 ? 1 : 0), (uint16_t)(len - (data[0] == 0x02 ? 1 : 0)));
             return 0;
         }
 
@@ -636,7 +972,7 @@ static int handle_gap_notify_rx(struct ble_gap_event *event)
         static uint32_t s_touch_start_time = 0;
         static int32_t s_total_move = 0;
 
-        if (data[0] == 0x07 && len >= 4) {
+        if (!kbd_routed && data[0] == 0x07 && len >= 4) {
             uint16_t cur_x = data[1] | ((uint16_t)(data[2] & 0x0F) << 8);
             uint16_t cur_y = (data[2] >> 4) | ((uint16_t)data[3] << 4);
 
@@ -675,7 +1011,7 @@ static int handle_gap_notify_rx(struct ble_gap_event *event)
             return 0;
         }
 
-        if (data[0] == 0x05) {
+        if (!kbd_routed && data[0] == 0x05) {
             /* Toque finalizado / dedo levantado do touchpad */
             if (s_touch_active) {
                 uint32_t dur = esp_log_timestamp() - s_touch_start_time;
@@ -692,14 +1028,18 @@ static int handle_gap_notify_rx(struct ble_gap_event *event)
             return 0;
         }
 
-        /* 3. Relatório de Teclado (Report ID 0x01 com len >= 9 ou 8 bytes sem ID) */
+        /* 3. Relatório de Teclado (boot protocol, Report ID 0x01 ou roteado
+         * pelo Report Map com qualquer ID) */
         uint8_t mod = 0;
         int key_offset = 0;
 
-        if (len >= 9 && data[0] == 0x01) {
+        if (kbd_routed) {
+            mod = data[roffset];
+            key_offset = roffset + 2;
+        } else if (!mapped && len >= 9 && data[0] == 0x01) {
             mod = data[1];
             key_offset = 3;
-        } else if (len == 8 && data[0] != 0x01) {
+        } else if (!mapped && len == 8 && data[0] != 0x01) {
             mod = data[0];
             key_offset = 2;
         } else {
@@ -839,7 +1179,7 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
         if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             finish_scan_locked();
         }
-        if (s_active_count == 0) {
+        if (!any_connected_locked()) {
             bt_saved_list_t list = {};
             if (bt_storage_load_all(&list) == ESP_OK && list.count > 0) {
                 ESP_LOGI(TAG, "Reiniciando escuta passiva em segundo plano para auto-reconexao...");
@@ -881,6 +1221,20 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_ENC_CHANGE:
         ESP_LOGI(TAG, "GAP Encryption alterada status=%d", event->enc_change.status);
+        if (event->enc_change.status == 0) {
+            struct ble_gap_conn_desc enc_desc = {};
+            if (ble_gap_conn_find(event->enc_change.conn_handle, &enc_desc) == 0 && s_bt_mutex != nullptr &&
+                xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                active_conn_t *slot = find_slot_by_handle_locked(event->enc_change.conn_handle);
+                if (slot != nullptr) {
+                    format_mac_addr(enc_desc.peer_id_addr.val, slot->id_mac, sizeof(slot->id_mac));
+                    slot->id_addr_type = enc_desc.peer_id_addr.type;
+                    ESP_LOGI(TAG, "Bonding concluido: endereco identidade do peer %s (type=%d)", slot->id_mac,
+                             (int)slot->id_addr_type);
+                }
+                xSemaphoreGive(s_bt_mutex);
+            }
+        }
         return 0;
 
     case BLE_GAP_EVENT_NOTIFY_RX:
@@ -921,6 +1275,25 @@ void ble_app_on_reset(int reason)
 {
     ESP_LOGW(TAG, "NimBLE Host resetado (motivo: %d)", reason);
     s_nimble_synced = false;
+
+    char was_mac[18] = {};
+    if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        for (int i = 0; i < s_active_count; i++) {
+            if (!s_active_conns[i].connected) {
+                remove_slot_locked(i);
+                i--;
+            }
+        }
+        if (s_pending.active) {
+            snprintf(was_mac, sizeof(was_mac), "%s", s_pending.mac);
+            s_pending.active = false;
+            s_pending.mac[0] = '\0';
+        }
+        xSemaphoreGive(s_bt_mutex);
+    }
+    if (was_mac[0] != '\0') {
+        notify_conn_event(was_mac, BT_CONN_FAILED, reason);
+    }
 }
 
 void ble_host_task(void *param)
@@ -964,7 +1337,12 @@ esp_err_t bt_mgr_set_enabled(bool enabled)
 
     if (!enabled) {
         ble_gap_disc_cancel();
-        ble_gap_conn_cancel();
+        if (s_pending.active) {
+            s_pending.cancel_expected = true;
+            ble_gap_conn_cancel();
+        }
+        s_pending.active = false;
+        s_pending.mac[0] = '\0';
         s_scanning = false;
         if (s_scan_watchdog != nullptr) {
             xTimerStop(s_scan_watchdog, 0);
@@ -1025,6 +1403,17 @@ esp_err_t bt_mgr_start(void)
         s_scan_watchdog = xTimerCreate("bt_sc_wd", pdMS_TO_TICKS(5500), pdFALSE, nullptr, scan_watchdog_cb);
     }
 
+    /* Desde o esp-hosted 2.5.2 o controller BT do coprocessador (C6) nasce
+     * desligado: inicializar e habilitar explicitamente antes do host stack. */
+    esp_err_t hrc = esp_hosted_bt_controller_init();
+    if (hrc != ESP_OK) {
+        ESP_LOGW(TAG, "esp_hosted_bt_controller_init falhou: %d", hrc);
+    }
+    hrc = esp_hosted_bt_controller_enable();
+    if (hrc != ESP_OK) {
+        ESP_LOGW(TAG, "esp_hosted_bt_controller_enable falhou: %d", hrc);
+    }
+
     int rc = nimble_port_init();
     if (rc != 0) {
         ESP_LOGE(TAG, "nimble_port_init falhou: %d", rc);
@@ -1070,6 +1459,11 @@ esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
         return ESP_ERR_TIMEOUT;
     }
 
+    /* Um scan novo cancela tentativa de conexao pendente: o CONNECT que
+     * chegar com falha nao deve contar como backoff nem alarmar a UI. */
+    if (s_pending.active) {
+        s_pending.cancel_expected = true;
+    }
     ble_gap_conn_cancel();
     ble_gap_disc_cancel();
     s_scanning = false;
@@ -1137,11 +1531,13 @@ esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
 }
 
 /**
- * @brief Inicia conexão BLE com um dispositivo HID previamente pareado.
+ * @brief Inicia conexão BLE com um dispositivo HID.
  *
- * Valida o estado do Bluetooth, o endereço MAC e inicia um procedimento GAP
- * Connect via NimBLE. Aguarda se já houver um procedimento GAP em andamento.
- * Suporta tipos de dispositivo: teclado, mouse e genérico (bt_dev_type_t).
+ * Valida o estado do Bluetooth e do host NimBLE, o endereço MAC e inicia o
+ * procedimento GAP Connect. Retorna erros reais (ocupado, controlador recusou)
+ * e não persiste nada no bt.cfg: o resultado final chega pelo callback
+ * registrado em bt_mgr_set_conn_callback, e a persistência como "pareado"
+ * só ocorre quando a inicialização HID é concluída.
  *
  * @param mac   Endereço MAC do dispositivo no formato "XX:XX:XX:XX:XX:XX".
  * @param name  Nome amigável do dispositivo (para logs e UI).
@@ -1161,11 +1557,20 @@ esp_err_t bt_mgr_connect(const char *mac, const char *name, bt_dev_type_t type)
     if (mac == nullptr || mac[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
+    if (!s_nimble_inited || !s_nimble_synced) {
+        ESP_LOGW(TAG, "Tentativa de conexao antes do host NimBLE sincronizar");
+        return ESP_ERR_INVALID_STATE;
+    }
 
-    /* Passo 3: Prevenção de concorrência com procedimentos GAP já ativos no rádio */
+    /* Passo 3: Prevenção de concorrência com procedimentos GAP já ativos */
     if (ble_gap_conn_active()) {
-        ESP_LOGI(TAG, "Procedimento GAP Connect ja esta em andamento no rádio! Aguardando...");
-        return ESP_OK;
+        if (s_pending.active && strcasecmp(s_pending.mac, mac) == 0) {
+            ESP_LOGI(TAG, "Conexao com %s ja esta em andamento", mac);
+            return ESP_OK;
+        }
+        ESP_LOGW(TAG, "Conexao recusada: procedimento GAP ja ativo (alvo atual: %s)",
+                 s_pending.active ? s_pending.mac : "desconhecido");
+        return ESP_ERR_INVALID_STATE;
     }
 
     /* Passo 4: Sincronização e exclusão mútua com mutex do gerenciador */
@@ -1208,6 +1613,11 @@ esp_err_t bt_mgr_connect(const char *mac, const char *name, bt_dev_type_t type)
             break;
         }
     }
+    if (conn_idx < 0 && !any_connected_locked() && s_active_count > 0) {
+        /* Reaproveita slot pendente órfão de tentativa anterior */
+        conn_idx = 0;
+        s_active_count = 1;
+    }
     if (conn_idx < 0 && s_active_count < MAX_ACTIVE_CONNS) {
         conn_idx = s_active_count++;
     }
@@ -1215,19 +1625,30 @@ esp_err_t bt_mgr_connect(const char *mac, const char *name, bt_dev_type_t type)
     /* Passo 8: Inicialização dos metadados da conexão ativa */
     if (conn_idx >= 0) {
         active_conn_t *conn = &s_active_conns[conn_idx];
+        memset(conn, 0, sizeof(*conn));
         snprintf(conn->mac, sizeof(conn->mac), "%s", mac);
         snprintf(conn->name, sizeof(conn->name), "%s", name ? name : "Dispositivo Bluetooth");
         conn->type = type;
         conn->addr_type = addr_type;
         conn->connected = false;
+        conn->conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    } else {
+        ESP_LOGW(TAG, "Sem slot livre para registrar a tentativa de conexao de %s", mac);
     }
 
-    /* Passo 9: Conversão do endereço e disparo da conexão GAP NimBLE */
+    /* Passo 9: Conversão do endereço e disparo da conexão GAP NimBLE.
+     * Nada é gravado no bt.cfg aqui: a persistência como pareado só ocorre
+     * quando o HID fica pronto (persist_paired_device_locked). */
+    esp_err_t ret;
     ble_addr_t peer_addr = {};
-    peer_addr.type = addr_type;
     if (parse_mac_addr(mac, &peer_addr)) {
+        peer_addr.type = addr_type;
         uint8_t own_addr_type = BLE_OWN_ADDR_PUBLIC;
         ble_hs_id_infer_auto(0, &own_addr_type);
+
+        snprintf(s_pending.mac, sizeof(s_pending.mac), "%s", mac);
+        s_pending.cancel_expected = false;
+        s_pending.user_initiated = true;
 
         ESP_LOGI(TAG, "Executando ble_gap_connect own_addr_type=%d peer_addr.type=%d [%s]...", (int)own_addr_type,
                  (int)peer_addr.type, mac);
@@ -1237,30 +1658,49 @@ esp_err_t bt_mgr_connect(const char *mac, const char *name, bt_dev_type_t type)
                      (int)peer_addr.type, rc);
             peer_addr.type = (peer_addr.type == BLE_ADDR_PUBLIC) ? BLE_ADDR_RANDOM : BLE_ADDR_PUBLIC;
             rc = ble_gap_connect(own_addr_type, &peer_addr, 30000, nullptr, ble_gap_event_cb, nullptr);
-            if (rc != 0) {
-                ESP_LOGE(TAG, "ble_gap_connect falhou: %d", rc);
-            }
         }
+
+        if (rc != 0) {
+            ESP_LOGE(TAG, "ble_gap_connect falhou nos dois tipos de endereco: rc=%d", rc);
+            autoconn_mark_failed_locked(mac);
+            s_pending.active = false;
+            s_pending.mac[0] = '\0';
+            if (conn_idx >= 0) {
+                remove_slot_locked(conn_idx);
+            }
+            update_device_connection_flags_locked();
+            if (s_bt_mutex != nullptr) {
+                xSemaphoreGive(s_bt_mutex);
+            }
+            notify_conn_event(mac, BT_CONN_FAILED, rc);
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+
+        s_pending.active = true;
+        ret = ESP_OK;
+    } else {
+        ESP_LOGE(TAG, "MAC invalido para conexao: %s", mac);
+        ret = ESP_ERR_INVALID_ARG;
+        s_pending.mac[0] = '\0';
     }
 
-    /* Passo 10: Persistência do dispositivo pareado no armazenamento não-volátil */
-    bt_saved_device_t dev = {};
-    snprintf(dev.mac, sizeof(dev.mac), "%s", mac);
-    snprintf(dev.name, sizeof(dev.name), "%s", name ? name : "Dispositivo Bluetooth");
-    dev.type = type;
-    dev.addr_type = addr_type;
-    dev.paired = true;
-    dev.auto_connect = true;
-    bt_storage_add_or_update(&dev);
-
-    /* Passo 11: Atualização de flags de interface e liberação do mutex */
+    /* Passo 10: Atualização de flags de interface e liberação do mutex */
     update_device_connection_flags_locked();
     if (s_bt_mutex != nullptr) {
         xSemaphoreGive(s_bt_mutex);
     }
 
-    ESP_LOGI(TAG, "Dispositivo %s registrado para conexao", mac);
-    return ESP_OK;
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Procedimento de conexao iniciado para %s", mac);
+        notify_conn_event(mac, BT_CONN_STARTED, 0);
+    }
+    return ret;
+}
+
+void bt_mgr_set_conn_callback(bt_conn_cb_t cb, void *ctx)
+{
+    s_conn_cb = cb;
+    s_conn_ctx = ctx;
 }
 
 esp_err_t bt_mgr_disconnect(const char *mac)
@@ -1274,7 +1714,12 @@ esp_err_t bt_mgr_disconnect(const char *mac)
     }
 
     ESP_LOGI(TAG, "Desconectando de %s...", mac);
-    ble_gap_conn_cancel();
+    if (s_pending.active && strcasecmp(s_pending.mac, mac) == 0) {
+        s_pending.cancel_expected = true;
+        ble_gap_conn_cancel();
+        s_pending.active = false;
+        s_pending.mac[0] = '\0';
+    }
 
     for (int i = 0; i < s_active_count; i++) {
         if (strcasecmp(s_active_conns[i].mac, mac) == 0) {
@@ -1312,6 +1757,7 @@ esp_err_t bt_mgr_forget(const char *mac)
     if (s_bt_mutex != nullptr) {
         xSemaphoreTake(s_bt_mutex, portMAX_DELAY);
     }
+    autoconn_clear_locked(mac);
     update_device_connection_flags_locked();
     if (s_bt_mutex != nullptr) {
         xSemaphoreGive(s_bt_mutex);

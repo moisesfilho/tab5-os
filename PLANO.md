@@ -2181,6 +2181,68 @@ tools/ci/
 
 ---
 
+# [x] Fase 41: Confiabilidade da Conexão Bluetooth HID `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Mouse BLE (Logitech Lift) aparecia no scan do app Bluetooth mas a conexão falhava em silêncio: o botão "Conectar" voltava ao estado inicial sem explicação.
+- Causas raiz: `bt_mgr_connect` retornava `ESP_OK` mesmo quando o procedimento GAP falhava ou estava ocupado; o dispositivo era persistido como "pareado" antes de conectar de verdade; slot de conexão órfão bloqueava rescan/reconexão; auto-conect monopolizava o GAP; MAC rotativo (RPA) dos Logitech tornava o endereço salvo stale.
+- Objetivo: fluxo de conexão honesto com feedback real na UI, reconexão confiável entre reboots e roteamento HID pelo Report Map real do dispositivo (em vez de Report IDs fixos no código).
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Resultado de conexão | Callback `bt_conn_cb_t` (`bt_mgr_set_conn_callback`) com eventos STARTED/CONNECTED/READY/FAILED/DISCONNECTED | NimBLE reporta sucesso/falha assincronamente via eventos GAP; a UI precisa do resultado real, não do "aceito" do início do procedimento |
+| D2 | Persistência como pareado | Só após inicialização HID concluída (GAP + descoberta GATT + CCCDs gravados) | Um tap não pode marcar o dispositivo como pareado — era isso que criava o loop de auto-conect contra um endereço inválido |
+| D3 | Endereço de reconexão | `peer_id_addr` capturado pós-bonding e gravado no bt.cfg | O RPA rotaciona a cada anúncio; o endereço identidade é estável. Remapeamento por nome cobre o intervalo até o novo anúncio |
+| D4 | Backoff de auto-conect | 15 s por MAC após falha, ignorado quando o cancelamento foi intencional (scan/forget/disconnect) | Evita martelar o controlador e monopolizar o procedimento GAP durante os 30 s de timeout |
+| D5 | Parser de Report Map | Unidade pura (`hid_report_map.cpp`, sem dependências ESP) testada em host; roteamento por report ID com heurísticas legadas como fallback | Mouses compostos (teclado+mouse+consumer+system+vendor) usam IDs diferentes dos fixos 0x01/0x02; parser testável sem hardware |
+| D6 | Bonding em NVS | `CONFIG_BT_NIMBLE_NVS_PERSIST=y` + transporte HCI exclusivamente VHCI (`BT_NIMBLE_TRANSPORT_UART=n`) + `esp_hosted_bt_controller_init/enable()` explícitos | Chaves sobrevivem ao reboot; elimina ambiguidade UART/VHCI do Kconfig; controller do C6 nasce desligado desde esp-hosted 2.5.2 |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/core/
+├── bt_mgr.h               # [MODIFY] bt_conn_event_t, bt_conn_cb_t, bt_mgr_set_conn_callback
+├── bt_mgr.cpp             # [MODIFY] Fluxo honesto, backoff, slots, persistência tardia, Report Map
+├── hid_report_map.h/.cpp  # [NEW] Parser puro de descritor HID (report ID → mouse/teclado/consumer)
+components/apps/bluetooth/
+└── ui_bluetooth.cpp       # [MODIFY] Estado "Conectando...", fila de eventos NimBLE→LVGL, erros reais
+tests/host/src/
+└── test_bt_report_map.cpp # [NEW] 11 testes do parser (boot, composto Logitech, truncado, item longo)
+```
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Gerenciador honesto**: `bt_mgr_connect` propaga erro real (ocupado/controlador recusou), remove slot pendente na falha, não grava no bt.cfg no tap; persistência apenas quando os CCCDs são gravados (HID pronto).
+- [x] **Etapa 2 — Canal de erro para a UI**: callback de eventos de conexão marshalled para a task LVGL (fila circular + `lv_async_call`); status mostra "Conectando…", "Tempo esgotado", "Falha na conexão (rc=N)" e o botão fica guardado durante a tentativa.
+- [x] **Etapa 3 — Auto-reconexão robusta**: backoff de 15 s por MAC, guarda de pendência ativa, remapeamento do MAC rotativo por nome no anúncio, slots liberados na desconexão/falha/reset do host.
+- [x] **Etapa 4 — Infra BT**: bonding persistente em NVS, VHCI explícito no sdkconfig.defaults (sdkconfig regenerado), controller BT do C6 inicializado/habilitado antes do host stack.
+- [x] **Etapa 5 — Report Map**: leitura GATT da característica 0x2A4B, parser de itens HID e roteamento das notificações pelo tipo real (mouse/teclado/consumer); heurísticas antigas preservadas para dispositivos sem mapa parseável.
+- [x] **Etapa 6 — Validação**: 95/95 testes host (11 novos, cobertura 92,3%), build firmware OK, regressão visual 15/15 PASS.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Dispositivo sem Report Map parseável (mapa truncado pela MTU) | Parser tolerante a truncamento + heurísticas legadas mantidas como fallback |
+| Teclado com modificador pressionado cair na heurística errada | Roteamento por ID tem precedência; guards `!kbd_routed` nos heurísticos de touchpad evitam engolir IDs 0x05/0x07 |
+| Consumer reports (volume/mídia) ainda sem ação na UI | Registrados em log para mapeamento futuro |
+| `esp_hosted_misc.h` sem `extern "C"` | Include envolvido manualmente em `extern "C"` dentro do bt_mgr |
+| Auto-conect contra dispositivo desligado | Backoff por MAC impede martelada; escuta passiva retomada após o período |
+
+## 6. Critérios de Validação
+
+1. `tools/ci/run_host_tests.sh`: 95/95 testes, cobertura 92,3% ≥ 80%. ✓
+2. `idf.py build` conclui com sdkconfig regenerado (`NVS_PERSIST=y`, `TRANSPORT_UART is not set`). ✓
+3. `tools/ci/run_sim_tests.sh`: 15/15 cenários visuais PASS (stub `bt_mgr_set_conn_callback` no simulador). ✓
+4. Hardware: parear o Lift → cursor move via relatórios roteados pelo Report Map; reboot → reconexão automática sem refazer pairing. (Validação em andamento)
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Fluxo de conexão honesto**: UI reflete o estado real (conectando/conectado/pronto/falhou), dispositivos só viram "pareados" depois de prontos, e o parser de Report Map torna o suporte HID independente de Report IDs fixos.
+
+---
+
 ## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)
 
 > [!NOTE]

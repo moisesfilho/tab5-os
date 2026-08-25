@@ -132,6 +132,12 @@ esp_err_t bt_mgr_connect(const char *mac, const char *name, bt_dev_type_t type)
     return ESP_OK;
 }
 
+void bt_mgr_set_conn_callback(bt_conn_cb_t cb, void *ctx)
+{
+    (void)cb;
+    (void)ctx;
+}
+
 esp_err_t bt_mgr_disconnect(const char *mac)
 {
     (void)mac;
