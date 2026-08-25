@@ -896,6 +896,32 @@ void handle_mouse_report(const uint8_t *rpt, uint16_t len)
     ui_mouse_inject_motion(dx, dy, buttons, wheel);
 }
 
+/* Mouse composto descrito pelo Report Map real (ex.: Lift da Logitech:
+ * 16 botoes, X/Y de 12 bits, wheel e AC Pan de 8 bits). */
+void handle_mouse_report_composite(const hid_report_entry_t *entry, const uint8_t *rpt, uint16_t len)
+{
+    if (rpt == nullptr || entry == nullptr) {
+        return;
+    }
+
+    /* Geometria ausente ou equivalente ao formato boot de 1 byte por eixo:
+     * usa o decoder simples. */
+    if ((entry->x_bits == 0 && entry->y_bits == 0) ||
+        (entry->x_bits % 8 == 0 && entry->y_bits % 8 == 0 && entry->button_count <= 8 && entry->wheel_bits % 8 == 0)) {
+        handle_mouse_report(rpt, len);
+        return;
+    }
+
+    hid_mouse_sample_t sample = {};
+    if (!hid_report_map_decode_mouse(entry, rpt, (size_t)len, &sample)) {
+        ESP_LOGW(TAG, "Falha ao decodificar relatorio de mouse composto (len=%d)", (int)len);
+        return;
+    }
+    ESP_LOGI(TAG, "HID Mouse Composto: btn=0x%02X dx=%ld dy=%ld wheel=%ld pan=%ld", sample.buttons, (long)sample.dx,
+             (long)sample.dy, (long)sample.wheel, (long)sample.pan);
+    ui_mouse_inject_motion((int8_t)sample.dx, (int8_t)sample.dy, sample.buttons, (int8_t)sample.wheel);
+}
+
 /* Decide se uma notificacao pode ser roteada pelo Report Map real do
  * dispositivo (lido na descoberta GATT) em vez das heuristicas fixas.
  * Retorna o tipo e o offset do payload (1 quando ha Report ID no primeiro
@@ -951,7 +977,9 @@ static int handle_gap_notify_rx(struct ble_gap_event *event)
         bool kbd_routed = (mapped && rkind == HID_REPORT_KEYBOARD && (int)(len - roffset) >= 8);
 
         if (mapped && rkind == HID_REPORT_MOUSE) {
-            handle_mouse_report(data + roffset, (uint16_t)(len - roffset));
+            const hid_report_entry_t *entry =
+                hid_report_map_find(s_report_entries, s_report_count, (roffset == 1) ? data[0] : 0);
+            handle_mouse_report_composite(entry, data + roffset, (uint16_t)(len - roffset));
             return 0;
         }
         if (mapped && rkind == HID_REPORT_CONSUMER) {

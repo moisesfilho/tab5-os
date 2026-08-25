@@ -319,3 +319,70 @@ TEST(HidReportMap, LookupToleranteATabelaVazia)
     hid_report_entry_t out[HID_REPORT_MAP_MAX] = {};
     EXPECT_EQ(hid_report_map_lookup(out, 0, 0x02), HID_REPORT_UNKNOWN);
 }
+
+#include "lift_report_map_data.h"
+
+namespace {
+
+/* Monta uma notificacao composta no formato real do Lift:
+ * [buttons u16][X 12b][Y 12b][wheel s8][pan s8] little-endian bit-packed */
+std::vector<uint8_t> lift_notification(uint16_t buttons, int x, int y, int wheel, int pan)
+{
+    uint32_t raw = (uint32_t)((x & 0x0FFF) | ((y & 0x0FFF) << 12));
+    std::vector<uint8_t> d;
+    d.push_back((uint8_t)(buttons & 0xFF));
+    d.push_back((uint8_t)(buttons >> 8));
+    d.push_back((uint8_t)(raw & 0xFF));
+    d.push_back((uint8_t)((raw >> 8) & 0xFF));
+    d.push_back((uint8_t)((raw >> 16) & 0xFF));
+    d.push_back((uint8_t)wheel);
+    d.push_back((uint8_t)pan);
+    return d;
+}
+
+} // namespace
+
+/* Mapa lido via GATT de um Lift fisico: 1 report ID, formato composto. */
+TEST(HidReportMap, MapaRealDoLift)
+{
+    hid_report_entry_t out[HID_REPORT_MAP_MAX] = {};
+    int n = hid_report_map_parse(LIFT_REPORT_MAP, LIFT_REPORT_MAP_LEN, out, HID_REPORT_MAP_MAX);
+
+    ASSERT_EQ(n, 1);
+    EXPECT_EQ(out[0].report_id, 0x02);
+    EXPECT_EQ(out[0].kind, HID_REPORT_MOUSE);
+    EXPECT_EQ(out[0].button_count, 16);
+    EXPECT_EQ(out[0].x_bits, 12);
+    EXPECT_EQ(out[0].y_bits, 12);
+    EXPECT_EQ(out[0].wheel_bits, 8);
+    EXPECT_EQ(out[0].pan_bits, 8);
+}
+
+TEST(HidReportMap, DecodeNotificacaoCompostaDoLift)
+{
+    hid_report_entry_t out[HID_REPORT_MAP_MAX] = {};
+    int n = hid_report_map_parse(LIFT_REPORT_MAP, LIFT_REPORT_MAP_LEN, out, HID_REPORT_MAP_MAX);
+    ASSERT_EQ(n, 1);
+
+    auto notif = lift_notification(0x0002 /* botao direito */, -3, 25, -1, 7);
+    hid_mouse_sample_t sample = {};
+    ASSERT_TRUE(hid_report_map_decode_mouse(&out[0], notif.data(), notif.size(), &sample));
+
+    EXPECT_EQ(sample.report_id, 0x02);
+    EXPECT_EQ(sample.buttons, 0x02);
+    EXPECT_EQ(sample.dx, -3);
+    EXPECT_EQ(sample.dy, 25);
+    EXPECT_EQ(sample.wheel, -1);
+    EXPECT_EQ(sample.pan, 7);
+}
+
+TEST(HidReportMap, DecodeRejeitaPayloadTruncado)
+{
+    hid_report_entry_t out[HID_REPORT_MAP_MAX] = {};
+    int n = hid_report_map_parse(LIFT_REPORT_MAP, LIFT_REPORT_MAP_LEN, out, HID_REPORT_MAP_MAX);
+    ASSERT_EQ(n, 1);
+
+    hid_mouse_sample_t sample = {};
+    const uint8_t curto[] = {0x02, 0x01};
+    EXPECT_FALSE(hid_report_map_decode_mouse(&out[0], curto, sizeof(curto), &sample));
+}
