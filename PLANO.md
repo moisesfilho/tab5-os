@@ -46,6 +46,8 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 36** | Monitor de Bateria INA226 e Proteção de Carregamento | Sistema / Energia / UI | Driver próprio do INA226 (I2C 0x41, shunt 5 mΩ), ícone com percentual e popup de detalhes na barra, estados Carregando/Na tomada/Na bateria/Somente cabo, corte de carga em 90% via `CHG_EN` com retomada em 85% e switch persistido em NVS |
 | `[x]` | **Fase 37** | Persistência do Volume Geral de Áudio | Sistema / Áudio / UI | Volume geral (menu Configuração e app Música) salvo ao soltar o slider em NVS (`tab5/volume`) e SD (`/sdcard/tab5_os/audio.cfg`), restaurado no boot via lazy-load no player, seguindo o padrão do brilho (`display_storage`) |
 | `[x]` | **Fase 38** | Ajustes de Usabilidade do Menu de Configuração | Sistema / UI | Painel alargado de 230 px para 320 px eliminando texto cortado, e trilha dos sliders visível nos dois temas (`text_muted` com 40% de opacidade em `LV_PART_MAIN`) no Brilho/Volume do menu e no app Música |
+| `[x]` | **Fase 39** | Screenshot pela Barra do Sistema | Sistema / UI | Snapshot lógico RGB565 da tela ativa + blend alpha do `layer_top`, gravação BMP 24-bit assíncrona em `/sdcard/screenshots` com flash e toast, e `decode_bmp` da Galeria corrigido (escala por potências de 2 e stride correto) |
+| `[x]` | **Fase 40** | Simulador Host SDL e Regressão Visual da UI | Qualidade / Testes | UI real (shell + apps) compilada sobre o LVGL vendido com backend SDL2 720×1280, 15 cenários comparados contra imagens douradas determinísticas, comparador com tolerância e PNGs de diff |
 
 
 ---
@@ -2111,6 +2113,71 @@ components/os/
 
 ## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 - **Validado em hardware real** (ago/2026): prints corretos em retrato e paisagem, salvos em `/sdcard/screenshots`, visualizados no PC e no visualizador do Tab5.
+
+---
+
+# [x] Fase 40: Simulador Host SDL e Regressão Visual da UI `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Toda validação da interface era manual, em hardware real — regressões visuais de layout, tema e fluxo de apps só apareciam depois do flash no Tab5.
+- Objetivo: compilar a **UI real** (`os/shell` + apps) em um binário host com backend **SDL2** (janela 720×1280 RGB565), executar cenários automatizados (boot, desktop, abertura de cada app, power menu) e comparar capturas BMP contra **imagens douradas** versionadas, tornando regressões visulares detectáveis sem hardware.
+- Ferramenta de regressão manual: roda em segundos na máquina do desenvolvedor; não é job de CI (depende de display para o backend SDL).
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Compilação da UI | LVGL vendido (`managed_components/lvgl__lvgl`) + `lv_sdl_window` + shims de BSP/FreeRTOS/ESP-IDF | Exerce o código de produção de verdade (shell, desktop, apps), não uma réplica |
+| D2 | Acesso a `/sdcard` | Extensão dos wraps de link para `opendir`/`stat` (além de `fopen`/`open`/`mkdir`) redirecionando para tmpdir | Galeria/Arquivos/Terminal listam diretórios via POSIX; zero alteração no código de produção |
+| D3 | Determinismo | Relógio congelado (`--wrap=time/localtime_r`, época fixa, TZ −3 → 21:00) e `srand(42)` | Duas execuções consecutivas produzem capturas idênticas — pré-requisito para comparação byte a byte com tolerância |
+| D4 | Comparação | Pillow com tolerância dupla: ≤0,5% dos pixels divergentes E delta RGB por canal ≤48 | Absorve anti-aliasing/redesenho benigno; falha grava PNG com as regiões diferentes em vermelho e relatório |
+| D5 | Goldens versionados | BMPs commitados em `tests/simulator/goldens/<cenario>/` | Mudança visual intencional exige regeneração explícita (`--update-goldens`) e revisão no diff |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+tests/simulator/
+├── CMakeLists.txt          # Build standalone: LVGL vendido + SDL2 + wraps de link
+├── lv_conf.h               # LVGL do simulador (RGB565, SDL, snapshot, malloc clib)
+├── main.cpp                # Boot da UI, modo interativo e runner de cenários
+├── README.md               # Uso, dependências e teclas do modo interativo
+├── scenarios/              # 15 cenários + injeção de clique SDL e fixtures
+├── shims/                  # BSP/FreeRTOS/esp_* stubs, sim_time (relógio congelado), sim_capture
+└── goldens/<cenario>/      # Imagens de referência 01_*.bmp (versionadas)
+tests/host/mocks/
+└── link_wrappers.cpp       # [MODIFY] Wraps estendidos com opendir/stat
+tools/ci/
+├── run_sim_tests.sh        # Orquestra build + cenários + comparação (--scenario, --update-goldens)
+└── compare_images.py       # Comparador com tolerância, PNGs de diff e relatório
+```
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Infraestrutura**: CMake standalone com LVGL vendido, `lv_conf.h` próprio e shims de BSP/FreeRTOS/ESP-IDF; janela SDL 720×1280 RGB565.
+- [x] **Etapa 2 — Determinismo**: relógio congelado via wrap de `time`/`localtime_r`, seed fixa de RNG e capturas após `lv_refr_now`.
+- [x] **Etapa 3 — Cenários**: 15 cenários (desktop, power menu, settings e os 12 apps) com injeção de clique SDL e fixtures no tmpdir.
+- [x] **Etapa 4 — Redirecionamento completo de `/sdcard`**: wraps `opendir`/`stat` adicionados aos testes host e ao simulador (galeria exibindo foto real do fixture).
+- [x] **Etapa 5 — Comparador e orquestrador**: `compare_images.py` (tolerância, diffs, relatório) e `run_sim_tests.sh` (`--scenario`, `--update-goldens`).
+- [x] **Etapa 6 — Validação**: duas execuções consecutivas completas com 15/15 PASS; suíte host-native segue 84/84 após a extensão dos wraps.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Backend SDL sem display disponível (CI/headless) | Regressão é ferramenta local; `SDL_VIDEODRIVER=dummy` não cria display LVGL e não é suportado |
+| Processo do simulador travado em loop de render | `gnutimeout -k 2` + `pkill -9 -x tab5_sim` entre cenários (SIGTERM não é entregue no loop) |
+| Falso negativo por anti-aliasing entre execuções | Tolerância dupla (0,5% dos pixels, delta RGB 48) medida pixel a pixel |
+| Fixture ausente distorcendo o golden | Fixtures criados dentro do próprio cenário (ex.: `mkdir /sdcard/imagens` antes do BMP da galeria) |
+
+## 6. Critérios de Validação
+
+1. `tools/ci/run_sim_tests.sh` executa os 15 cenários e reporta 15 PASS com exit 0. ✓
+2. Duas execuções consecutivas produzem resultados idênticos (determinismo). ✓
+3. Suíte host-native (`tools/ci/run_host_tests.sh`) permanece 84/84 com cobertura ≥80% após os novos wraps. ✓
+4. Falha induzida grava PNG de diff destacando as regiões divergentes em vermelho. ✓
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Regressão visual operacional**: 15 cenários dourados determinísticos, comparador com relatório de diffs e orquestrador único; detalhes de uso em `tests/simulator/README.md`.
 
 ---
 

@@ -74,6 +74,8 @@ target_link_options(tab5_host_tests PRIVATE
     -Wl,--wrap=fopen
     -Wl,--wrap=open
     -Wl,--wrap=mkdir
+    -Wl,--wrap=opendir
+    -Wl,--wrap=stat
 )
 
 enable_testing()

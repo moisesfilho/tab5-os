@@ -29,6 +29,8 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: [--maxkb=1024]
+        # Goldens BMP 720x1280 (~2,7 MB) sao inerentes ao formato
+        exclude: ^tests/simulator/goldens/
 
   # Formatação C/C++ (clang-format; a Espressif usa astyle_py, mas
   # clang-format é o padrão da comunidade e funciona com VS Code/SonarLint)

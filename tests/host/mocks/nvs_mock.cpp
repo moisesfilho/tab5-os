@@ -133,6 +133,26 @@ esp_err_t nvs_set_i32(nvs_handle_t handle, const char *key, int32_t value)
     return ESP_OK;
 }
 
+esp_err_t nvs_get_u32(nvs_handle_t handle, const char *key, uint32_t *out_value)
+{
+    (void)handle;
+    int32_t value = 0;
+    if (!hostmock::nvs_read_i32("tab5", key != nullptr ? key : "", &value)) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (out_value != nullptr) {
+        *out_value = (uint32_t)value;
+    }
+    return ESP_OK;
+}
+
+esp_err_t nvs_set_u32(nvs_handle_t handle, const char *key, uint32_t value)
+{
+    (void)handle;
+    hostmock::nvs_seed_i32("tab5", key != nullptr ? key : "", (int32_t)value);
+    return ESP_OK;
+}
+
 esp_err_t nvs_get_u8(nvs_handle_t handle, const char *key, uint8_t *out_value)
 {
     (void)handle;

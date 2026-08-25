@@ -72,6 +72,8 @@ idf.py -p /dev/ttyACM0 monitor --no-reset
 Automated checks keep the firmware consistent and secure:
 
 - **pre-commit** — local hooks that run on every commit: `clang-format` (project C/C++ style), `cmake-lint` (CMakeLists) and `codespell` (typos, with PT-BR ignore list).
+- **Host-native unit tests** (`tools/ci/run_host_tests.sh`) — GoogleTest suite with 84 tests over the logic and persistence modules, gcov/lcov coverage with an ≥80% gate (currently 92.4%) and `/sdcard` redirection to a tmpdir via linker `--wrap`.
+- **Visual regression** (`tools/ci/run_sim_tests.sh`) — SDL simulator that runs the real UI in a 720×1280 window and compares screenshots against deterministic golden images for 15 scenarios; see [tests/simulator/README.md](tests/simulator/README.md).
 - **GitHub Actions**:
   - `ci.yml` — build with **ESP-IDF v5.5.5** (target `esp32p4`) + **clang-tidy** and **cppcheck** via `compile_commands.json`.
   - `codeql.yml` — static security analysis (SAST) with **CodeQL** (C/C++), manual `idf.py` build.
@@ -122,7 +124,10 @@ tab5-os/
 │   ├── m5stack_tab5/         # Local BSP (override of the official one)
 │   └── rtc_rx8130/           # RX8130CE RTC driver
 ├── tools/
-│   └── ci/                   # Local quality check scripts (clang-tidy, cppcheck, idf.py)
+│   └── ci/                   # Local quality check scripts (clang-tidy, cppcheck, idf.py, host tests, visual regression)
+├── tests/
+│   ├── host/                 # Host-native GoogleTest unit tests (≥80% coverage)
+│   └── simulator/            # SDL UI simulator + golden-image visual regression
 ├── docs/                     # Technical documentation & developer guides
 ├── .github/workflows/        # CI: Quality Gate (build + lint) and CodeQL
 ├── .clang-format             # Project C/C++ style

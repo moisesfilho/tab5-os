@@ -159,8 +159,9 @@ TEST_F(TerminalCmdTest, CdNavegaRelativoAbsolutoEPai)
     EXPECT_EQ(cwd, base);
     EXPECT_EQ(terminal_exec("pwd", cwd), base + "\n");
     EXPECT_NE(terminal_exec("cd /definitivamente/inexistente", cwd).find("No such directory"), std::string::npos);
-    /* "~" resolve para /sdcard, que nao existe no host */
-    EXPECT_NE(terminal_exec("cd ~", cwd).find("cd: /sdcard"), std::string::npos);
+    /* "~" resolve para /sdcard, redirecionado para o tmpdir (existe no host) */
+    EXPECT_EQ(terminal_exec("cd ~", cwd), "");
+    EXPECT_EQ(cwd, "/sdcard");
 }
 
 TEST_F(TerminalCmdTest, CdRecusaArquivoComoDestino)
