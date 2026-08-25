@@ -67,6 +67,7 @@ pending_conn_t s_pending = {};
 autoconn_fail_t s_autoconn_fails[AUTOCONN_FAIL_SLOTS] = {};
 bt_conn_cb_t s_conn_cb = nullptr;
 void *s_conn_ctx = nullptr;
+volatile bool s_user_disconnect = false; /* desconexao iniciada pela UI/bt_mgr_disconnect */
 
 bool s_bt_enabled = true;
 bool s_nimble_inited = false;
@@ -355,6 +356,7 @@ uint8_t s_report_map_raw[HID_MAP_RAW_MAX] = {};
 int s_report_map_len = 0;
 hid_report_entry_t s_report_entries[HID_REPORT_MAP_MAX] = {};
 int s_report_count = 0;
+uint16_t s_report_map_handle = 0; /* handle da caracteristica 0x2A4B */
 
 void reset_report_map(void)
 {
@@ -362,6 +364,7 @@ void reset_report_map(void)
     s_report_map_len = 0;
     memset(s_report_entries, 0, sizeof(s_report_entries));
     s_report_count = 0;
+    s_report_map_handle = 0;
 }
 
 int on_read_report_map(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg)
@@ -516,6 +519,7 @@ int on_disc_chr_seq(uint16_t conn_handle, const struct ble_gatt_error *error, co
             } else if (uuid16 == 0x2A4E) { /* Protocol Mode */
                 s_proto_mode_handle = chr->val_handle;
             } else if (uuid16 == 0x2A4B) { /* Report Map: base para rotear os relatorios */
+                s_report_map_handle = chr->val_handle;
                 int rc = ble_gattc_read(conn_handle, chr->val_handle, on_read_report_map, nullptr);
                 if (rc != 0) {
                     ESP_LOGW(TAG, "ble_gattc_read Report Map falhou: rc=%d", rc);
@@ -839,6 +843,8 @@ static int handle_gap_connect(struct ble_gap_event *event)
 static int handle_gap_disconnect(struct ble_gap_event *event)
 {
     ESP_LOGI(TAG, "GAP Desconectado reason=%d", event->disconnect.reason);
+    bool user_requested = s_user_disconnect;
+    s_user_disconnect = false;
     if (s_curr_conn_handle == event->disconnect.conn.conn_handle) {
         s_curr_conn_handle = BLE_HS_CONN_HANDLE_NONE;
     }
@@ -865,17 +871,65 @@ static int handle_gap_disconnect(struct ble_gap_event *event)
     ui_keyboard_notify_hardware_change();
     ui_mouse_set_connected(false);
 
+    /* Reconecta ao MESMO dispositivo que caiu quando ele e de auto-conexao;
+     * pegar o primeiro salvo sequestrava o GAP (ex.: teclado ocupando a
+     * tentativa apos o Lift desconectar). */
+    if (gone_mac[0] != '\0') {
+        bt_saved_device_t dropped = {};
+        bool can_retry = bt_storage_find(gone_mac, &dropped) && dropped.paired && dropped.auto_connect;
+        if (!can_retry) {
+            /* O MAC anunciado pode ser um endereco rotativo nao salvo: tenta
+             * casar pelo nome do slot que acabou de cair. */
+            char gone_name[64] = {};
+            if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                for (int i = 0; i < s_discovered_count; i++) {
+                    if (strcasecmp(s_discovered[i].mac, gone_mac) == 0) {
+                        snprintf(gone_name, sizeof(gone_name), "%s", s_discovered[i].name);
+                        break;
+                    }
+                }
+                xSemaphoreGive(s_bt_mutex);
+            }
+            if (gone_name[0] != '\0') {
+                bt_saved_list_t list = {};
+                if (bt_storage_load_all(&list) == ESP_OK) {
+                    for (int i = 0; i < list.count; i++) {
+                        if (list.items[i].paired && list.items[i].auto_connect &&
+                            strcasecmp(list.items[i].name, gone_name) == 0) {
+                            dropped = list.items[i];
+                            snprintf(dropped.mac, sizeof(dropped.mac), "%s", gone_mac);
+                            can_retry = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (can_retry) {
+            bool backed_off = false;
+            if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                backed_off = autoconn_backoff_active_locked(gone_mac);
+                if (!backed_off && !s_user_disconnect) {
+                    /* Se cair de novo em seguida, o backoff espaca as tentativas */
+                    autoconn_mark_failed_locked(gone_mac);
+                }
+                xSemaphoreGive(s_bt_mutex);
+            }
+
+            if (backed_off || user_requested) {
+                ESP_LOGI(TAG, "Reconexao a %s adiada (backoff/desconexao manual); escuta passiva", gone_mac);
+            } else {
+                ESP_LOGI(TAG, "Reconectando ao proprio dispositivo que caiu: %s [%s]...", dropped.name, gone_mac);
+                bt_mgr_connect(gone_mac, dropped.name, dropped.type);
+                return 0;
+            }
+        }
+    }
+
     {
         bt_saved_list_t list = {};
         if (bt_storage_load_all(&list) == ESP_OK && list.count > 0) {
-            for (int i = 0; i < list.count; i++) {
-                if (list.items[i].paired && list.items[i].auto_connect) {
-                    ESP_LOGI(TAG, "Reconectando diretamente a %s [%s] apos desconexao...", list.items[i].name,
-                             list.items[i].mac);
-                    bt_mgr_connect(list.items[i].mac, list.items[i].name, list.items[i].type);
-                    return 0;
-                }
-            }
             ESP_LOGI(TAG, "Reiniciando escuta passiva apos desconexao...");
             bt_mgr_scan(nullptr, nullptr);
         }
@@ -1262,6 +1316,18 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
                 }
                 xSemaphoreGive(s_bt_mutex);
             }
+
+            /* O primeiro read do Report Map costuma ocorrer antes do pairing
+             * terminar (Insufficient Authentication); refaz agora que o link
+             * esta criptografado. */
+            if (s_report_map_handle != 0 && s_report_map_len == 0 &&
+                event->enc_change.conn_handle == s_curr_conn_handle) {
+                int rc =
+                    ble_gattc_read(event->enc_change.conn_handle, s_report_map_handle, on_read_report_map, nullptr);
+                if (rc != 0) {
+                    ESP_LOGW(TAG, "Releitura do Report Map falhou: rc=%d", rc);
+                }
+            }
         }
         return 0;
 
@@ -1453,7 +1519,12 @@ esp_err_t bt_mgr_start(void)
     ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
     ble_hs_cfg.sm_bonding = 1;
     ble_hs_cfg.sm_mitm = 0;
-    ble_hs_cfg.sm_sc = 1;
+    /* LE Secure Connections DESLIGADO: a verificacao DHKey depende de comandos
+     * de controller que o firmware legado do coprocessador (M5Stack UserDemo)
+     * nao executa corretamente — todo pareamento SC falha com BLE_SM_ERR_DHKEY
+     * e o periferico encerra o link (ex.: Logitech Lift). Legacy pairing usa
+     * apenas AES do controller e funciona nos mesmos dispositivos. */
+    ble_hs_cfg.sm_sc = 0;
     ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
@@ -1742,6 +1813,7 @@ esp_err_t bt_mgr_disconnect(const char *mac)
     }
 
     ESP_LOGI(TAG, "Desconectando de %s...", mac);
+    s_user_disconnect = true;
     if (s_pending.active && strcasecmp(s_pending.mac, mac) == 0) {
         s_pending.cancel_expected = true;
         ble_gap_conn_cancel();
