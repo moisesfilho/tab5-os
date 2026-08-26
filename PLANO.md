@@ -772,7 +772,7 @@ Exemplos:
   - Fundo completamente preto (`#000000`) cobrindo 100% da área útil da tela.
   - Tipografia clara em alto contraste: branco puro (`#FFFFFF`) ou cinza suave (`#D0D0D0`).
   - **Em destaque principal**: **Hora atual** (tamanho grande/bold, formato `HH:MM:SS`) e **Data completa** (ex: `Segunda-feira, 17 de Agosto de 2026`).
-  - Nome do sistema operacional e versão em texto secundário discreto (`tab5-os v0.3.0`).
+  - Nome do sistema operacional e versão em texto secundário discreto (`tab5-os v0.4.0`).
 - **Mecanismo Anti-Burn-in (Relocação a cada 30 segundos)**:
   - Timer periódico de 30 segundos (`lv_timer_t`) que sorteia novas coordenadas `(x, y)` para o bloco de texto.
   - **Cálculo de Bounding Box Seguro**: As coordenadas sorteadas respeitam estritamente os limites da resolução ativa (`x_max = screen_w - block_w - margin`, `y_max = screen_h - block_h - margin`), garantindo que **nenhuma informação seja cortada** nas bordas da tela.
@@ -810,14 +810,14 @@ components/app/
 ┌─────────────────────────────────────────────────────────┐
 │                                                         │
 │        ┌─────────────────────────────┐                  │
-│        │  tab5-os v0.3.0             │                  │
+│        │  tab5-os v0.4.0             │                  │
 │        │  19:45:30                   │  ← Posição (x1, y1)
 │        │  Domingo, 16 de Agosto      │     no tempo T = 0s
 │        └─────────────────────────────┘                  │
 │                                                         │
 │                                                         │
 │                      ┌─────────────────────────────┐    │
-│                      │  tab5-os v0.3.0             │    │
+│                      │  tab5-os v0.4.0             │    │
 │                      │  19:46:00                   │    │ ← Nova posição (x2, y2)
 │                      │  Domingo, 16 de Agosto      │    │    no tempo T = 30s
 │                      └─────────────────────────────┘    │
