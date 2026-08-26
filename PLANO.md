@@ -48,6 +48,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 38** | Ajustes de Usabilidade do Menu de Configuração | Sistema / UI | Painel alargado de 230 px para 320 px eliminando texto cortado, e trilha dos sliders visível nos dois temas (`text_muted` com 40% de opacidade em `LV_PART_MAIN`) no Brilho/Volume do menu e no app Música |
 | `[x]` | **Fase 39** | Screenshot pela Barra do Sistema | Sistema / UI | Snapshot lógico RGB565 da tela ativa + blend alpha do `layer_top`, gravação BMP 24-bit assíncrona em `/sdcard/screenshots` com flash e toast, e `decode_bmp` da Galeria corrigido (escala por potências de 2 e stride correto) |
 | `[x]` | **Fase 40** | Simulador Host SDL e Regressão Visual da UI | Qualidade / Testes | UI real (shell + apps) compilada sobre o LVGL vendido com backend SDL2 720×1280, 15 cenários comparados contra imagens douradas determinísticas, comparador com tolerância e PNGs de diff |
+| `[x]` | **Fase 42** | Aplicativo Calendário Mensal | Aplicativo / Shell / UI | Popup mensal acionado pela data/hora, aplicativo em tela dedicada, navegação entre meses, integração com desktop e regressão visual |
 
 
 ---
@@ -2181,6 +2182,164 @@ tools/ci/
 
 ---
 
+# [x] Fase 41: Confiabilidade da Conexão Bluetooth HID `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Mouse BLE (Logitech Lift) aparecia no scan do app Bluetooth mas a conexão falhava em silêncio: o botão "Conectar" voltava ao estado inicial sem explicação.
+- Causas raiz: `bt_mgr_connect` retornava `ESP_OK` mesmo quando o procedimento GAP falhava ou estava ocupado; o dispositivo era persistido como "pareado" antes de conectar de verdade; slot de conexão órfão bloqueava rescan/reconexão; auto-conect monopolizava o GAP; MAC rotativo (RPA) dos Logitech tornava o endereço salvo stale.
+- Objetivo: fluxo de conexão honesto com feedback real na UI, reconexão confiável entre reboots e roteamento HID pelo Report Map real do dispositivo (em vez de Report IDs fixos no código).
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Resultado de conexão | Callback `bt_conn_cb_t` (`bt_mgr_set_conn_callback`) com eventos STARTED/CONNECTED/READY/FAILED/DISCONNECTED | NimBLE reporta sucesso/falha assincronamente via eventos GAP; a UI precisa do resultado real, não do "aceito" do início do procedimento |
+| D2 | Persistência como pareado | Só após inicialização HID concluída (GAP + descoberta GATT + CCCDs gravados) | Um tap não pode marcar o dispositivo como pareado — era isso que criava o loop de auto-conect contra um endereço inválido |
+| D3 | Endereço de reconexão | `peer_id_addr` capturado pós-bonding e gravado no bt.cfg | O RPA rotaciona a cada anúncio; o endereço identidade é estável. Remapeamento por nome cobre o intervalo até o novo anúncio |
+| D4 | Backoff de auto-conect | 15 s por MAC após falha, ignorado quando o cancelamento foi intencional (scan/forget/disconnect) | Evita martelar o controlador e monopolizar o procedimento GAP durante os 30 s de timeout |
+| D5 | Parser de Report Map | Unidade pura (`hid_report_map.cpp`, sem dependências ESP) testada em host; roteamento por report ID com heurísticas legadas como fallback | Mouses compostos (teclado+mouse+consumer+system+vendor) usam IDs diferentes dos fixos 0x01/0x02; parser testável sem hardware |
+| D6 | Bonding em NVS | `CONFIG_BT_NIMBLE_NVS_PERSIST=y` + transporte HCI exclusivamente VHCI (`BT_NIMBLE_TRANSPORT_UART=n`) + `esp_hosted_bt_controller_init/enable()` explícitos | Chaves sobrevivem ao reboot; elimina ambiguidade UART/VHCI do Kconfig; controller do C6 nasce desligado desde esp-hosted 2.5.2 |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/core/
+├── bt_mgr.h               # [MODIFY] bt_conn_event_t, bt_conn_cb_t, bt_mgr_set_conn_callback
+├── bt_mgr.cpp             # [MODIFY] Fluxo honesto, backoff, slots, persistência tardia, Report Map
+├── hid_report_map.h/.cpp  # [NEW] Parser puro de descritor HID (report ID → mouse/teclado/consumer)
+components/apps/bluetooth/
+└── ui_bluetooth.cpp       # [MODIFY] Estado "Conectando...", fila de eventos NimBLE→LVGL, erros reais
+tests/host/src/
+└── test_bt_report_map.cpp # [NEW] 11 testes do parser (boot, composto Logitech, truncado, item longo)
+```
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Gerenciador honesto**: `bt_mgr_connect` propaga erro real (ocupado/controlador recusou), remove slot pendente na falha, não grava no bt.cfg no tap; persistência apenas quando os CCCDs são gravados (HID pronto).
+- [x] **Etapa 2 — Canal de erro para a UI**: callback de eventos de conexão marshalled para a task LVGL (fila circular + `lv_async_call`); status mostra "Conectando…", "Tempo esgotado", "Falha na conexão (rc=N)" e o botão fica guardado durante a tentativa.
+- [x] **Etapa 3 — Auto-reconexão robusta**: backoff de 15 s por MAC, guarda de pendência ativa, remapeamento do MAC rotativo por nome no anúncio, slots liberados na desconexão/falha/reset do host.
+- [x] **Etapa 4 — Infra BT**: bonding persistente em NVS, VHCI explícito no sdkconfig.defaults (sdkconfig regenerado), controller BT do C6 inicializado/habilitado antes do host stack.
+- [x] **Etapa 5 — Report Map**: leitura GATT da característica 0x2A4B, parser de itens HID e roteamento das notificações pelo tipo real (mouse/teclado/consumer); heurísticas antigas preservadas para dispositivos sem mapa parseável.
+- [x] **Etapa 6 — Validação**: 98/98 testes host (+14 do parser), cobertura 93%, build firmware OK, regressão visual 15/15 PASS.
+- [x] **Etapa 7 — Ajustes pós-validação em hardware (Lift real)**: cursor exibido no evento READY (`ui_mouse_set_connected(true)` quando o slot é mouse); leitura do Report Map movida para o fim da inicialização HID (`read_report_map_if_needed`, reutilizada também no ENC_CHANGE); fallback que decodifica o payload composto de 7 bytes `[botões u16 | X/Y 12 bits | wheel | pan]` quando o firmware do Lift expõe um Report Map proprietário (22 bytes) que o parser não classifica; classificação por nome (`lift`/`mouse`/`trackpad`) na persistência e ícone de periférico correto na listagem sem exigir novo pareamento.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Dispositivo sem Report Map parseável (mapa truncado pela MTU) | Parser tolerante a truncamento + heurísticas legadas mantidas como fallback |
+| Teclado com modificador pressionado cair na heurística errada | Roteamento por ID tem precedência; guards `!kbd_routed` nos heurísticos de touchpad evitam engolir IDs 0x05/0x07 |
+| Consumer reports (volume/mídia) ainda sem ação na UI | Registrados em log para mapeamento futuro |
+| `esp_hosted_misc.h` sem `extern "C"` | Include envolvido manualmente em `extern "C"` dentro do bt_mgr |
+| Auto-conect contra dispositivo desligado | Backoff por MAC impede martelada; escuta passiva retomada após o período |
+
+## 6. Critérios de Validação
+
+1. `tools/ci/run_host_tests.sh`: 98/98 testes, cobertura 93,0% ≥ 80%. ✓
+2. `idf.py build` conclui com sdkconfig regenerado (`NVS_PERSIST=y`, `TRANSPORT_UART is not set`). ✓
+3. `tools/ci/run_sim_tests.sh`: 15/15 cenários visuais PASS (stub `bt_mgr_set_conn_callback` no simulador). ✓
+4. Hardware: parear o Lift → cursor aparece ao atingir READY e se move via fallback do payload composto de 7 bytes; reboot → reconexão automática sem re-pairing; listagem exibe ícone de mouse. ✓ (validado em dispositivo real)
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Fluxo de conexão honesto**: UI reflete o estado real (conectando/conectado/pronto/falhou), dispositivos só viram "pareados" depois de prontos, e o parser de Report Map torna o suporte HID independente de Report IDs fixos.
+- **Validado em hardware (Logitech Lift)**: conexão, cursor ativo em todas as rotações, reconexão automática pós-reboot e classificação correta como mouse — cobrindo também firmwares que anunciam Report Map proprietário não parseável.
+
+---
+
+# [x] Fase 42: Aplicativo Calendário Mensal `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+
+- Disponibilizar uma consulta rápida do mês atual a partir do relógio/data da
+  barra superior.
+- Disponibilizar também um aplicativo Calendário com ícone próprio no desktop,
+  ocupando toda a área útil da tela.
+- Nesta primeira versão não haverá eventos, lembretes ou persistência; o foco é
+  a visualização mensal, navegação e integração com o shell.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Widget mensal | Implementação própria sobre LVGL | Não há `lv_calendar` configurado ou utilizado no projeto; uma grade própria evita dependência indisponível |
+| D2 | Lógica de datas | Módulo puro `calendar_logic` | Permite testar ano bissexto, deslocamento do primeiro dia e transição de ano sem dependência de LVGL |
+| D3 | Renderização | `ui_calendar_view` compartilhada | O popup e o aplicativo dedicado devem exibir a mesma grade e comportamento |
+| D4 | Origem da data | `timezone_mgr_get_localtime()` | Mantém o calendário consistente com o relógio da barra, RTC e configuração de fuso existente |
+| D5 | Popup | Overlay no `lv_layer_top()` | Mantém o calendário disponível sem trocar a tela ativa e permite fechar ao tocar fora |
+| D6 | Aplicativo | Registro padrão em `app_registry` | O ícone próprio aparece automaticamente no desktop e segue o ciclo de vida do `ui_shell` |
+| D7 | Semana | Domingo como primeira coluna | Mantém a leitura no padrão brasileiro e deixa a decisão encapsulada no renderer |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/core/
+├── calendar_logic.h/.cpp       # [NEW] Cálculo puro de meses e dias
+components/os/shell/
+├── ui_calendar_view.h/.cpp     # [NEW] Grade LVGL reutilizável
+├── ui_bar.cpp                  # [MODIFY] Clique na data/hora e popup mensal
+├── ui_shell.h/.cpp             # [MODIFY] Ciclo de vida da tela do calendário
+components/apps/calendar/
+├── ui_calendar.h               # [NEW] API da aplicação
+└── ui_calendar.cpp             # [NEW] App, manifesto e tela dedicada
+tests/host/src/
+└── test_calendar_logic.cpp     # [NEW] Testes de datas e navegação
+tests/simulator/scenarios/
+└── sim_scenarios.cpp           # [MODIFY] Cenários popup e app Calendário
+```
+
+## 4. Etapas de Implementação
+
+- [x] **Etapa 1 — Lógica de calendário**: criar `calendar_logic` com cálculo de
+  dias por mês, ano bissexto, dia inicial, navegação mês/ano e nomes dos meses.
+- [x] **Etapa 2 — Visual compartilhado**: criar `ui_calendar_view` com cabeçalho,
+  botões anterior/próximo, sete colunas, destaque do dia atual e atualização de
+  tema/layout.
+- [x] **Etapa 3 — Popup da barra**: tornar a área da data/hora clicável, abrir o
+  overlay no `lv_layer_top()`, posicioná-lo sem sair da tela e fechá-lo ao tocar
+  fora, ao ocultar a barra ou ao abrir outro menu.
+- [x] **Etapa 4 — Aplicativo dedicado**: criar `ui_calendar`, manifesto com ID
+  `calendar`, nome `Calendário`, ícone próprio e tela usando `ui_app_bar` mais a
+  área útil restante.
+- [x] **Etapa 5 — Integração no shell**: registrar o app, criar sua tela,
+  implementar `ui_shell_open_calendar`/`close_calendar`, refresh de tema e
+  encaminhamento de layout.
+- [x] **Etapa 6 — Build e testes host**: incluir os novos fontes nos CMakeLists e
+  testar meses, anos bissextos, mudanças de ano, limites e datas inválidas.
+- [x] **Etapa 7 — Simulador**: adicionar cenários `calendar_popup` e
+  `app_calendar`, incluindo navegação mensal, e gerar goldens determinísticos.
+- [x] **Etapa 8 — Validação**: executar testes host, build do simulador, regressão
+  visual, build ESP-IDF e validação no hardware nas quatro orientações.
+
+## 5. Critérios de Aceite
+
+1. Clicar na data/hora abre o mês atual em um popup legível e fecha ao tocar
+   fora.
+2. O ícone Calendário aparece no desktop e abre uma tela dedicada na área útil
+   completa.
+3. A navegação funciona entre dezembro/janeiro e todos os meses respeitam a
+   quantidade correta de dias.
+4. O dia atual e o tema claro/escuro são refletidos corretamente.
+5. Popup e app funcionam em retrato e paisagem sem cobrir ou deslocar
+   incorretamente a barra do sistema.
+6. Testes host-native e cenários do simulador passam sem regressões visuais.
+
+## 6. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Grade não caber em paisagem ou retrato | Layout baseado na resolução disponível, com células flexíveis e limites de tamanho |
+| Popup conflitar com menus da barra | Função única de fechamento e criação no mesmo layer, fechando overlays anteriores |
+| Data divergente do relógio | Usar exclusivamente `timezone_mgr_get_localtime()` e congelar o tempo no simulador |
+| Texto de mês não existir na fonte | Usar nomes PT-BR compatíveis com Latin-1 ou fornecer fallback ASCII controlado |
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+
+- **Lógica e renderização**: Módulo de data pura `calendar_logic` com cobertura de 100% dos testes e grade compartilhada `ui_calendar_view` responsiva e adaptável aos temas claro/escuro.
+- **Popup e App**: Popup instantâneo via clique na data/hora na barra do sistema e aplicativo nativo registrado no launcher dinâmico.
+- **Qualidade e validação**: Cobertura de testes host em 92.7% (>= 80%), 17 cenários do simulador SDL aprovados (0 falhas), `pre-commit` 100% aprovado e build ESP-IDF do firmware concluído com sucesso.
+
+---
+
 ## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)
 
 > [!NOTE]
@@ -2189,7 +2348,6 @@ tools/ci/
 | Aplicação | Descrição Simplificada |
 |---|---|
 | **Calculadora** | Calculadora simples com botões em grade e histórico de operações. |
-| **Calendário / Agenda** | Visão mensal com lembretes persistidos no microSD, usando o RTC RX8130CE. |
 | **Cronômetro / Timer / Alarme** | Temporizadores com aviso sonoro via ES8388, aproveitando o RTC. |
 | **Jogo simples (Snake / 2048)** | Jogo leve para demonstrar loop de animação e entrada por toque. |
 | **Desenho / Pintura (Canvas)** | Tela de desenho livre com toque/mouse e salvamento de imagem no SD. |

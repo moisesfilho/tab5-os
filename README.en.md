@@ -12,8 +12,7 @@
 
 Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual keyboard, IMU-based auto-rotation, OS-style top bar with RTC clock and light/dark theme.
 
-## Features
-
+- **Monthly Calendar App & Top Bar Popup** — quick monthly calendar view triggered by tapping the date/time on the status bar (modal overlay popup on `lv_layer_top()`) or dedicated full-screen app on the Desktop with custom styled vector icon, structured grid view with vertical and horizontal separators, automatic highlighting of today's date in accent color, interactive date selection, fluid month/year navigation with December/January wrap-around, "Hoje" (Today) button, and full light/dark theme support
 - **System Bar Screenshot Capture** — camera icon in the top bar that captures the screen exactly as displayed (apps, system bar, virtual keyboard and modals) via LVGL snapshot of the active screen composed with the top layer (alpha blending), writing 24-bit BMP asynchronously to the SD card (`/sdcard/screenshots/print_YYYYMMDD_HHMMSS.bmp`), with a white confirmation flash, result toast, correct orientation across all 4 IMU rotations, and direct viewing in the Tab5 built-in viewer
 - **Voice Recorder & Audio Player App** — native voice recording via integrated microphones using the ES7210 ADC codec in standard WAV PCM 16-bit 16 kHz Mono format (`/sdcard/gravacoes/REC_YYYYMMDD_HHMMSS.wav`), automatic 5-minute safety timeout, audio player powered by the ES8388 DAC codec with real-time progress bar, chronological audio list with deletion modal, and direct association with `.wav` and `.pcm` files
 - **Camera App & V4L2/ISP Pipeline on ESP32-P4** — real-time 640×480 camera preview directly from SC202CS sensor over MIPI-CSI with hardware ISP acceleration, persistent V4L2 streaming architecture (`VIDIOC_STREAMON`/`VIDIOC_STREAMOFF`), ISP color correction matrix (CCM) clamping protection, and asynchronous JPEG photo capture via FreeRTOS task on SD card
@@ -28,7 +27,7 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 - **Anti-Burn-in Screensaver** — MIPI-DSI panel protection against image sticking, featuring a pure black background (`#000000`), prominent digital clock (`HH:MM:SS`), full date in Portuguese, OS version, intelligent random relocation every 30 seconds with safe bounding box across all 4 orientations (0°, 90°, 180°, 270°), temporary mouse cursor hiding, and instant wake-up on touch, keyboard, or mouse events
 - **Terminal App & Remote SSH Client** — Linux-style console shell integrated into the OS, with interactive prompt (`/sdcard $`), command history, support for core commands (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`) and **full SSH Client** (`ssh [user@]host [-p port]`) running on a dedicated asynchronous FreeRTOS task powered by `libssh`, VT100/xterm terminal emulation, masked password prompt, and robust ANSI/OSC sequence stripping
 - **Bluetooth Manager & Physical Keyboard (BLE HID)** — connection, pairing, and automatic reconnection with Bluetooth Low Energy peripherals (HOGP) like physical keyboards and combo touchpad/mice, direct keystroke injection into apps (e.g., Notes and Terminal), dynamic virtual keyboard hiding, and top-bar connection indicator
-- **Mouse & Touchpad BLE HID with Visual Pointer** — automatic detection of BLE mice and touchpads, high-visibility visual cursor on LVGL 9, navigation and clicks adapted to all screen orientations (0°, 90°, 180°, 270°), and tap-to-click gesture recognition
+- **Mouse & Touchpad BLE HID with Visual Pointer** — automatic detection of BLE mice and touchpads (including Logitech Lift composite reports), high-visibility visual cursor on LVGL 9 shown as soon as the HID transport is ready, navigation and clicks adapted to all screen orientations (0°, 90°, 180°, 270°), and tap-to-click gesture recognition
 - **File Manager ("Arquivos")** — SD card directory and file browser supporting interactive folder navigation, two view modes (Grid icons or Detailed list), and automatic opening of associated file types
 - **Notes App & File Associations** — integrated text editor with note creation, save modal with name suggestion/editing, and native opening/editing of `.txt` and `.cfg` files
 - **Advanced Wi-Fi Manager** — multi-network saved profiles in SD (`wifi.cfg`), intelligent mesh BSSID deduplication (keeping the highest RSSI), connected and saved visual badges, and connect/disconnect/forget network actions
@@ -111,6 +110,7 @@ tab5-os/
 │   │   ├── shell/            # OS graphical interface (ui_shell, desktop, bar, screensaver, keyboard, theme)
 │   │   └── fonts/            # Compiled Latin-1 fonts
 │   ├── apps/                 # User Applications (Package by Feature)
+│   │   ├── calendar/         # Monthly calendar and grid view
 │   │   ├── camera/           # Camera app with MIPI-CSI preview & JPEG capture
 │   │   ├── gallery/          # JPEG Photo Viewer
 │   │   ├── notas/            # Text & Notepad editor

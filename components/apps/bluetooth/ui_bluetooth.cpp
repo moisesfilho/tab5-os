@@ -12,6 +12,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <strings.h>
 
 namespace {
 
@@ -36,6 +37,21 @@ char s_selected_mac[18] = {};
 char s_selected_name[64] = {};
 bt_dev_type_t s_selected_type = BT_DEV_TYPE_GENERIC;
 
+/* Estado da tentativa de conexao em curso (reflete o bt_mgr via callback) */
+bool s_connecting = false;
+char s_connecting_mac[18] = {};
+
+/* Caixa de correio para eventos do NimBLE -> task LVGL */
+struct conn_evt_msg_t {
+    char mac[18];
+    bt_conn_event_t event;
+    int reason;
+};
+#define CONN_EVT_QUEUE_LEN 4
+conn_evt_msg_t s_conn_evt_queue[CONN_EVT_QUEUE_LEN] = {};
+volatile int s_conn_evt_wr = 0;
+volatile int s_conn_evt_rd = 0;
+
 void render_devices(void);
 void apply_bt_layout(void);
 
@@ -48,8 +64,15 @@ void set_status(const char *text, uint32_t color)
     lv_obj_set_style_text_color(status_label, lv_color_hex(color), 0);
 }
 
-const char *get_device_icon(bt_dev_type_t type)
+const char *get_device_icon(bt_dev_type_t type, const char *name)
 {
+    /* O Lift pode ter sido salvo como teclado por versões anteriores, quando
+     * o anúncio não informava Appearance; mantém o ícone correto sem exigir
+     * novo pareamento. */
+    if (name != nullptr && strcasestr(name, "lift") != nullptr) {
+        return LV_SYMBOL_BLUETOOTH;
+    }
+
     switch (type) {
     case BT_DEV_TYPE_KEYBOARD:
         return LV_SYMBOL_KEYBOARD;
@@ -267,6 +290,109 @@ void poll_bt_status_cb(lv_timer_t *timer)
     }
 }
 
+void handle_conn_event_ui(const conn_evt_msg_t *evt)
+{
+    const ui_palette_t *pal = ui_theme_get();
+    const char *name = evt->mac;
+    for (int i = 0; i < s_device_count; i++) {
+        if (strcasecmp(s_devices[i].mac, evt->mac) == 0 && s_devices[i].name[0] != '\0') {
+            name = s_devices[i].name;
+            break;
+        }
+    }
+
+    bool touches_selection =
+        (strcasecmp(evt->mac, s_selected_mac) == 0) || (strcasecmp(evt->mac, s_connecting_mac) == 0);
+
+    char msg[96];
+    switch (evt->event) {
+    case BT_CONN_STARTED:
+        if (strcasecmp(evt->mac, s_selected_mac) == 0) {
+            s_connecting = true;
+            snprintf(s_connecting_mac, sizeof(s_connecting_mac), "%s", evt->mac);
+            snprintf(msg, sizeof(msg), "Conectando a %s...", name[0] != '\0' ? name : evt->mac);
+            set_status(msg, pal->accent);
+            if (connect_label != nullptr) {
+                lv_label_set_text(connect_label, "Conectando...");
+            }
+        } else {
+            ESP_LOGI("ui_bt", "Conexao automatica iniciada para %s", evt->mac);
+        }
+        break;
+    case BT_CONN_CONNECTED:
+        snprintf(msg, sizeof(msg), "%s conectado", name[0] != '\0' ? name : evt->mac);
+        set_status(msg, pal->accent);
+        break;
+    case BT_CONN_READY:
+        if (evt->mac[0] != '\0') {
+            snprintf(msg, sizeof(msg), "%s pronto (entrada HID ativa)", name[0] != '\0' ? name : evt->mac);
+            set_status(msg, pal->accent);
+        }
+        break;
+    case BT_CONN_FAILED:
+        if (evt->reason == 13 || evt->reason == 62) {
+            snprintf(msg, sizeof(msg), "Tempo esgotado ao conectar em %s", name[0] != '\0' ? name : evt->mac);
+        } else {
+            snprintf(msg, sizeof(msg), "Falha na conexao (%d)", evt->reason);
+        }
+        set_status(msg, pal->text_muted);
+        break;
+    case BT_CONN_DISCONNECTED:
+        if (evt->mac[0] != '\0') {
+            snprintf(msg, sizeof(msg), "%s desconectado", name[0] != '\0' ? name : evt->mac);
+            set_status(msg, pal->text_muted);
+        }
+        break;
+    default:
+        break;
+    }
+
+    if (touches_selection || evt->event == BT_CONN_FAILED || evt->event == BT_CONN_DISCONNECTED) {
+        if (evt->event == BT_CONN_CONNECTED || evt->event == BT_CONN_READY || evt->event == BT_CONN_FAILED ||
+            evt->event == BT_CONN_DISCONNECTED) {
+            s_connecting = false;
+            s_connecting_mac[0] = '\0';
+            if (connect_label != nullptr) {
+                lv_label_set_text(connect_label, LV_SYMBOL_OK " Conectar");
+            }
+        }
+    }
+
+    render_devices();
+    update_action_buttons_state();
+}
+
+void process_conn_events(void *arg)
+{
+    (void)arg;
+    while (s_conn_evt_rd != s_conn_evt_wr) {
+        conn_evt_msg_t evt = s_conn_evt_queue[s_conn_evt_rd];
+        s_conn_evt_rd = (s_conn_evt_rd + 1) % CONN_EVT_QUEUE_LEN;
+        handle_conn_event_ui(&evt);
+    }
+}
+
+/* Roda na task do NimBLE: enfileira e marshalla para a task de UI. */
+void bt_mgr_conn_event_cb(const char *mac, bt_conn_event_t event, int reason, void *ctx)
+{
+    (void)ctx;
+    int next = (s_conn_evt_wr + 1) % CONN_EVT_QUEUE_LEN;
+    if (next == s_conn_evt_rd) {
+        return; /* fila cheia: o poll periodico ressincroniza a UI */
+    }
+
+    conn_evt_msg_t *msg = &s_conn_evt_queue[s_conn_evt_wr];
+    snprintf(msg->mac, sizeof(msg->mac), "%s", mac ? mac : "");
+    msg->event = event;
+    msg->reason = reason;
+    s_conn_evt_wr = next;
+
+    if (bsp_display_lock(pdMS_TO_TICKS(200))) {
+        lv_async_call(process_conn_events, nullptr);
+        bsp_display_unlock();
+    }
+}
+
 void device_item_click_cb(lv_event_t *event)
 {
     const char *mac = (const char *)lv_event_get_user_data(event);
@@ -288,6 +414,11 @@ void device_item_click_cb(lv_event_t *event)
 
     const ui_palette_t *pal = ui_theme_get();
 
+    if (s_connecting) {
+        set_status("Aguarde: já existe uma conexão em andamento", pal->text_muted);
+        return;
+    }
+
     char status_msg[96];
     snprintf(status_msg, sizeof(status_msg), "Conectando a %s...", s_selected_name[0] ? s_selected_name : mac);
     set_status(status_msg, pal->accent);
@@ -295,7 +426,13 @@ void device_item_click_cb(lv_event_t *event)
     esp_err_t err = bt_mgr_connect(s_selected_mac, s_selected_name, s_selected_type);
     if (err != ESP_OK) {
         ESP_LOGE("ui_bt", "bt_mgr_connect retornou erro: %d", err);
-        set_status("Falha ao iniciar conexao", pal->text_muted);
+        set_status("Não foi possível iniciar a conexão", pal->text_muted);
+    } else {
+        s_connecting = true;
+        snprintf(s_connecting_mac, sizeof(s_connecting_mac), "%s", s_selected_mac);
+        if (connect_label != nullptr) {
+            lv_label_set_text(connect_label, "Conectando...");
+        }
     }
 
     lv_async_call(async_render_cb, nullptr);
@@ -361,7 +498,7 @@ void render_devices(void)
 
         /* Ícone do dispositivo */
         lv_obj_t *icon_lbl = lv_label_create(row);
-        lv_label_set_text(icon_lbl, get_device_icon(dev->type));
+        lv_label_set_text(icon_lbl, get_device_icon(dev->type, dev->name));
         lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_14_latin1, 0);
         lv_obj_set_style_text_color(icon_lbl, lv_color_hex(dev->connected ? pal->accent : pal->text), 0);
         lv_obj_clear_flag(icon_lbl, LV_OBJ_FLAG_CLICKABLE);
@@ -469,23 +606,21 @@ void connect_button_cb(lv_event_t *event)
     if (s_selected_mac[0] == '\0') {
         return;
     }
+    if (s_connecting) {
+        set_status("Aguarde: já existe uma conexão em andamento", pal->text_muted);
+        return;
+    }
 
     set_status("Conectando...", pal->accent);
 
     esp_err_t err = bt_mgr_connect(s_selected_mac, s_selected_name, s_selected_type);
-    if (err == ESP_OK) {
-        set_status("Conectado com sucesso", pal->accent);
-        ui_keyboard_notify_hardware_change();
+    if (err != ESP_OK) {
+        set_status("Não foi possível iniciar a conexão", pal->text_muted);
     } else {
-        set_status("Falha na conexão", pal->text_muted);
-    }
-
-    /* Atualiza flags locais */
-    for (int i = 0; i < s_device_count; i++) {
-        if (strcmp(s_devices[i].mac, s_selected_mac) == 0) {
-            s_devices[i].connected = (err == ESP_OK);
-            s_devices[i].paired = true;
-            break;
+        s_connecting = true;
+        snprintf(s_connecting_mac, sizeof(s_connecting_mac), "%s", s_selected_mac);
+        if (connect_label != nullptr) {
+            lv_label_set_text(connect_label, "Conectando...");
         }
     }
 
@@ -503,6 +638,12 @@ void disconnect_button_cb(lv_event_t *event)
     const ui_palette_t *pal = ui_theme_get();
     bt_mgr_disconnect(s_selected_mac);
     ui_keyboard_notify_hardware_change();
+
+    s_connecting = false;
+    s_connecting_mac[0] = '\0';
+    if (connect_label != nullptr) {
+        lv_label_set_text(connect_label, LV_SYMBOL_OK " Conectar");
+    }
 
     for (int i = 0; i < s_device_count; i++) {
         if (strcmp(s_devices[i].mac, s_selected_mac) == 0) {
@@ -526,6 +667,12 @@ void forget_button_cb(lv_event_t *event)
     const ui_palette_t *pal = ui_theme_get();
     bt_mgr_forget(s_selected_mac);
     ui_keyboard_notify_hardware_change();
+
+    s_connecting = false;
+    s_connecting_mac[0] = '\0';
+    if (connect_label != nullptr) {
+        lv_label_set_text(connect_label, LV_SYMBOL_OK " Conectar");
+    }
 
     for (int i = 0; i < s_device_count; i++) {
         if (strcmp(s_devices[i].mac, s_selected_mac) == 0) {
@@ -647,6 +794,7 @@ lv_obj_t *ui_bluetooth_create(void)
     apply_bt_theme();
     apply_bt_layout();
 
+    bt_mgr_set_conn_callback(bt_mgr_conn_event_cb, nullptr);
     lv_timer_create(poll_bt_status_cb, 500, nullptr);
 
     return bt_scr;

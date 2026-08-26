@@ -45,6 +45,7 @@ add_executable(tab5_sim
     ${OS}/core/audio_storage.cpp
     ${OS}/core/wifi_storage.cpp
     ${OS}/core/bt_storage.cpp
+    ${OS}/core/calendar_logic.cpp
 
     # Fontes bitmap (identicas ao firmware)
     ${OS}/fonts/lv_font_montserrat_14_latin1.c
@@ -63,9 +64,11 @@ add_executable(tab5_sim
     ${OS}/shell/ui_shell.cpp
     ${OS}/shell/ui_status.cpp
     ${OS}/shell/ui_theme.cpp
+    ${OS}/shell/ui_calendar_view.cpp
 
     # Apps reais (ui_*) + backends portaveis
     ${APPS}/bluetooth/ui_bluetooth.cpp
+    ${APPS}/calendar/ui_calendar.cpp
     ${APPS}/camera/ui_camera.cpp
     ${APPS}/chat/ui_chat.cpp
     ${APPS}/chat/ai_storage.cpp
@@ -87,6 +90,7 @@ target_include_directories(tab5_sim PRIVATE
     ${OS}/core
     ${OS}/shell
     ${APPS}/bluetooth
+    ${APPS}/calendar
     ${APPS}/camera
     ${APPS}/chat
     ${APPS}/fileserver

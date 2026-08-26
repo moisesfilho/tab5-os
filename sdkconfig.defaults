@@ -69,6 +69,14 @@ CONFIG_BT_NIMBLE_ACL_BUF_COUNT=32
 CONFIG_BT_NIMBLE_HCI_EVT_BUF_SIZE=256
 CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE=y
 CONFIG_ESP_HOSTED_NIMBLE_HCI_VHCI=y
+# Transporte HCI exclusivamente via VHCI/esp-hosted (UART-HCI e mutuamente
+# exclusivo com VHCI no Kconfig; deixar os dois meio-configurados torna o link
+# do driver dependente da ordem do linker)
+CONFIG_BT_NIMBLE_TRANSPORT_UART=n
+# Chaves de bonding persistidas em NVS: sem isso cada reboot perde as chaves,
+# o bt.cfg continua dizendo "pareado" e a reconexao refaz o pairing (ou falha
+# com enderecos RPA rotativos, ex. mouses Logitech)
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
 
 # MbedTLS Threading, Certificate Bundle e TLS 1.3 (necessário para libssh e HTTPS OpenAI/OpenCode Go)
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y

@@ -195,6 +195,8 @@ void ui_desktop_create(lv_obj_t *scr)
         lv_obj_set_style_border_width(icon_box, 0, 0);
         lv_obj_set_style_shadow_width(icon_box, 0, 0);
         lv_obj_clear_flag(icon_box, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_clear_flag(icon_box, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scrollbar_mode(icon_box, LV_SCROLLBAR_MODE_OFF);
 
         if (app.icon_builder != nullptr) {
             app.icon_builder(icon_box);
