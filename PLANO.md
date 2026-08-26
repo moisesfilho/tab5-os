@@ -2219,7 +2219,8 @@ tests/host/src/
 - [x] **Etapa 3 — Auto-reconexão robusta**: backoff de 15 s por MAC, guarda de pendência ativa, remapeamento do MAC rotativo por nome no anúncio, slots liberados na desconexão/falha/reset do host.
 - [x] **Etapa 4 — Infra BT**: bonding persistente em NVS, VHCI explícito no sdkconfig.defaults (sdkconfig regenerado), controller BT do C6 inicializado/habilitado antes do host stack.
 - [x] **Etapa 5 — Report Map**: leitura GATT da característica 0x2A4B, parser de itens HID e roteamento das notificações pelo tipo real (mouse/teclado/consumer); heurísticas antigas preservadas para dispositivos sem mapa parseável.
-- [x] **Etapa 6 — Validação**: 95/95 testes host (11 novos, cobertura 92,3%), build firmware OK, regressão visual 15/15 PASS.
+- [x] **Etapa 6 — Validação**: 98/98 testes host (+14 do parser), cobertura 93%, build firmware OK, regressão visual 15/15 PASS.
+- [x] **Etapa 7 — Ajustes pós-validação em hardware (Lift real)**: cursor exibido no evento READY (`ui_mouse_set_connected(true)` quando o slot é mouse); leitura do Report Map movida para o fim da inicialização HID (`read_report_map_if_needed`, reutilizada também no ENC_CHANGE); fallback que decodifica o payload composto de 7 bytes `[botões u16 | X/Y 12 bits | wheel | pan]` quando o firmware do Lift expõe um Report Map proprietário (22 bytes) que o parser não classifica; classificação por nome (`lift`/`mouse`/`trackpad`) na persistência e ícone de periférico correto na listagem sem exigir novo pareamento.
 
 ## 5. Riscos & Mitigações
 
@@ -2233,13 +2234,14 @@ tests/host/src/
 
 ## 6. Critérios de Validação
 
-1. `tools/ci/run_host_tests.sh`: 95/95 testes, cobertura 92,3% ≥ 80%. ✓
+1. `tools/ci/run_host_tests.sh`: 98/98 testes, cobertura 93,0% ≥ 80%. ✓
 2. `idf.py build` conclui com sdkconfig regenerado (`NVS_PERSIST=y`, `TRANSPORT_UART is not set`). ✓
 3. `tools/ci/run_sim_tests.sh`: 15/15 cenários visuais PASS (stub `bt_mgr_set_conn_callback` no simulador). ✓
-4. Hardware: parear o Lift → cursor move via relatórios roteados pelo Report Map; reboot → reconexão automática sem refazer pairing. (Validação em andamento)
+4. Hardware: parear o Lift → cursor aparece ao atingir READY e se move via fallback do payload composto de 7 bytes; reboot → reconexão automática sem re-pairing; listagem exibe ícone de mouse. ✓ (validado em dispositivo real)
 
 ## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 - **Fluxo de conexão honesto**: UI reflete o estado real (conectando/conectado/pronto/falhou), dispositivos só viram "pareados" depois de prontos, e o parser de Report Map torna o suporte HID independente de Report IDs fixos.
+- **Validado em hardware (Logitech Lift)**: conexão, cursor ativo em todas as rotações, reconexão automática pós-reboot e classificação correta como mouse — cobrindo também firmwares que anunciam Report Map proprietário não parseável.
 
 ---
 

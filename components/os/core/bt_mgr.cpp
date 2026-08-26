@@ -132,6 +132,12 @@ bool parse_mac_addr(const char *str, ble_addr_t *out_addr)
     return true;
 }
 
+static bool device_name_is_mouse(const char *name)
+{
+    return name != nullptr && (strcasestr(name, "mouse") != nullptr || strcasestr(name, "trackpad") != nullptr ||
+                               strcasestr(name, "lift") != nullptr);
+}
+
 /* Notifica resultado de conexao SEM segurar o mutex (callback pode marshallar
  * para a task de UI). Copia o MAC pois o chamador costuma passar ponteiro
  * interno protegido pelo mutex. */
@@ -236,7 +242,7 @@ void persist_paired_device_locked(uint16_t conn_handle, char *out_mac, size_t ou
     bt_saved_device_t dev = {};
     snprintf(dev.mac, sizeof(dev.mac), "%s", key_mac);
     snprintf(dev.name, sizeof(dev.name), "%s", slot->name);
-    dev.type = slot->type;
+    dev.type = device_name_is_mouse(slot->name) ? BT_DEV_TYPE_MOUSE : slot->type;
     dev.addr_type = key_type;
     dev.paired = true;
     dev.auto_connect = true;
@@ -291,7 +297,7 @@ bt_dev_type_t classify_device(const struct ble_hs_adv_fields *fields)
             strcasestr(name_buf, "wireless")) {
             return BT_DEV_TYPE_KEYBOARD;
         }
-        if (strcasestr(name_buf, "mouse") || strcasestr(name_buf, "trackpad")) {
+        if (device_name_is_mouse(name_buf)) {
             return BT_DEV_TYPE_MOUSE;
         }
         if (strcasestr(name_buf, "head") || strcasestr(name_buf, "fone") || strcasestr(name_buf, "audio") ||
@@ -397,6 +403,18 @@ int on_read_report_map(uint16_t conn_handle, const struct ble_gatt_error *error,
     return 0;
 }
 
+static void read_report_map_if_needed(uint16_t conn_handle)
+{
+    if (conn_handle == BLE_HS_CONN_HANDLE_NONE || s_report_map_handle == 0 || s_report_map_len != 0) {
+        return;
+    }
+
+    int rc = ble_gattc_read_long(conn_handle, s_report_map_handle, 0, on_read_report_map, nullptr);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "Leitura do Report Map falhou: rc=%d", rc);
+    }
+}
+
 /* Pipeline Sequencial de GATT, Descritores 0x2902 e CCCD */
 int on_write_cccd_seq(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg);
 
@@ -407,12 +425,22 @@ void write_next_cccd(void)
                  s_cccd_queue_count);
 
         char ready_mac[18] = {};
+        bool mouse_ready = false;
         if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            active_conn_t *slot = find_slot_by_handle_locked(s_curr_conn_handle);
+            mouse_ready = slot != nullptr && slot->type == BT_DEV_TYPE_MOUSE;
             persist_paired_device_locked(s_curr_conn_handle, ready_mac, sizeof(ready_mac));
             xSemaphoreGive(s_bt_mutex);
         }
+        /* A leitura deve ocorrer depois da cadeia de escritas GATT. Em alguns
+         * dispositivos a autenticacao termina antes da descoberta e, nesse
+         * caso, o evento ENC_CHANGE sozinho nao basta para disparar a leitura. */
+        read_report_map_if_needed(s_curr_conn_handle);
         notify_conn_event(ready_mac, BT_CONN_READY, 0);
 
+        if (mouse_ready) {
+            ui_mouse_set_connected(true);
+        }
         ui_keyboard_notify_hardware_change();
         return;
     }
@@ -520,10 +548,9 @@ int on_disc_chr_seq(uint16_t conn_handle, const struct ble_gatt_error *error, co
                 s_proto_mode_handle = chr->val_handle;
             } else if (uuid16 == 0x2A4B) { /* Report Map: base para rotear os relatorios */
                 s_report_map_handle = chr->val_handle;
-                int rc = ble_gattc_read(conn_handle, chr->val_handle, on_read_report_map, nullptr);
-                if (rc != 0) {
-                    ESP_LOGW(TAG, "ble_gattc_read Report Map falhou: rc=%d", rc);
-                }
+                /* A leitura em si acontece no fim da inicializacao HID (write_next_cccd):
+                 * durante a descoberta o GATT ja esta ocupado e, sem pairing
+                 * concluido, o periferico responde Insufficient Authentication. */
             }
             return 0;
         }
@@ -976,13 +1003,53 @@ void handle_mouse_report_composite(const hid_report_entry_t *entry, const uint8_
     ui_mouse_inject_motion((int8_t)sample.dx, (int8_t)sample.dy, sample.buttons, (int8_t)sample.wheel);
 }
 
+/* Alguns firmwares do Lift anunciam um Report Map proprietario/truncado, mas
+ * continuam enviando o formato composto de 7 bytes observado no dispositivo:
+ * [buttons u16][X 12b][Y 12b][wheel s8][pan s8]. */
+static void handle_lift_mouse_report(const uint8_t *data, uint16_t len)
+{
+    static const hid_report_entry_t lift_fallback = {
+        .report_id = 0x02,
+        .kind = HID_REPORT_MOUSE,
+        .button_count = 16,
+        .x_bits = 12,
+        .y_bits = 12,
+        .wheel_bits = 8,
+        .pan_bits = 8,
+    };
+
+    hid_mouse_sample_t sample = {};
+    if (!hid_report_map_decode_mouse(&lift_fallback, data, len, &sample)) {
+        return;
+    }
+
+    ESP_LOGI(TAG, "HID Mouse Lift fallback: btn=0x%02X dx=%ld dy=%ld wheel=%ld pan=%ld", sample.buttons,
+             (long)sample.dx, (long)sample.dy, (long)sample.wheel, (long)sample.pan);
+    ui_mouse_inject_motion((int8_t)sample.dx, (int8_t)sample.dy, sample.buttons, (int8_t)sample.wheel);
+}
+
+/* Tamanho esperado do payload de um relatorio de mouse a partir da geometria */
+static uint16_t expected_mouse_payload(const hid_report_entry_t *e, bool prefixed)
+{
+    uint16_t btn_bytes = (uint16_t)(((e->button_count > 32 ? 32 : e->button_count) + 7) / 8);
+    uint16_t xy_bytes = (uint16_t)((e->x_bits + e->y_bits + 7) / 8);
+    uint16_t wheel_bytes = (uint16_t)((e->wheel_bits + 7) / 8);
+    uint16_t pan_bytes = (uint16_t)((e->pan_bits + 7) / 8);
+    uint16_t total = (uint16_t)(btn_bytes + xy_bytes + wheel_bytes + pan_bytes);
+    return (uint16_t)(total + (prefixed ? 1 : 0));
+}
+
 /* Decide se uma notificacao pode ser roteada pelo Report Map real do
  * dispositivo (lido na descoberta GATT) em vez das heuristicas fixas.
- * Retorna o tipo e o offset do payload (1 quando ha Report ID no primeiro
- * byte, 0 quando o dispositivo nao usa IDs). */
-bool route_by_report_map(const uint8_t *data, uint16_t len, hid_report_kind_t *kind_out, int *offset_out)
+ * Retorna o tipo, o offset do payload (1 quando ha Report ID no primeiro
+ * byte, 0 quando o dispositivo nao usa IDs) e a entrada correspondente.
+ * Mouses HOGP com caracteristica propria por relatorio enviam o payload PURO
+ * (sem byte de ID): nesses casos o casamento e feito pelo tamanho esperado. */
+bool route_by_report_map(const uint8_t *data, uint16_t len, hid_report_kind_t *kind_out, int *offset_out,
+                         const hid_report_entry_t **entry_out)
 {
-    if (s_report_count <= 0 || data == nullptr || len < 1 || kind_out == nullptr || offset_out == nullptr) {
+    if (s_report_count <= 0 || data == nullptr || len < 1 || kind_out == nullptr || offset_out == nullptr ||
+        entry_out == nullptr) {
         return false;
     }
 
@@ -993,6 +1060,27 @@ bool route_by_report_map(const uint8_t *data, uint16_t len, hid_report_kind_t *k
             }
             *kind_out = s_report_entries[i].kind;
             *offset_out = 1;
+            *entry_out = &s_report_entries[i];
+            return true;
+        }
+    }
+
+    /* Sem prefixo de Report ID reconhecido: tenta casar mouses pelo tamanho */
+    for (int i = 0; i < s_report_count; i++) {
+        const hid_report_entry_t *e = &s_report_entries[i];
+        if (e->kind != HID_REPORT_MOUSE || (e->x_bits == 0 && e->y_bits == 0)) {
+            continue;
+        }
+        if (len == expected_mouse_payload(e, false)) {
+            *kind_out = HID_REPORT_MOUSE;
+            *offset_out = 0;
+            *entry_out = e;
+            return true;
+        }
+        if (len == expected_mouse_payload(e, true)) {
+            *kind_out = HID_REPORT_MOUSE;
+            *offset_out = 1;
+            *entry_out = e;
             return true;
         }
     }
@@ -1001,6 +1089,7 @@ bool route_by_report_map(const uint8_t *data, uint16_t len, hid_report_kind_t *k
         if (s_report_entries[i].report_id == 0 && s_report_entries[i].kind != HID_REPORT_UNKNOWN) {
             *kind_out = s_report_entries[i].kind;
             *offset_out = 0;
+            *entry_out = &s_report_entries[i];
             return true;
         }
     }
@@ -1027,17 +1116,24 @@ static int handle_gap_notify_rx(struct ble_gap_event *event)
         /* 0. Roteamento pelo Report Map (0x2A4B) lido na descoberta GATT */
         hid_report_kind_t rkind = HID_REPORT_UNKNOWN;
         int roffset = -1;
-        bool mapped = route_by_report_map(data, len, &rkind, &roffset);
+        const hid_report_entry_t *rentry = nullptr;
+        bool mapped = route_by_report_map(data, len, &rkind, &roffset, &rentry);
         bool kbd_routed = (mapped && rkind == HID_REPORT_KEYBOARD && (int)(len - roffset) >= 8);
 
         if (mapped && rkind == HID_REPORT_MOUSE) {
-            const hid_report_entry_t *entry =
-                hid_report_map_find(s_report_entries, s_report_count, (roffset == 1) ? data[0] : 0);
-            handle_mouse_report_composite(entry, data + roffset, (uint16_t)(len - roffset));
+            handle_mouse_report_composite(rentry, data + roffset, (uint16_t)(len - roffset));
             return 0;
         }
         if (mapped && rkind == HID_REPORT_CONSUMER) {
             ESP_LOGI(TAG, "HID Consumer (midia/volume): ID=0x%02X len=%d", data[roffset], (int)len);
+            return 0;
+        }
+
+        /* O Lift pode expor um mapa curto que nao classifica no parser, embora
+         * o payload real continue sendo o composto de 7 bytes. Relatorios de
+         * teclado HOGP possuem 8 bytes, portanto este fallback nao os engole. */
+        if (!mapped && len == 7) {
+            handle_lift_mouse_report(data, len);
             return 0;
         }
 
@@ -1322,15 +1418,10 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
              * esta criptografado. */
             if (s_report_map_handle != 0 && s_report_map_len == 0 &&
                 event->enc_change.conn_handle == s_curr_conn_handle) {
-                int rc =
-                    ble_gattc_read(event->enc_change.conn_handle, s_report_map_handle, on_read_report_map, nullptr);
-                if (rc != 0) {
-                    ESP_LOGW(TAG, "Releitura do Report Map falhou: rc=%d", rc);
-                }
+                read_report_map_if_needed(event->enc_change.conn_handle);
             }
         }
         return 0;
-
     case BLE_GAP_EVENT_NOTIFY_RX:
         return handle_gap_notify_rx(event);
 

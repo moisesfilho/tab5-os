@@ -12,6 +12,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <strings.h>
 
 namespace {
 
@@ -63,8 +64,15 @@ void set_status(const char *text, uint32_t color)
     lv_obj_set_style_text_color(status_label, lv_color_hex(color), 0);
 }
 
-const char *get_device_icon(bt_dev_type_t type)
+const char *get_device_icon(bt_dev_type_t type, const char *name)
 {
+    /* O Lift pode ter sido salvo como teclado por versões anteriores, quando
+     * o anúncio não informava Appearance; mantém o ícone correto sem exigir
+     * novo pareamento. */
+    if (name != nullptr && strcasestr(name, "lift") != nullptr) {
+        return LV_SYMBOL_BLUETOOTH;
+    }
+
     switch (type) {
     case BT_DEV_TYPE_KEYBOARD:
         return LV_SYMBOL_KEYBOARD;
@@ -490,7 +498,7 @@ void render_devices(void)
 
         /* Ícone do dispositivo */
         lv_obj_t *icon_lbl = lv_label_create(row);
-        lv_label_set_text(icon_lbl, get_device_icon(dev->type));
+        lv_label_set_text(icon_lbl, get_device_icon(dev->type, dev->name));
         lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_14_latin1, 0);
         lv_obj_set_style_text_color(icon_lbl, lv_color_hex(dev->connected ? pal->accent : pal->text), 0);
         lv_obj_clear_flag(icon_lbl, LV_OBJ_FLAG_CLICKABLE);
