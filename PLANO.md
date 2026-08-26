@@ -48,6 +48,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 38** | Ajustes de Usabilidade do Menu de Configuração | Sistema / UI | Painel alargado de 230 px para 320 px eliminando texto cortado, e trilha dos sliders visível nos dois temas (`text_muted` com 40% de opacidade em `LV_PART_MAIN`) no Brilho/Volume do menu e no app Música |
 | `[x]` | **Fase 39** | Screenshot pela Barra do Sistema | Sistema / UI | Snapshot lógico RGB565 da tela ativa + blend alpha do `layer_top`, gravação BMP 24-bit assíncrona em `/sdcard/screenshots` com flash e toast, e `decode_bmp` da Galeria corrigido (escala por potências de 2 e stride correto) |
 | `[x]` | **Fase 40** | Simulador Host SDL e Regressão Visual da UI | Qualidade / Testes | UI real (shell + apps) compilada sobre o LVGL vendido com backend SDL2 720×1280, 15 cenários comparados contra imagens douradas determinísticas, comparador com tolerância e PNGs de diff |
+| `[x]` | **Fase 42** | Aplicativo Calendário Mensal | Aplicativo / Shell / UI | Popup mensal acionado pela data/hora, aplicativo em tela dedicada, navegação entre meses, integração com desktop e regressão visual |
 
 
 ---
@@ -2245,6 +2246,100 @@ tests/host/src/
 
 ---
 
+# [x] Fase 42: Aplicativo Calendário Mensal `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+
+- Disponibilizar uma consulta rápida do mês atual a partir do relógio/data da
+  barra superior.
+- Disponibilizar também um aplicativo Calendário com ícone próprio no desktop,
+  ocupando toda a área útil da tela.
+- Nesta primeira versão não haverá eventos, lembretes ou persistência; o foco é
+  a visualização mensal, navegação e integração com o shell.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Widget mensal | Implementação própria sobre LVGL | Não há `lv_calendar` configurado ou utilizado no projeto; uma grade própria evita dependência indisponível |
+| D2 | Lógica de datas | Módulo puro `calendar_logic` | Permite testar ano bissexto, deslocamento do primeiro dia e transição de ano sem dependência de LVGL |
+| D3 | Renderização | `ui_calendar_view` compartilhada | O popup e o aplicativo dedicado devem exibir a mesma grade e comportamento |
+| D4 | Origem da data | `timezone_mgr_get_localtime()` | Mantém o calendário consistente com o relógio da barra, RTC e configuração de fuso existente |
+| D5 | Popup | Overlay no `lv_layer_top()` | Mantém o calendário disponível sem trocar a tela ativa e permite fechar ao tocar fora |
+| D6 | Aplicativo | Registro padrão em `app_registry` | O ícone próprio aparece automaticamente no desktop e segue o ciclo de vida do `ui_shell` |
+| D7 | Semana | Domingo como primeira coluna | Mantém a leitura no padrão brasileiro e deixa a decisão encapsulada no renderer |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/core/
+├── calendar_logic.h/.cpp       # [NEW] Cálculo puro de meses e dias
+components/os/shell/
+├── ui_calendar_view.h/.cpp     # [NEW] Grade LVGL reutilizável
+├── ui_bar.cpp                  # [MODIFY] Clique na data/hora e popup mensal
+├── ui_shell.h/.cpp             # [MODIFY] Ciclo de vida da tela do calendário
+components/apps/calendar/
+├── ui_calendar.h               # [NEW] API da aplicação
+└── ui_calendar.cpp             # [NEW] App, manifesto e tela dedicada
+tests/host/src/
+└── test_calendar_logic.cpp     # [NEW] Testes de datas e navegação
+tests/simulator/scenarios/
+└── sim_scenarios.cpp           # [MODIFY] Cenários popup e app Calendário
+```
+
+## 4. Etapas de Implementação
+
+- [x] **Etapa 1 — Lógica de calendário**: criar `calendar_logic` com cálculo de
+  dias por mês, ano bissexto, dia inicial, navegação mês/ano e nomes dos meses.
+- [x] **Etapa 2 — Visual compartilhado**: criar `ui_calendar_view` com cabeçalho,
+  botões anterior/próximo, sete colunas, destaque do dia atual e atualização de
+  tema/layout.
+- [x] **Etapa 3 — Popup da barra**: tornar a área da data/hora clicável, abrir o
+  overlay no `lv_layer_top()`, posicioná-lo sem sair da tela e fechá-lo ao tocar
+  fora, ao ocultar a barra ou ao abrir outro menu.
+- [x] **Etapa 4 — Aplicativo dedicado**: criar `ui_calendar`, manifesto com ID
+  `calendar`, nome `Calendário`, ícone próprio e tela usando `ui_app_bar` mais a
+  área útil restante.
+- [x] **Etapa 5 — Integração no shell**: registrar o app, criar sua tela,
+  implementar `ui_shell_open_calendar`/`close_calendar`, refresh de tema e
+  encaminhamento de layout.
+- [x] **Etapa 6 — Build e testes host**: incluir os novos fontes nos CMakeLists e
+  testar meses, anos bissextos, mudanças de ano, limites e datas inválidas.
+- [x] **Etapa 7 — Simulador**: adicionar cenários `calendar_popup` e
+  `app_calendar`, incluindo navegação mensal, e gerar goldens determinísticos.
+- [x] **Etapa 8 — Validação**: executar testes host, build do simulador, regressão
+  visual, build ESP-IDF e validação no hardware nas quatro orientações.
+
+## 5. Critérios de Aceite
+
+1. Clicar na data/hora abre o mês atual em um popup legível e fecha ao tocar
+   fora.
+2. O ícone Calendário aparece no desktop e abre uma tela dedicada na área útil
+   completa.
+3. A navegação funciona entre dezembro/janeiro e todos os meses respeitam a
+   quantidade correta de dias.
+4. O dia atual e o tema claro/escuro são refletidos corretamente.
+5. Popup e app funcionam em retrato e paisagem sem cobrir ou deslocar
+   incorretamente a barra do sistema.
+6. Testes host-native e cenários do simulador passam sem regressões visuais.
+
+## 6. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Grade não caber em paisagem ou retrato | Layout baseado na resolução disponível, com células flexíveis e limites de tamanho |
+| Popup conflitar com menus da barra | Função única de fechamento e criação no mesmo layer, fechando overlays anteriores |
+| Data divergente do relógio | Usar exclusivamente `timezone_mgr_get_localtime()` e congelar o tempo no simulador |
+| Texto de mês não existir na fonte | Usar nomes PT-BR compatíveis com Latin-1 ou fornecer fallback ASCII controlado |
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+
+- **Lógica e renderização**: Módulo de data pura `calendar_logic` com cobertura de 100% dos testes e grade compartilhada `ui_calendar_view` responsiva e adaptável aos temas claro/escuro.
+- **Popup e App**: Popup instantâneo via clique na data/hora na barra do sistema e aplicativo nativo registrado no launcher dinâmico.
+- **Qualidade e validação**: Cobertura de testes host em 92.7% (>= 80%), 17 cenários do simulador SDL aprovados (0 falhas), `pre-commit` 100% aprovado e build ESP-IDF do firmware concluído com sucesso.
+
+---
+
 ## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)
 
 > [!NOTE]
@@ -2253,7 +2348,6 @@ tests/host/src/
 | Aplicação | Descrição Simplificada |
 |---|---|
 | **Calculadora** | Calculadora simples com botões em grade e histórico de operações. |
-| **Calendário / Agenda** | Visão mensal com lembretes persistidos no microSD, usando o RTC RX8130CE. |
 | **Cronômetro / Timer / Alarme** | Temporizadores com aviso sonoro via ES8388, aproveitando o RTC. |
 | **Jogo simples (Snake / 2048)** | Jogo leve para demonstrar loop de animação e entrada por toque. |
 | **Desenho / Pintura (Canvas)** | Tela de desenho livre com toque/mouse e salvamento de imagem no SD. |

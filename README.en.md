@@ -12,8 +12,7 @@
 
 Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual keyboard, IMU-based auto-rotation, OS-style top bar with RTC clock and light/dark theme.
 
-## Features
-
+- **Monthly Calendar App & Top Bar Popup** — quick monthly calendar view triggered by tapping the date/time on the status bar (modal overlay popup on `lv_layer_top()`) or dedicated full-screen app on the Desktop with custom styled vector icon, structured grid view with vertical and horizontal separators, automatic highlighting of today's date in accent color, interactive date selection, fluid month/year navigation with December/January wrap-around, "Hoje" (Today) button, and full light/dark theme support
 - **System Bar Screenshot Capture** — camera icon in the top bar that captures the screen exactly as displayed (apps, system bar, virtual keyboard and modals) via LVGL snapshot of the active screen composed with the top layer (alpha blending), writing 24-bit BMP asynchronously to the SD card (`/sdcard/screenshots/print_YYYYMMDD_HHMMSS.bmp`), with a white confirmation flash, result toast, correct orientation across all 4 IMU rotations, and direct viewing in the Tab5 built-in viewer
 - **Voice Recorder & Audio Player App** — native voice recording via integrated microphones using the ES7210 ADC codec in standard WAV PCM 16-bit 16 kHz Mono format (`/sdcard/gravacoes/REC_YYYYMMDD_HHMMSS.wav`), automatic 5-minute safety timeout, audio player powered by the ES8388 DAC codec with real-time progress bar, chronological audio list with deletion modal, and direct association with `.wav` and `.pcm` files
 - **Camera App & V4L2/ISP Pipeline on ESP32-P4** — real-time 640×480 camera preview directly from SC202CS sensor over MIPI-CSI with hardware ISP acceleration, persistent V4L2 streaming architecture (`VIDIOC_STREAMON`/`VIDIOC_STREAMOFF`), ISP color correction matrix (CCM) clamping protection, and asynchronous JPEG photo capture via FreeRTOS task on SD card
@@ -111,6 +110,7 @@ tab5-os/
 │   │   ├── shell/            # OS graphical interface (ui_shell, desktop, bar, screensaver, keyboard, theme)
 │   │   └── fonts/            # Compiled Latin-1 fonts
 │   ├── apps/                 # User Applications (Package by Feature)
+│   │   ├── calendar/         # Monthly calendar and grid view
 │   │   ├── camera/           # Camera app with MIPI-CSI preview & JPEG capture
 │   │   ├── gallery/          # JPEG Photo Viewer
 │   │   ├── notas/            # Text & Notepad editor

@@ -6,6 +6,7 @@
 #include "ui_screensaver.h"
 #include "ui_screen_off.h"
 #include "ui_keyboard.h"
+#include "ui_calendar_view.h"
 #include "display_storage.h"
 #include "audio_storage.h"
 #include "timezone_mgr.h"
@@ -49,6 +50,11 @@ lv_obj_t *gear_label = nullptr;
 lv_obj_t *screenshot_btn = nullptr;
 lv_obj_t *screenshot_label = nullptr;
 lv_obj_t *clock_label = nullptr;
+
+/* Popup de Calendario Mensal (overlay + card) */
+lv_obj_t *calendar_popup_overlay = nullptr;
+lv_obj_t *calendar_popup_card = nullptr;
+ui_calendar_view_t calendar_popup_view = {};
 
 /* Menu Configuracao (overlay + painel) */
 lv_obj_t *menu_overlay = nullptr;
@@ -126,13 +132,28 @@ power_action_t power_action = POWER_ACTION_REBOOT;
 
 void close_menu(void);
 void close_power_confirm(void);
+void close_calendar_popup(void);
 void show_power_confirm(power_action_t action);
+void show_calendar_popup(void);
 void clock_update(void);
 
 void menu_overlay_cb(lv_event_t *event)
 {
     (void)event;
     close_menu();
+}
+
+void close_calendar_popup(void)
+{
+    if (calendar_popup_overlay != nullptr) {
+        lv_obj_delete(calendar_popup_overlay);
+        calendar_popup_overlay = nullptr;
+    }
+    if (calendar_popup_card != nullptr) {
+        lv_obj_delete(calendar_popup_card);
+        calendar_popup_card = nullptr;
+    }
+    calendar_popup_view = {};
 }
 
 void close_power_confirm(void)
@@ -153,6 +174,7 @@ void close_power_confirm(void)
 void close_menu(void)
 {
     close_power_confirm();
+    close_calendar_popup();
     if (menu_overlay != nullptr) {
         lv_obj_delete(menu_overlay);
         menu_overlay = nullptr;
@@ -322,11 +344,17 @@ void apply_menu_theme(void)
 {
     apply_power_confirm_theme();
 
+    const ui_palette_t *pal = ui_theme_get();
+
+    if (calendar_popup_card != nullptr) {
+        lv_obj_set_style_bg_color(calendar_popup_card, lv_color_hex(pal->surface), 0);
+        lv_obj_set_style_border_color(calendar_popup_card, lv_color_hex(pal->border), 0);
+        ui_calendar_view_refresh_theme(&calendar_popup_view);
+    }
+
     if (menu_panel == nullptr) {
         return;
     }
-
-    const ui_palette_t *pal = ui_theme_get();
 
     lv_obj_set_style_bg_color(menu_panel, lv_color_hex(pal->surface), 0);
     lv_obj_set_style_border_color(menu_panel, lv_color_hex(pal->border), 0);
@@ -1232,6 +1260,55 @@ void open_menu(menu_page_t page)
     apply_menu_theme();
 }
 
+void calendar_overlay_cb(lv_event_t *event)
+{
+    (void)event;
+    close_calendar_popup();
+}
+
+void show_calendar_popup(void)
+{
+    if (calendar_popup_card != nullptr) {
+        close_calendar_popup();
+        return;
+    }
+    close_menu();
+
+    lv_obj_t *layer = lv_layer_top();
+
+    calendar_popup_overlay = lv_obj_create(layer);
+    lv_obj_set_size(calendar_popup_overlay, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_opa(calendar_popup_overlay, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(calendar_popup_overlay, 0, 0);
+    lv_obj_set_style_shadow_width(calendar_popup_overlay, 0, 0);
+    lv_obj_clear_flag(calendar_popup_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(calendar_popup_overlay, calendar_overlay_cb, LV_EVENT_CLICKED, nullptr);
+
+    const ui_palette_t *pal = ui_theme_get();
+
+    calendar_popup_card = lv_obj_create(layer);
+    lv_obj_set_size(calendar_popup_card, 340, LV_SIZE_CONTENT);
+    lv_obj_set_align(calendar_popup_card, LV_ALIGN_TOP_RIGHT);
+    lv_obj_set_pos(calendar_popup_card, -10, UI_BAR_HEIGHT + 8);
+    lv_obj_set_style_bg_opa(calendar_popup_card, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(calendar_popup_card, lv_color_hex(pal->surface), 0);
+    lv_obj_set_style_border_width(calendar_popup_card, 1, 0);
+    lv_obj_set_style_border_color(calendar_popup_card, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_radius(calendar_popup_card, 12, 0);
+    lv_obj_set_style_shadow_width(calendar_popup_card, 12, 0);
+    lv_obj_set_style_shadow_opa(calendar_popup_card, LV_OPA_30, 0);
+    lv_obj_set_style_pad_all(calendar_popup_card, 4, 0);
+    lv_obj_clear_flag(calendar_popup_card, LV_OBJ_FLAG_SCROLLABLE);
+
+    calendar_popup_view = ui_calendar_view_create(calendar_popup_card, true);
+}
+
+void clock_click_cb(lv_event_t *event)
+{
+    (void)event;
+    show_calendar_popup();
+}
+
 void clock_update(void)
 {
     if (clock_label == nullptr) {
@@ -1394,7 +1471,7 @@ void ui_bar_init(lv_obj_t *parent)
 
     /* Relogio no formato brasileiro (dd/mm/aaaa hh:mm). Fonte monoespacada
      * + largura fixa + alinhamento a direita: nenhuma mudanca de valor
-     * desloca o texto ou empurra os icones. */
+     * desloca o texto ou empurra os icones. Clicavel para abrir o popup do calendario. */
     clock_label = lv_label_create(bar);
     lv_obj_set_style_text_font(clock_label, &lv_font_jetbrains_mono_14_clock, 0);
     lv_point_t clock_max = {0, 0};
@@ -1403,6 +1480,8 @@ void ui_bar_init(lv_obj_t *parent)
     lv_obj_set_width(clock_label, clock_max.x);
     lv_obj_set_style_text_align(clock_label, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_style_margin_right(clock_label, 12, 0);
+    lv_obj_add_flag(clock_label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(clock_label, clock_click_cb, LV_EVENT_CLICKED, nullptr);
     lv_timer_create(clock_timer_cb, 1000, nullptr);
     clock_update();
 
@@ -1419,6 +1498,7 @@ void ui_bar_set_visible(bool visible)
         lv_obj_clear_flag(bar, LV_OBJ_FLAG_HIDDEN);
     } else {
         close_menu();
+        close_calendar_popup();
         lv_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN);
     }
 }

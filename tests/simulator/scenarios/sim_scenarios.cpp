@@ -197,6 +197,11 @@ void act_open_fileserver(void)
     ui_shell_open_fileserver();
 }
 
+void act_open_calendar(void)
+{
+    ui_shell_open_calendar();
+}
+
 void act_click_power(void)
 {
     simact::click(21, 20);
@@ -205,6 +210,11 @@ void act_click_power(void)
 void act_click_gear(void)
 {
     simact::click(54, 20);
+}
+
+void act_click_clock(void)
+{
+    simact::click(650, 18);
 }
 
 /* Tela dedicada ao teclado: textarea propria + attach + texto digitado. */
@@ -251,6 +261,11 @@ const std::vector<sim_scenario> &sim_scenarios()
          {
              {act_click_gear, 700, "01_settings"},
          }},
+        {"shell_calendar_popup",
+         "Popup de calendário mensal (clique na data/hora da barra)",
+         {
+             {act_click_clock, 700, "01_calendar_popup"},
+         }},
         {"app_teclado",
          "Teclado PT-BR com texto digitado",
          {
@@ -287,6 +302,7 @@ const std::vector<sim_scenario> &sim_scenarios()
         {"app_recorder", "Gravador idle", {{act_open_recorder, 800, "01_recorder"}}},
         {"app_camera", "Camera sem preview (mock)", {{act_open_camera, 900, "01_camera"}}},
         {"app_fileserver", "Fileserver HTTP parado", {{act_open_fileserver, 900, "01_fileserver"}}},
+        {"app_calendar", "Aplicativo Calendário", {{act_open_calendar, 800, "01_calendar"}}},
     };
     return list;
 }
