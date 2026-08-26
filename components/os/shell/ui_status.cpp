@@ -319,12 +319,12 @@ void bat_icon_click_cb(lv_event_t *event)
 
         /* Painel de detalhes */
         lv_obj_t *panel = lv_obj_create(bat_popup_backdrop);
-        lv_obj_set_size(panel, 360, LV_SIZE_CONTENT);
+        lv_obj_set_size(panel, 380, LV_SIZE_CONTENT);
         lv_obj_align(panel, LV_ALIGN_TOP_RIGHT, -12, UI_BAR_HEIGHT + 8);
         lv_obj_set_style_radius(panel, 12, 0);
-        lv_obj_set_style_pad_all(panel, 16, 0);
+        lv_obj_set_style_pad_all(panel, 20, 0);
         lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(panel, 10, 0);
+        lv_obj_set_style_pad_row(panel, 12, 0);
         lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
         /* Cabecalho com titulo + fechar */
@@ -339,7 +339,7 @@ void bat_icon_click_cb(lv_event_t *event)
 
         lv_obj_t *title = lv_label_create(header);
         lv_label_set_text(title, "Bateria");
-        lv_obj_set_style_text_font(title, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_flex_grow(title, 1);
 
         lv_obj_t *close_btn = lv_obj_create(header);
@@ -348,16 +348,16 @@ void bat_icon_click_cb(lv_event_t *event)
         lv_obj_set_style_border_width(close_btn, 0, 0);
         lv_obj_set_style_shadow_width(close_btn, 0, 0);
         lv_obj_set_style_radius(close_btn, 8, 0);
-        lv_obj_set_style_pad_left(close_btn, 6, 0);
-        lv_obj_set_style_pad_right(close_btn, 6, 0);
-        lv_obj_set_style_pad_top(close_btn, 4, 0);
-        lv_obj_set_style_pad_bottom(close_btn, 4, 0);
+        lv_obj_set_style_pad_left(close_btn, 8, 0);
+        lv_obj_set_style_pad_right(close_btn, 8, 0);
+        lv_obj_set_style_pad_top(close_btn, 6, 0);
+        lv_obj_set_style_pad_bottom(close_btn, 6, 0);
         lv_obj_add_event_cb(close_btn, popup_close_click_cb, LV_EVENT_CLICKED, nullptr);
         lv_obj_clear_flag(close_btn, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t *close_label = lv_label_create(close_btn);
         lv_label_set_text(close_label, LV_SYMBOL_CLOSE);
-        lv_obj_set_style_text_font(close_label, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(close_label, &lv_font_montserrat_18_latin1, 0);
 
         bat_popup_state_label = lv_label_create(panel);
         bat_popup_volt_label = lv_label_create(panel);
@@ -365,7 +365,7 @@ void bat_icon_click_cb(lv_event_t *event)
         bat_popup_lvl_label = lv_label_create(panel);
         lv_obj_t *rows[4] = {bat_popup_state_label, bat_popup_volt_label, bat_popup_curr_label, bat_popup_lvl_label};
         for (int i = 0; i < 4; i++) {
-            lv_obj_set_style_text_font(rows[i], &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_font(rows[i], &lv_font_montserrat_18_latin1, 0);
         }
 
         apply_battery_popup_theme();
@@ -387,18 +387,18 @@ void ui_status_init(lv_obj_t *parent)
     lv_obj_set_style_border_width(music_icon_btn, 0, 0);
     lv_obj_set_style_shadow_width(music_icon_btn, 0, 0);
     lv_obj_set_style_radius(music_icon_btn, 8, 0);
-    lv_obj_set_style_pad_left(music_icon_btn, 6, 0);
-    lv_obj_set_style_pad_right(music_icon_btn, 6, 0);
-    lv_obj_set_style_pad_top(music_icon_btn, 4, 0);
-    lv_obj_set_style_pad_bottom(music_icon_btn, 4, 0);
-    lv_obj_set_style_margin_right(music_icon_btn, 2, 0);
+    lv_obj_set_style_pad_left(music_icon_btn, 8, 0);
+    lv_obj_set_style_pad_right(music_icon_btn, 8, 0);
+    lv_obj_set_style_pad_top(music_icon_btn, 8, 0);
+    lv_obj_set_style_pad_bottom(music_icon_btn, 8, 0);
+    lv_obj_set_style_margin_right(music_icon_btn, 4, 0);
     lv_obj_clear_flag(music_icon_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(music_icon_btn, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(music_icon_btn, music_icon_click_cb, LV_EVENT_CLICKED, nullptr);
 
     music_icon_label = lv_label_create(music_icon_btn);
     lv_label_set_text(music_icon_label, LV_SYMBOL_AUDIO);
-    lv_obj_set_style_text_font(music_icon_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(music_icon_label, &lv_font_montserrat_18_latin1, 0);
 
     /* Icone Bluetooth interativo */
     bt_icon_btn = lv_obj_create(parent);
@@ -407,17 +407,17 @@ void ui_status_init(lv_obj_t *parent)
     lv_obj_set_style_border_width(bt_icon_btn, 0, 0);
     lv_obj_set_style_shadow_width(bt_icon_btn, 0, 0);
     lv_obj_set_style_radius(bt_icon_btn, 8, 0);
-    lv_obj_set_style_pad_left(bt_icon_btn, 6, 0);
-    lv_obj_set_style_pad_right(bt_icon_btn, 6, 0);
-    lv_obj_set_style_pad_top(bt_icon_btn, 4, 0);
-    lv_obj_set_style_pad_bottom(bt_icon_btn, 4, 0);
-    lv_obj_set_style_margin_right(bt_icon_btn, 2, 0);
+    lv_obj_set_style_pad_left(bt_icon_btn, 8, 0);
+    lv_obj_set_style_pad_right(bt_icon_btn, 8, 0);
+    lv_obj_set_style_pad_top(bt_icon_btn, 8, 0);
+    lv_obj_set_style_pad_bottom(bt_icon_btn, 8, 0);
+    lv_obj_set_style_margin_right(bt_icon_btn, 4, 0);
     lv_obj_clear_flag(bt_icon_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(bt_icon_btn, bt_icon_click_cb, LV_EVENT_CLICKED, nullptr);
 
     bt_icon_label = lv_label_create(bt_icon_btn);
     lv_label_set_text(bt_icon_label, LV_SYMBOL_BLUETOOTH);
-    lv_obj_set_style_text_font(bt_icon_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(bt_icon_label, &lv_font_montserrat_18_latin1, 0);
 
     /* Icone Wi-Fi interativo alinhado ao lado do Bluetooth */
     wifi_icon_btn = lv_obj_create(parent);
@@ -426,17 +426,17 @@ void ui_status_init(lv_obj_t *parent)
     lv_obj_set_style_border_width(wifi_icon_btn, 0, 0);
     lv_obj_set_style_shadow_width(wifi_icon_btn, 0, 0);
     lv_obj_set_style_radius(wifi_icon_btn, 8, 0);
-    lv_obj_set_style_pad_left(wifi_icon_btn, 6, 0);
-    lv_obj_set_style_pad_right(wifi_icon_btn, 6, 0);
-    lv_obj_set_style_pad_top(wifi_icon_btn, 4, 0);
-    lv_obj_set_style_pad_bottom(wifi_icon_btn, 4, 0);
-    lv_obj_set_style_margin_right(wifi_icon_btn, 2, 0);
+    lv_obj_set_style_pad_left(wifi_icon_btn, 8, 0);
+    lv_obj_set_style_pad_right(wifi_icon_btn, 8, 0);
+    lv_obj_set_style_pad_top(wifi_icon_btn, 8, 0);
+    lv_obj_set_style_pad_bottom(wifi_icon_btn, 8, 0);
+    lv_obj_set_style_margin_right(wifi_icon_btn, 4, 0);
     lv_obj_clear_flag(wifi_icon_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(wifi_icon_btn, wifi_icon_click_cb, LV_EVENT_CLICKED, nullptr);
 
     wifi_icon_label = lv_label_create(wifi_icon_btn);
     lv_label_set_text(wifi_icon_label, LV_SYMBOL_WIFI);
-    lv_obj_set_style_text_font(wifi_icon_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(wifi_icon_label, &lv_font_montserrat_18_latin1, 0);
 
     /* Icone de bateria com percentual e popup de detalhes */
     bat_icon_btn = lv_obj_create(parent);
@@ -445,12 +445,12 @@ void ui_status_init(lv_obj_t *parent)
     lv_obj_set_style_border_width(bat_icon_btn, 0, 0);
     lv_obj_set_style_shadow_width(bat_icon_btn, 0, 0);
     lv_obj_set_style_radius(bat_icon_btn, 8, 0);
-    lv_obj_set_style_pad_left(bat_icon_btn, 6, 0);
-    lv_obj_set_style_pad_right(bat_icon_btn, 6, 0);
-    lv_obj_set_style_pad_top(bat_icon_btn, 4, 0);
-    lv_obj_set_style_pad_bottom(bat_icon_btn, 4, 0);
-    lv_obj_set_style_pad_column(bat_icon_btn, 4, 0);
-    lv_obj_set_style_margin_right(bat_icon_btn, 6, 0);
+    lv_obj_set_style_pad_left(bat_icon_btn, 10, 0);
+    lv_obj_set_style_pad_right(bat_icon_btn, 10, 0);
+    lv_obj_set_style_pad_top(bat_icon_btn, 8, 0);
+    lv_obj_set_style_pad_bottom(bat_icon_btn, 8, 0);
+    lv_obj_set_style_pad_column(bat_icon_btn, 6, 0);
+    lv_obj_set_style_margin_right(bat_icon_btn, 8, 0);
     lv_obj_set_flex_flow(bat_icon_btn, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bat_icon_btn, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(bat_icon_btn, LV_OBJ_FLAG_SCROLLABLE);
@@ -458,11 +458,11 @@ void ui_status_init(lv_obj_t *parent)
 
     bat_icon_label = lv_label_create(bat_icon_btn);
     lv_label_set_text(bat_icon_label, LV_SYMBOL_BATTERY_EMPTY);
-    lv_obj_set_style_text_font(bat_icon_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(bat_icon_label, &lv_font_montserrat_18_latin1, 0);
 
     bat_pct_label = lv_label_create(bat_icon_btn);
     lv_label_set_text(bat_pct_label, "");
-    lv_obj_set_style_text_font(bat_pct_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(bat_pct_label, &lv_font_montserrat_18_latin1, 0);
 
     apply_status_theme();
 

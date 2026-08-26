@@ -405,7 +405,7 @@ void show_delete_modal(const std::string &filepath, const std::string &filename)
 
     lv_obj_t *title = lv_label_create(confirm_modal);
     lv_label_set_text(title, "Excluir Música?");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(pal->text), 0);
 
     lv_obj_t *msg = lv_label_create(confirm_modal);
@@ -414,7 +414,7 @@ void show_delete_modal(const std::string &filepath, const std::string &filename)
     char buf[128];
     snprintf(buf, sizeof(buf), "Deseja excluir \"%s\"?", filename.c_str());
     lv_label_set_text(msg, buf);
-    lv_obj_set_style_text_font(msg, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(msg, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(msg, lv_color_hex(pal->text_muted), 0);
 
     lv_obj_t *btn_row = lv_obj_create(confirm_modal);
@@ -579,7 +579,7 @@ void render_music_list(void)
     if (s_display_items.empty()) {
         empty_label = lv_label_create(list_container);
         lv_label_set_text(empty_label, "Nenhuma música ou pasta encontrada\n(Copie arquivos .mp3 ou .wav)");
-        lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(empty_label, lv_color_hex(pal->text_muted), 0);
         lv_obj_set_style_pad_all(empty_label, 12, 0);
         return;
@@ -591,7 +591,7 @@ void render_music_list(void)
     for (size_t i = 0; i < s_display_items.size(); ++i) {
         const auto &item = s_display_items[i];
         lv_obj_t *row = lv_obj_create(list_container);
-        lv_obj_set_size(row, lv_pct(100), 52);
+        lv_obj_set_size(row, lv_pct(100), 64);
         lv_obj_set_style_radius(row, 8, 0);
         lv_obj_set_style_pad_hor(row, 10, 0);
         lv_obj_set_style_pad_ver(row, 4, 0);
@@ -608,7 +608,8 @@ void render_music_list(void)
             lv_obj_add_event_cb(row, folder_click_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
             lv_obj_t *info_col = lv_obj_create(row);
-            lv_obj_set_size(info_col, lv_pct(85), lv_pct(100));
+            lv_obj_set_flex_grow(info_col, 1);
+            lv_obj_set_height(info_col, LV_SIZE_CONTENT);
             lv_obj_set_style_bg_opa(info_col, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(info_col, 0, 0);
             lv_obj_set_style_pad_all(info_col, 0, 0);
@@ -623,12 +624,12 @@ void render_music_list(void)
             lv_label_set_text(lbl_name, name_buf);
             lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_DOT);
             lv_obj_set_width(lbl_name, lv_pct(100));
-            lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_18_latin1, 0);
             lv_obj_set_style_text_color(lbl_name, lv_color_hex(pal->text), 0);
 
             lv_obj_t *lbl_sub = lv_label_create(info_col);
             lv_label_set_text(lbl_sub, "Pasta de músicas");
-            lv_obj_set_style_text_font(lbl_sub, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_font(lbl_sub, &lv_font_montserrat_18_latin1, 0);
             lv_obj_set_style_text_color(lbl_sub, lv_color_hex(pal->text_muted), 0);
 
             /* Ícone de Seta para Entrar */
@@ -657,7 +658,8 @@ void render_music_list(void)
 
             /* Ícone e Nome */
             lv_obj_t *info_col = lv_obj_create(row);
-            lv_obj_set_size(info_col, lv_pct(65), lv_pct(100));
+            lv_obj_set_flex_grow(info_col, 1);
+            lv_obj_set_height(info_col, LV_SIZE_CONTENT);
             lv_obj_set_style_bg_opa(info_col, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(info_col, 0, 0);
             lv_obj_set_style_pad_all(info_col, 0, 0);
@@ -672,19 +674,19 @@ void render_music_list(void)
             lv_label_set_text(lbl_name, name_buf);
             lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_DOT);
             lv_obj_set_width(lbl_name, lv_pct(100));
-            lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_18_latin1, 0);
             lv_obj_set_style_text_color(lbl_name, lv_color_hex(is_active_track ? pal->accent : pal->text), 0);
 
             lv_obj_t *lbl_sz = lv_label_create(info_col);
             char sz_buf[64];
             format_file_size(item.size_bytes, sz_buf, sizeof(sz_buf));
             lv_label_set_text(lbl_sz, sz_buf);
-            lv_obj_set_style_text_font(lbl_sz, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_font(lbl_sz, &lv_font_montserrat_18_latin1, 0);
             lv_obj_set_style_text_color(lbl_sz, lv_color_hex(pal->text_muted), 0);
 
             /* Botões de Ação (Play/Pause e Delete) */
             lv_obj_t *actions_row = lv_obj_create(row);
-            lv_obj_set_size(actions_row, lv_pct(32), lv_pct(100));
+            lv_obj_set_size(actions_row, LV_SIZE_CONTENT, lv_pct(100));
             lv_obj_set_style_bg_opa(actions_row, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(actions_row, 0, 0);
             lv_obj_set_style_pad_all(actions_row, 0, 0);
@@ -695,9 +697,9 @@ void render_music_list(void)
 
             /* Botao Play / Pause */
             lv_obj_t *btn_p = lv_button_create(actions_row);
-            lv_obj_set_size(btn_p, 40, 36);
+            lv_obj_set_size(btn_p, 44, 40);
             lv_obj_set_style_bg_color(btn_p, lv_color_hex(pal->accent), 0);
-            lv_obj_set_style_radius(btn_p, 6, 0);
+            lv_obj_set_style_radius(btn_p, 8, 0);
             lv_obj_set_style_pad_all(btn_p, 0, 0);
             lv_obj_add_event_cb(btn_p, play_item_cb, LV_EVENT_CLICKED, (void *)(intptr_t)item.playlist_index);
             lv_obj_t *lbl_p = lv_label_create(btn_p);
@@ -708,10 +710,11 @@ void render_music_list(void)
 
             /* Botao Excluir */
             lv_obj_t *btn_del = lv_button_create(actions_row);
-            lv_obj_set_size(btn_del, 40, 36);
+            lv_obj_set_size(btn_del, 44, 40);
             lv_obj_set_style_bg_color(btn_del, lv_color_hex(pal->surface_alt), 0);
-            lv_obj_set_style_radius(btn_del, 6, 0);
+            lv_obj_set_style_radius(btn_del, 8, 0);
             lv_obj_set_style_pad_all(btn_del, 0, 0);
+            lv_obj_set_style_margin_left(btn_del, 6, 0);
             lv_obj_add_event_cb(btn_del, delete_item_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
             lv_obj_t *lbl_del = lv_label_create(btn_del);
             lv_label_set_text(lbl_del, LV_SYMBOL_TRASH);
@@ -835,20 +838,20 @@ lv_obj_t *ui_music_create(void)
 
     play_card_title = lv_label_create(play_card);
     lv_label_set_text(play_card_title, "Tocando Agora");
-    lv_obj_set_style_text_font(play_card_title, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(play_card_title, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(play_card_title, lv_color_hex(pal->accent), 0);
 
     play_file_label = lv_label_create(play_card);
     lv_label_set_text(play_file_label, "Nenhuma música em reprodução");
     lv_label_set_long_mode(play_file_label, LV_LABEL_LONG_DOT);
     lv_obj_set_width(play_file_label, lv_pct(95));
-    lv_obj_set_style_text_font(play_file_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(play_file_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(play_file_label, lv_color_hex(pal->text), 0);
     lv_obj_set_style_text_align(play_file_label, LV_TEXT_ALIGN_CENTER, 0);
 
     play_info_label = lv_label_create(play_card);
     lv_label_set_text(play_info_label, "");
-    lv_obj_set_style_text_font(play_info_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(play_info_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(play_info_label, lv_color_hex(pal->text_muted), 0);
 
     /* Barra de Progresso com trilha visivel e borda delimitadora */
@@ -865,7 +868,7 @@ lv_obj_t *ui_music_create(void)
 
     play_time_label = lv_label_create(play_card);
     lv_label_set_text(play_time_label, "00:00 / 00:00");
-    lv_obj_set_style_text_font(play_time_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(play_time_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(play_time_label, lv_color_hex(pal->text_muted), 0);
 
     /* Botoes de Controle (Repetir 1, Prev, Play/Pause, Stop, Next, Loop Playlist) */
@@ -972,7 +975,7 @@ lv_obj_t *ui_music_create(void)
     char v_buf[16];
     snprintf(v_buf, sizeof(v_buf), "%d%%", music_player_get_volume());
     lv_label_set_text(vol_value_label, v_buf);
-    lv_obj_set_style_text_font(vol_value_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(vol_value_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(vol_value_label, lv_color_hex(pal->text_muted), 0);
 
     /* --- Card da Lista de Músicas e Pastas --- */
@@ -1011,7 +1014,7 @@ lv_obj_t *ui_music_create(void)
     lv_label_set_text(list_title_label, "Músicas e Pastas");
     lv_label_set_long_mode(list_title_label, LV_LABEL_LONG_DOT);
     lv_obj_set_flex_grow(list_title_label, 1);
-    lv_obj_set_style_text_font(list_title_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(list_title_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(list_title_label, lv_color_hex(pal->accent), 0);
 
     list_container = lv_obj_create(list_card);

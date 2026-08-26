@@ -35,10 +35,9 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 - **Reactive window resizing** — application windows and modals automatically adapt their height and position when the virtual keyboard opens and closes
 - **Orientation Persistence** — display rotation is automatically saved to the SD card and restored upon boot
 - **OS-style top bar** — gear button, Wi-Fi status indicator, Bluetooth connection indicator, battery icon with percentage, and live clock in a monospaced font (`dd/mm/yyyy hh:mm`), with fixed width and right alignment that eliminate any sideways shifting when values change
-- **Auto-rotation by IMU** — BMI270 gravity vector drives `lv_display_set_rotation` (0/90/180/270) with debounce
 - **Settings menu** — quick panel integrated into the top bar with theme toggle (light/dark), screensaver timeout selector (Disabled, 1 min, 2 min, 5 min), automatic screen-off timeout (Disabled, 30 s, 1, 2, 5 and 10 min), IMU auto-rotation switch, independent power switches for Wi-Fi and Bluetooth with NVS persistence, battery charging protection (90% cutoff), persistent master volume control, radio control, and smart auto-reconnection
 - **RTC clock** — RX8130CE seeds the system clock at boot (`settimeofday`)
-- **Latin-1 font** — custom Montserrat 14px with the full Latin-1 supplement, so accented characters render correctly
+- **Latin-1 Typography & Optimized Touch Usability** — custom 18px Montserrat (general UI) and 18px JetBrains Mono (status bar clock) fonts with full Latin-1 supplement and LVGL symbols, providing crisp readability and generous touch targets on the high-density 720×1280 screen
 
 ## Hardware
 
@@ -71,8 +70,8 @@ idf.py -p /dev/ttyACM0 monitor --no-reset
 Automated checks keep the firmware consistent and secure:
 
 - **pre-commit** — local hooks that run on every commit: `clang-format` (project C/C++ style), `cmake-lint` (CMakeLists) and `codespell` (typos, with PT-BR ignore list).
-- **Host-native unit tests** (`tools/ci/run_host_tests.sh`) — GoogleTest suite with 84 tests over the logic and persistence modules, gcov/lcov coverage with an ≥80% gate (currently 92.4%) and `/sdcard` redirection to a tmpdir via linker `--wrap`.
-- **Visual regression** (`tools/ci/run_sim_tests.sh`) — SDL simulator that runs the real UI in a 720×1280 window and compares screenshots against deterministic golden images for 15 scenarios; see [tests/simulator/README.md](tests/simulator/README.md).
+- **Host-native unit tests** (`tools/ci/run_host_tests.sh`) — GoogleTest suite with 84 tests over the logic and persistence modules, gcov/lcov coverage with an ≥80% gate (currently 92.7%) and `/sdcard` redirection to a tmpdir via linker `--wrap`.
+- **Visual regression** (`tools/ci/run_sim_tests.sh`) — SDL simulator that runs the real UI in a 720×1280 window and compares screenshots against deterministic golden images for 17 scenarios; see [tests/simulator/README.md](tests/simulator/README.md).
 - **GitHub Actions**:
   - `ci.yml` — build with **ESP-IDF v5.5.5** (target `esp32p4`) + **clang-tidy** and **cppcheck** via `compile_commands.json`.
   - `codeql.yml` — static security analysis (SAST) with **CodeQL** (C/C++), manual `idf.py` build.
@@ -141,7 +140,7 @@ tab5-os/
 
 - Rotation uses a ~27° tilt threshold (0.45 G plane magnitude) to avoid oscillation; decisive tilts always rotate.
 - `sw_rotate=true` is required (LVGL 9 + DSI).
-- The custom font is generated from the same `Montserrat-Medium.ttf` used by the LVGL built-ins, adding the Latin-1 supplement range (`0xA0–0xFF`).
+- The custom font is generated from the same `Montserrat-Medium.ttf` used by the LVGL built-ins at 18px, adding the Latin-1 supplement range (`0xA0–0xFF`), and the clock uses 18px monospaced JetBrains Mono.
 
 ## Developing New Applications
 

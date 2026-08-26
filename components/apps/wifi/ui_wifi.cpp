@@ -152,8 +152,8 @@ void apply_wifi_layout(void)
     bool is_connected_curr = status.connected && is_selected && (strcmp(status.ssid, selected_ssid) == 0);
     bool is_saved = is_selected && wifi_storage_find(selected_ssid, nullptr, 0);
 
-    int32_t btn_w = 95;
-    int32_t eye_w = 40;
+    int32_t btn_w = 125;
+    int32_t eye_w = 44;
     int32_t gap = 6;
 
     int32_t extra_btns_w = btn_w + gap; /* Conectar ou Desconectar */
@@ -170,45 +170,45 @@ void apply_wifi_layout(void)
     if (password_ta != nullptr) {
         lv_obj_set_width(password_ta, ta_w);
         lv_obj_set_x(password_ta, cur_x);
-        lv_obj_set_y(password_ta, (2 * UI_BAR_HEIGHT) + 52);
+        lv_obj_set_y(password_ta, (2 * UI_BAR_HEIGHT) + 60);
         cur_x += ta_w + gap;
     }
     if (show_pwd_btn != nullptr) {
         lv_obj_set_width(show_pwd_btn, eye_w);
         lv_obj_set_x(show_pwd_btn, cur_x);
-        lv_obj_set_y(show_pwd_btn, (2 * UI_BAR_HEIGHT) + 52);
+        lv_obj_set_y(show_pwd_btn, (2 * UI_BAR_HEIGHT) + 60);
         cur_x += eye_w + gap;
     }
 
     if (connect_button != nullptr && !is_connected_curr) {
         lv_obj_set_width(connect_button, btn_w);
         lv_obj_set_x(connect_button, cur_x);
-        lv_obj_set_y(connect_button, (2 * UI_BAR_HEIGHT) + 52);
+        lv_obj_set_y(connect_button, (2 * UI_BAR_HEIGHT) + 60);
         cur_x += btn_w + gap;
     }
 
     if (disconnect_button != nullptr && is_connected_curr) {
         lv_obj_set_width(disconnect_button, btn_w);
         lv_obj_set_x(disconnect_button, cur_x);
-        lv_obj_set_y(disconnect_button, (2 * UI_BAR_HEIGHT) + 52);
+        lv_obj_set_y(disconnect_button, (2 * UI_BAR_HEIGHT) + 60);
         cur_x += btn_w + gap;
     }
 
     if (forget_button != nullptr && is_saved) {
         lv_obj_set_width(forget_button, btn_w);
         lv_obj_set_x(forget_button, cur_x);
-        lv_obj_set_y(forget_button, (2 * UI_BAR_HEIGHT) + 52);
+        lv_obj_set_y(forget_button, (2 * UI_BAR_HEIGHT) + 60);
     }
 
     /* Linha 3: Status da conexao / selecao */
     if (status_label != nullptr) {
         lv_obj_set_x(status_label, side);
-        lv_obj_set_y(status_label, (2 * UI_BAR_HEIGHT) + 96);
+        lv_obj_set_y(status_label, (2 * UI_BAR_HEIGHT) + 112);
     }
 
     /* Linha 4 em diante: Lista de redes ocupando o espaco restante */
     if (network_list != nullptr) {
-        int32_t list_top = (2 * UI_BAR_HEIGHT) + 120;
+        int32_t list_top = (2 * UI_BAR_HEIGHT) + 140;
         int32_t kb_h = ui_keyboard_is_visible() ? ui_keyboard_get_height() : 0;
         int32_t list_h = height - list_top - kb_h - 12;
         if (list_h < 70) {
@@ -340,7 +340,7 @@ void render_networks(void)
     if (!wifi_mgr_is_enabled()) {
         lv_obj_t *empty = lv_label_create(network_list);
         lv_label_set_text(empty, "Wi-Fi desativado nas configurações");
-        lv_obj_set_style_text_font(empty, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(empty, &lv_font_montserrat_18_latin1, 0);
         lv_obj_align(empty, LV_ALIGN_TOP_LEFT, 12, 10);
         return;
     }
@@ -348,7 +348,7 @@ void render_networks(void)
     if (network_count == 0) {
         lv_obj_t *empty = lv_label_create(network_list);
         lv_label_set_text(empty, "Nenhuma rede encontrada");
-        lv_obj_set_style_text_font(empty, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(empty, &lv_font_montserrat_18_latin1, 0);
         lv_obj_align(empty, LV_ALIGN_TOP_LEFT, 12, 10);
         return;
     }
@@ -364,7 +364,7 @@ void render_networks(void)
 
         lv_obj_t *item = lv_obj_create(network_list);
         lv_obj_set_width(item, lv_pct(100));
-        lv_obj_set_height(item, 42);
+        lv_obj_set_height(item, 54);
 
         if (is_selected) {
             lv_obj_set_style_bg_color(item, lv_color_hex(pal->accent_soft), 0);
@@ -373,11 +373,11 @@ void render_networks(void)
         }
         lv_obj_set_style_bg_color(item, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
         lv_obj_set_style_border_width(item, 0, 0);
-        lv_obj_set_style_radius(item, 6, 0);
+        lv_obj_set_style_radius(item, 8, 0);
         lv_obj_set_style_pad_left(item, 12, 0);
         lv_obj_set_style_pad_right(item, 12, 0);
-        lv_obj_set_style_pad_top(item, 0, 0);
-        lv_obj_set_style_pad_bottom(item, 0, 0);
+        lv_obj_set_style_pad_top(item, 4, 0);
+        lv_obj_set_style_pad_bottom(item, 4, 0);
         lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -395,7 +395,7 @@ void render_networks(void)
             lv_label_set_text(icon_lbl, LV_SYMBOL_WIFI);
             lv_obj_set_style_text_color(icon_lbl, lv_color_hex(pal->text_muted), 0);
         }
-        lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_margin_right(icon_lbl, 8, 0);
 
         /* Nome da rede (SSID) */
@@ -411,7 +411,7 @@ void render_networks(void)
         lv_label_set_text(name_lbl, name_text);
         lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
         lv_obj_set_flex_grow(name_lbl, 1);
-        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(name_lbl, lv_color_hex(pal->text), 0);
 
         /* Sinal em dBm */
@@ -419,7 +419,7 @@ void render_networks(void)
         char rssi_text[20];
         std::snprintf(rssi_text, sizeof(rssi_text), "%d dBm", networks[i].rssi);
         lv_label_set_text(rssi_lbl, rssi_text);
-        lv_obj_set_style_text_font(rssi_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(rssi_lbl, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(rssi_lbl, lv_color_hex(pal->text_muted), 0);
     }
 }
@@ -585,13 +585,13 @@ lv_obj_t *ui_wifi_create(void)
     wifi_app_bar = ui_app_bar_create(wifi_scr, "WiFi", close_cb, nullptr);
 
     scan_button = lv_obj_create(wifi_scr);
-    lv_obj_set_height(scan_button, 38);
+    lv_obj_set_height(scan_button, 44);
     lv_obj_set_style_radius(scan_button, 8, 0);
     lv_obj_clear_flag(scan_button, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(scan_button, scan_cb_event, LV_EVENT_CLICKED, nullptr);
     scan_label = lv_label_create(scan_button);
     lv_label_set_text(scan_label, "Escanear");
-    lv_obj_set_style_text_font(scan_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(scan_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(scan_label);
 
     network_list = lv_obj_create(wifi_scr);
@@ -604,7 +604,7 @@ lv_obj_t *ui_wifi_create(void)
     lv_obj_set_scroll_dir(network_list, LV_DIR_VER);
 
     password_ta = lv_textarea_create(wifi_scr);
-    lv_obj_set_height(password_ta, 38);
+    lv_obj_set_height(password_ta, 44);
     lv_textarea_set_one_line(password_ta, true);
     lv_textarea_set_placeholder_text(password_ta, "Senha da rede selecionada");
     lv_textarea_set_password_mode(password_ta, true);
@@ -612,34 +612,34 @@ lv_obj_t *ui_wifi_create(void)
     lv_obj_clear_flag(password_ta, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_anim_duration(password_ta, 0, LV_PART_CURSOR);
     lv_obj_set_style_bg_opa(password_ta, LV_OPA_TRANSP, LV_PART_CURSOR);
-    lv_obj_set_style_text_font(password_ta, &lv_font_montserrat_14_latin1, LV_PART_MAIN);
+    lv_obj_set_style_text_font(password_ta, &lv_font_montserrat_18_latin1, LV_PART_MAIN);
     lv_obj_add_event_cb(password_ta, password_ta_click_cb, LV_EVENT_CLICKED, nullptr);
 
     show_pwd_btn = lv_obj_create(wifi_scr);
-    lv_obj_set_height(show_pwd_btn, 38);
+    lv_obj_set_height(show_pwd_btn, 44);
     lv_obj_set_style_radius(show_pwd_btn, 8, 0);
     lv_obj_set_style_border_width(show_pwd_btn, 1, 0);
     lv_obj_clear_flag(show_pwd_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(show_pwd_btn, show_pwd_event_cb, LV_EVENT_CLICKED, nullptr);
     show_pwd_label = lv_label_create(show_pwd_btn);
     lv_label_set_text(show_pwd_label, LV_SYMBOL_EYE_CLOSE);
-    lv_obj_set_style_text_font(show_pwd_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(show_pwd_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(show_pwd_label);
 
     /* Botao Conectar */
     connect_button = lv_obj_create(wifi_scr);
-    lv_obj_set_height(connect_button, 38);
+    lv_obj_set_height(connect_button, 44);
     lv_obj_set_style_radius(connect_button, 8, 0);
     lv_obj_clear_flag(connect_button, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(connect_button, connect_cb, LV_EVENT_CLICKED, nullptr);
     connect_label = lv_label_create(connect_button);
     lv_label_set_text(connect_label, "Conectar");
-    lv_obj_set_style_text_font(connect_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(connect_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(connect_label);
 
     /* Botao Desconectar */
     disconnect_button = lv_obj_create(wifi_scr);
-    lv_obj_set_height(disconnect_button, 38);
+    lv_obj_set_height(disconnect_button, 44);
     lv_obj_set_style_radius(disconnect_button, 8, 0);
     lv_obj_set_style_border_width(disconnect_button, 1, 0);
     lv_obj_clear_flag(disconnect_button, LV_OBJ_FLAG_SCROLLABLE);
@@ -647,12 +647,12 @@ lv_obj_t *ui_wifi_create(void)
     lv_obj_add_event_cb(disconnect_button, disconnect_cb, LV_EVENT_CLICKED, nullptr);
     disconnect_label = lv_label_create(disconnect_button);
     lv_label_set_text(disconnect_label, "Desconectar");
-    lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(disconnect_label);
 
     /* Botao Esquecer */
     forget_button = lv_obj_create(wifi_scr);
-    lv_obj_set_height(forget_button, 38);
+    lv_obj_set_height(forget_button, 44);
     lv_obj_set_style_radius(forget_button, 8, 0);
     lv_obj_set_style_border_width(forget_button, 1, 0);
     lv_obj_clear_flag(forget_button, LV_OBJ_FLAG_SCROLLABLE);
@@ -660,12 +660,12 @@ lv_obj_t *ui_wifi_create(void)
     lv_obj_add_event_cb(forget_button, forget_cb, LV_EVENT_CLICKED, nullptr);
     forget_label = lv_label_create(forget_button);
     lv_label_set_text(forget_label, "Esquecer");
-    lv_obj_set_style_text_font(forget_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(forget_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(forget_label);
 
     status_label = lv_label_create(wifi_scr);
     lv_label_set_text(status_label, "Selecione uma rede para conectar");
-    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_18_latin1, 0);
 
     wifi_group = lv_group_create();
     lv_group_add_obj(wifi_group, password_ta);

@@ -29,6 +29,7 @@
 #include "wifi_storage.h"
 #include "ui_shell.h"
 #include "ui_keyboard.h"
+#include "ui_font.h"
 
 namespace {
 
@@ -244,6 +245,11 @@ void boot_ui()
     }
     lv_sdl_mouse_create();
     lv_sdl_keyboard_create();
+
+    /* Define fonte Latin-1 como padrão global */
+    lv_theme_t *th = lv_theme_default_init(disp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED),
+                                           false, &lv_font_montserrat_18_latin1);
+    lv_display_set_theme(disp, th);
 
     ui_shell_init();
 

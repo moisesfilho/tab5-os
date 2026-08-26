@@ -66,9 +66,9 @@ static void update_grid_padding(lv_obj_t *cont)
         scr_w = 1280;
     }
 
-    const int32_t tile_w = 92;
-    const int32_t gap = 20;
-    const int32_t min_pad = 16;
+    const int32_t tile_w = 108;
+    const int32_t gap = 24;
+    const int32_t min_pad = 20;
 
     int cols = (scr_w - 2 * min_pad + gap) / (tile_w + gap);
     if (cols < 1) {
@@ -163,7 +163,7 @@ void ui_desktop_create(lv_obj_t *scr)
     lv_obj_set_style_pad_top(grid_cont, UI_BAR_HEIGHT + 16, 0);
     lv_obj_set_style_pad_bottom(grid_cont, 16, 0);
     lv_obj_set_style_pad_row(grid_cont, 20, 0);
-    lv_obj_set_style_pad_column(grid_cont, 20, 0);
+    lv_obj_set_style_pad_column(grid_cont, 24, 0);
     lv_obj_clear_flag(grid_cont, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(grid_cont, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_flex_flow(grid_cont, LV_FLEX_FLOW_ROW_WRAP);
@@ -179,7 +179,7 @@ void ui_desktop_create(lv_obj_t *scr)
     const auto &apps = app_registry_get_all();
     for (const auto &app : apps) {
         lv_obj_t *tile = lv_obj_create(grid_cont);
-        lv_obj_set_size(tile, 92, LV_SIZE_CONTENT);
+        lv_obj_set_size(tile, 108, LV_SIZE_CONTENT);
         lv_obj_set_style_bg_opa(tile, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(tile, 0, 0);
         lv_obj_set_style_shadow_width(tile, 0, 0);
@@ -190,8 +190,8 @@ void ui_desktop_create(lv_obj_t *scr)
         lv_obj_add_event_cb(tile, app_tile_click_cb, LV_EVENT_CLICKED, (void *)&app);
 
         lv_obj_t *icon_box = lv_obj_create(tile);
-        lv_obj_set_size(icon_box, 76, 76);
-        lv_obj_set_style_radius(icon_box, 18, 0);
+        lv_obj_set_size(icon_box, 84, 84);
+        lv_obj_set_style_radius(icon_box, 20, 0);
         lv_obj_set_style_border_width(icon_box, 0, 0);
         lv_obj_set_style_shadow_width(icon_box, 0, 0);
         lv_obj_clear_flag(icon_box, LV_OBJ_FLAG_CLICKABLE);
@@ -209,7 +209,7 @@ void ui_desktop_create(lv_obj_t *scr)
 
         lv_obj_t *label = lv_label_create(tile);
         lv_label_set_text(label, app.name != nullptr ? app.name : "");
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_pad_top(label, 6, 0);
     }
 

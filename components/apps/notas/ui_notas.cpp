@@ -206,12 +206,12 @@ void show_save_modal(void)
 
     /* Card central */
     save_modal_card = lv_obj_create(save_modal);
-    lv_obj_set_size(save_modal_card, 380, 180);
+    lv_obj_set_size(save_modal_card, 420, 230);
     lv_obj_set_style_bg_color(save_modal_card, lv_color_hex(pal->surface), 0);
     lv_obj_set_style_border_width(save_modal_card, 1, 0);
     lv_obj_set_style_border_color(save_modal_card, lv_color_hex(pal->border), 0);
-    lv_obj_set_style_radius(save_modal_card, 12, 0);
-    lv_obj_set_style_pad_all(save_modal_card, 14, 0);
+    lv_obj_set_style_radius(save_modal_card, 14, 0);
+    lv_obj_set_style_pad_all(save_modal_card, 18, 0);
     lv_obj_clear_flag(save_modal_card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(save_modal_card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(save_modal_card, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -219,15 +219,15 @@ void show_save_modal(void)
     /* Titulo do modal */
     save_modal_title = lv_label_create(save_modal_card);
     lv_label_set_text(save_modal_title, "Salvar Nota");
-    lv_obj_set_style_text_font(save_modal_title, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(save_modal_title, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(save_modal_title, lv_color_hex(pal->text), 0);
 
     /* Campo de texto com o nome sugerido */
     save_modal_ta = lv_textarea_create(save_modal_card);
-    lv_obj_set_width(save_modal_ta, 340);
-    lv_obj_set_height(save_modal_ta, 38);
+    lv_obj_set_width(save_modal_ta, 380);
+    lv_obj_set_height(save_modal_ta, 46);
     lv_textarea_set_one_line(save_modal_ta, true);
-    lv_obj_set_style_text_font(save_modal_ta, &lv_font_montserrat_14_latin1, LV_PART_MAIN);
+    lv_obj_set_style_text_font(save_modal_ta, &lv_font_montserrat_18_latin1, LV_PART_MAIN);
     lv_obj_set_style_bg_color(save_modal_ta, lv_color_hex(pal->surface_alt), 0);
     lv_obj_set_style_border_width(save_modal_ta, 1, 0);
     lv_obj_set_style_border_color(save_modal_ta, lv_color_hex(pal->border), 0);
@@ -252,7 +252,7 @@ void show_save_modal(void)
 
     /* Linha de botoes: Cancelar e Salvar */
     save_modal_btn_row = lv_obj_create(save_modal_card);
-    lv_obj_set_size(save_modal_btn_row, 340, 42);
+    lv_obj_set_size(save_modal_btn_row, 380, 46);
     lv_obj_set_style_bg_opa(save_modal_btn_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(save_modal_btn_row, 0, 0);
     lv_obj_set_style_pad_all(save_modal_btn_row, 0, 0);
@@ -262,7 +262,7 @@ void show_save_modal(void)
 
     /* Botao Cancelar */
     save_modal_cancel_btn = lv_obj_create(save_modal_btn_row);
-    lv_obj_set_size(save_modal_cancel_btn, 160, 38);
+    lv_obj_set_size(save_modal_cancel_btn, 180, 46);
     lv_obj_set_style_radius(save_modal_cancel_btn, 8, 0);
     lv_obj_set_style_bg_color(save_modal_cancel_btn, lv_color_hex(pal->surface_alt), 0);
     lv_obj_set_style_bg_color(save_modal_cancel_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
@@ -273,13 +273,13 @@ void show_save_modal(void)
 
     save_modal_cancel_lbl = lv_label_create(save_modal_cancel_btn);
     lv_label_set_text(save_modal_cancel_lbl, "Cancelar");
-    lv_obj_set_style_text_font(save_modal_cancel_lbl, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(save_modal_cancel_lbl, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(save_modal_cancel_lbl, lv_color_hex(pal->text), 0);
     lv_obj_center(save_modal_cancel_lbl);
 
     /* Botao Confirmar / Salvar */
     save_modal_confirm_btn = lv_obj_create(save_modal_btn_row);
-    lv_obj_set_size(save_modal_confirm_btn, 160, 38);
+    lv_obj_set_size(save_modal_confirm_btn, 180, 46);
     lv_obj_set_style_radius(save_modal_confirm_btn, 8, 0);
     lv_obj_set_style_bg_color(save_modal_confirm_btn, lv_color_hex(pal->accent), 0);
     lv_obj_set_style_bg_color(save_modal_confirm_btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
@@ -289,7 +289,7 @@ void show_save_modal(void)
 
     save_modal_confirm_lbl = lv_label_create(save_modal_confirm_btn);
     lv_label_set_text(save_modal_confirm_lbl, "Salvar");
-    lv_obj_set_style_text_font(save_modal_confirm_lbl, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(save_modal_confirm_lbl, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(save_modal_confirm_lbl, lv_color_white(), 0);
     lv_obj_center(save_modal_confirm_lbl);
 
@@ -414,7 +414,7 @@ lv_obj_t *ui_notas_create(void)
     lv_textarea_set_placeholder_text(notas_ta, "Escreva sua nota...");
     lv_textarea_set_cursor_click_pos(notas_ta, true);
     lv_obj_set_style_anim_duration(notas_ta, 0, LV_PART_CURSOR);
-    lv_obj_set_style_text_font(notas_ta, &lv_font_montserrat_14_latin1, LV_PART_MAIN);
+    lv_obj_set_style_text_font(notas_ta, &lv_font_montserrat_18_latin1, LV_PART_MAIN);
     lv_obj_add_event_cb(notas_ta, ta_click_cb, LV_EVENT_CLICKED, nullptr);
 
     notas_group = lv_group_create();

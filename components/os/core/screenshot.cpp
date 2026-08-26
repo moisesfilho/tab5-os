@@ -102,7 +102,7 @@ static void notify_ui(void *param)
         lv_obj_set_style_radius(s_toast_label, 8, 0);
         lv_obj_set_style_pad_all(s_toast_label, 8, 0);
         lv_obj_set_style_text_color(s_toast_label, lv_color_hex(pal->text), 0);
-        lv_obj_set_style_text_font(s_toast_label, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(s_toast_label, &lv_font_montserrat_18_latin1, 0);
         lv_obj_clear_flag(s_toast_label, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_clear_flag(s_toast_label, LV_OBJ_FLAG_CLICKABLE);
     }

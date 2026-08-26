@@ -49,9 +49,11 @@ add_executable(tab5_sim
 
     # Fontes bitmap (identicas ao firmware)
     ${OS}/fonts/lv_font_montserrat_14_latin1.c
+    ${OS}/fonts/lv_font_montserrat_18_latin1.c
     ${OS}/fonts/lv_font_montserrat_28_latin1.c
     ${OS}/fonts/lv_font_montserrat_56_latin1.c
     ${OS}/fonts/lv_font_jetbrains_mono_14_clock.c
+    ${OS}/fonts/lv_font_jetbrains_mono_18_clock.c
 
     # Shell real
     ${OS}/shell/ui_app_bar.cpp

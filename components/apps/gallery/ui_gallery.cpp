@@ -361,7 +361,7 @@ void trash_click_cb(lv_event_t *e)
 
     lv_obj_t *m_title = lv_label_create(confirm_modal);
     lv_label_set_text(m_title, "Excluir Foto?");
-    lv_obj_set_style_text_font(m_title, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(m_title, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(m_title, lv_color_hex(ui_theme_get()->text), 0);
     lv_obj_align(m_title, LV_ALIGN_TOP_LEFT, 16, 16);
 
@@ -613,7 +613,7 @@ lv_obj_t *ui_gallery_create(void)
     lv_obj_add_event_cb(prev_btn, prev_click_cb, LV_EVENT_CLICKED, nullptr);
     prev_label = lv_label_create(prev_btn);
     lv_label_set_text(prev_label, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(prev_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(prev_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(prev_label);
 
     /* Botao Navegacao Proxima [>] */
@@ -627,7 +627,7 @@ lv_obj_t *ui_gallery_create(void)
     lv_obj_add_event_cb(next_btn, next_click_cb, LV_EVENT_CLICKED, nullptr);
     next_label = lv_label_create(next_btn);
     lv_label_set_text(next_label, LV_SYMBOL_RIGHT);
-    lv_obj_set_style_text_font(next_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(next_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(next_label);
 
     /* Container de Estado Vazio */
@@ -646,7 +646,7 @@ lv_obj_t *ui_gallery_create(void)
 
     empty_label = lv_label_create(empty_container);
     lv_label_set_text(empty_label, "Nenhuma imagem encontrada\nno cartão microSD (/sdcard/imagens)");
-    lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_align(empty_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_pad_top(empty_label, 12, 0);
 

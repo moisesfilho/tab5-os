@@ -85,7 +85,7 @@ ui_calendar_view_t ui_calendar_view_create(lv_obj_t *parent, bool is_popup)
 
     /* Cabeçalho de navegação */
     cal.header_cont = lv_obj_create(cal.container);
-    lv_obj_set_size(cal.header_cont, lv_pct(100), is_popup ? 40 : 48);
+    lv_obj_set_size(cal.header_cont, lv_pct(100), is_popup ? 44 : 52);
     lv_obj_set_flex_flow(cal.header_cont, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(cal.header_cont, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_bg_opa(cal.header_cont, LV_OPA_TRANSP, 0);
@@ -95,7 +95,7 @@ ui_calendar_view_t ui_calendar_view_create(lv_obj_t *parent, bool is_popup)
 
     /* Botão Anterior */
     cal.prev_btn = lv_btn_create(cal.header_cont);
-    lv_obj_set_size(cal.prev_btn, is_popup ? 36 : 42, is_popup ? 36 : 42);
+    lv_obj_set_size(cal.prev_btn, is_popup ? 40 : 46, is_popup ? 40 : 46);
     lv_obj_set_style_radius(cal.prev_btn, 8, 0);
     lv_obj_set_style_bg_color(cal.prev_btn, lv_color_hex(pal->surface), 0);
     lv_obj_set_style_border_width(cal.prev_btn, 1, 0);
@@ -103,19 +103,20 @@ ui_calendar_view_t ui_calendar_view_create(lv_obj_t *parent, bool is_popup)
     lv_obj_set_style_shadow_width(cal.prev_btn, 0, 0);
     cal.prev_lbl = lv_label_create(cal.prev_btn);
     lv_label_set_text(cal.prev_lbl, LV_SYMBOL_LEFT);
+    lv_obj_set_style_text_font(cal.prev_lbl, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(cal.prev_lbl, lv_color_hex(pal->text), 0);
     lv_obj_center(cal.prev_lbl);
 
     /* Título (Mês e Ano) */
     cal.title_label = lv_label_create(cal.header_cont);
     lv_obj_set_style_text_font(cal.title_label,
-                               is_popup ? &lv_font_montserrat_14_latin1 : &lv_font_montserrat_28_latin1, 0);
+                               is_popup ? &lv_font_montserrat_18_latin1 : &lv_font_montserrat_28_latin1, 0);
     lv_obj_set_style_text_color(cal.title_label, lv_color_hex(pal->text), 0);
     lv_obj_set_style_text_align(cal.title_label, LV_TEXT_ALIGN_CENTER, 0);
 
     /* Grupo da direita: Botão Próximo e Botão Hoje */
     lv_obj_t *right_actions = lv_obj_create(cal.header_cont);
-    lv_obj_set_size(right_actions, LV_SIZE_CONTENT, is_popup ? 36 : 42);
+    lv_obj_set_size(right_actions, LV_SIZE_CONTENT, is_popup ? 40 : 46);
     lv_obj_set_flex_flow(right_actions, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(right_actions, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_bg_opa(right_actions, LV_OPA_TRANSP, 0);
@@ -126,22 +127,22 @@ ui_calendar_view_t ui_calendar_view_create(lv_obj_t *parent, bool is_popup)
 
     /* Botão Hoje */
     cal.today_btn = lv_btn_create(right_actions);
-    lv_obj_set_size(cal.today_btn, LV_SIZE_CONTENT, is_popup ? 36 : 42);
+    lv_obj_set_size(cal.today_btn, LV_SIZE_CONTENT, is_popup ? 40 : 46);
     lv_obj_set_style_radius(cal.today_btn, 8, 0);
     lv_obj_set_style_bg_color(cal.today_btn, lv_color_hex(pal->surface), 0);
     lv_obj_set_style_border_width(cal.today_btn, 1, 0);
     lv_obj_set_style_border_color(cal.today_btn, lv_color_hex(pal->border), 0);
     lv_obj_set_style_shadow_width(cal.today_btn, 0, 0);
-    lv_obj_set_style_pad_hor(cal.today_btn, 10, 0);
+    lv_obj_set_style_pad_hor(cal.today_btn, 12, 0);
     cal.today_lbl = lv_label_create(cal.today_btn);
     lv_label_set_text(cal.today_lbl, "Hoje");
     lv_obj_set_style_text_color(cal.today_lbl, lv_color_hex(pal->text), 0);
-    lv_obj_set_style_text_font(cal.today_lbl, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(cal.today_lbl, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(cal.today_lbl);
 
     /* Botão Próximo */
     cal.next_btn = lv_btn_create(right_actions);
-    lv_obj_set_size(cal.next_btn, is_popup ? 36 : 42, is_popup ? 36 : 42);
+    lv_obj_set_size(cal.next_btn, is_popup ? 40 : 46, is_popup ? 40 : 46);
     lv_obj_set_style_radius(cal.next_btn, 8, 0);
     lv_obj_set_style_bg_color(cal.next_btn, lv_color_hex(pal->surface), 0);
     lv_obj_set_style_border_width(cal.next_btn, 1, 0);
@@ -149,12 +150,13 @@ ui_calendar_view_t ui_calendar_view_create(lv_obj_t *parent, bool is_popup)
     lv_obj_set_style_shadow_width(cal.next_btn, 0, 0);
     cal.next_lbl = lv_label_create(cal.next_btn);
     lv_label_set_text(cal.next_lbl, LV_SYMBOL_RIGHT);
+    lv_obj_set_style_text_font(cal.next_lbl, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(cal.next_lbl, lv_color_hex(pal->text), 0);
     lv_obj_center(cal.next_lbl);
 
     /* Linha dos dias da semana com separadores */
     cal.weekdays_cont = lv_obj_create(cal.container);
-    lv_obj_set_size(cal.weekdays_cont, lv_pct(100), is_popup ? 28 : 34);
+    lv_obj_set_size(cal.weekdays_cont, lv_pct(100), is_popup ? 32 : 38);
     lv_obj_set_flex_flow(cal.weekdays_cont, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(cal.weekdays_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_bg_opa(cal.weekdays_cont, LV_OPA_COVER, 0);
@@ -187,7 +189,7 @@ ui_calendar_view_t ui_calendar_view_create(lv_obj_t *parent, bool is_popup)
 
         cal.weekday_labels[i] = lv_label_create(wday_box);
         lv_label_set_text(cal.weekday_labels[i], calendar_logic_get_weekday_name(i));
-        lv_obj_set_style_text_font(cal.weekday_labels[i], &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(cal.weekday_labels[i], &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(cal.weekday_labels[i], lv_color_hex(pal->text_muted), 0);
         lv_obj_center(cal.weekday_labels[i]);
     }
@@ -211,7 +213,7 @@ ui_calendar_view_t ui_calendar_view_create(lv_obj_t *parent, bool is_popup)
     int cell_idx = 0;
     for (int r = 0; r < 6; r++) {
         lv_obj_t *row_obj = lv_obj_create(cal.grid_cont);
-        lv_obj_set_size(row_obj, lv_pct(100), is_popup ? 36 : 48);
+        lv_obj_set_size(row_obj, lv_pct(100), is_popup ? 42 : 52);
         lv_obj_set_flex_flow(row_obj, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(row_obj, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_bg_opa(row_obj, LV_OPA_TRANSP, 0);
@@ -248,7 +250,7 @@ ui_calendar_view_t ui_calendar_view_create(lv_obj_t *parent, bool is_popup)
             lv_obj_add_flag(cell, LV_OBJ_FLAG_CLICKABLE);
 
             lv_obj_t *lbl = lv_label_create(cell);
-            lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18_latin1, 0);
             lv_obj_center(lbl);
 
             cal.day_cells[cell_idx] = cell;

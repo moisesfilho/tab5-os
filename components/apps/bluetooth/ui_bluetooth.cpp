@@ -155,8 +155,8 @@ void apply_bt_layout(void)
     }
 
     /* Linha 2: Ações de Conexão */
-    int32_t act_y = 2 * UI_BAR_HEIGHT + 54;
-    int32_t btn_h = 36;
+    int32_t act_y = 2 * UI_BAR_HEIGHT + 60;
+    int32_t btn_h = 44;
     int32_t btn_gap = 8;
     int32_t num_visible_btns = 0;
 
@@ -195,7 +195,7 @@ void apply_bt_layout(void)
         lv_obj_set_y(status_label, list_top);
     }
 
-    int32_t list_y = list_top + 24;
+    int32_t list_y = list_top + 28;
     int32_t list_h = height - list_y - 12;
     if (list_h < 80) {
         list_h = 80;
@@ -451,7 +451,7 @@ void render_devices(void)
     if (!bt_mgr_is_enabled()) {
         lv_obj_t *empty_lbl = lv_label_create(device_list);
         lv_label_set_text(empty_lbl, "Bluetooth desativado nas configurações");
-        lv_obj_set_style_text_font(empty_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(empty_lbl, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(empty_lbl, lv_color_hex(pal->text_muted), 0);
         lv_obj_set_style_text_align(empty_lbl, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_center(empty_lbl);
@@ -461,7 +461,7 @@ void render_devices(void)
     if (s_device_count == 0) {
         lv_obj_t *empty_lbl = lv_label_create(device_list);
         lv_label_set_text(empty_lbl, "Nenhum dispositivo Bluetooth encontrado.\nToque em Buscar.");
-        lv_obj_set_style_text_font(empty_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(empty_lbl, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(empty_lbl, lv_color_hex(pal->text_muted), 0);
         lv_obj_set_style_text_align(empty_lbl, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_center(empty_lbl);
@@ -474,12 +474,12 @@ void render_devices(void)
 
         lv_obj_t *row = lv_obj_create(device_list);
         lv_obj_set_width(row, lv_pct(100));
-        lv_obj_set_height(row, 50);
+        lv_obj_set_height(row, 62);
         lv_obj_set_style_radius(row, 8, 0);
         lv_obj_set_style_pad_left(row, 14, 0);
         lv_obj_set_style_pad_right(row, 14, 0);
-        lv_obj_set_style_pad_top(row, 0, 0);
-        lv_obj_set_style_pad_bottom(row, 0, 0);
+        lv_obj_set_style_pad_top(row, 4, 0);
+        lv_obj_set_style_pad_bottom(row, 4, 0);
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
@@ -499,7 +499,7 @@ void render_devices(void)
         /* Ícone do dispositivo */
         lv_obj_t *icon_lbl = lv_label_create(row);
         lv_label_set_text(icon_lbl, get_device_icon(dev->type, dev->name));
-        lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(icon_lbl, lv_color_hex(dev->connected ? pal->accent : pal->text), 0);
         lv_obj_clear_flag(icon_lbl, LV_OBJ_FLAG_CLICKABLE);
 
@@ -516,13 +516,13 @@ void render_devices(void)
 
         lv_obj_t *name_lbl = lv_label_create(col);
         lv_label_set_text(name_lbl, dev->name[0] != '\0' ? dev->name : "Dispositivo sem nome");
-        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(name_lbl, lv_color_hex(pal->text), 0);
         lv_obj_clear_flag(name_lbl, LV_OBJ_FLAG_CLICKABLE);
 
         lv_obj_t *mac_lbl = lv_label_create(col);
         lv_label_set_text(mac_lbl, dev->mac);
-        lv_obj_set_style_text_font(mac_lbl, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(mac_lbl, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(mac_lbl, lv_color_hex(pal->text_muted), 0);
         lv_obj_clear_flag(mac_lbl, LV_OBJ_FLAG_CLICKABLE);
 
@@ -530,13 +530,13 @@ void render_devices(void)
         if (dev->connected) {
             lv_obj_t *badge = lv_label_create(row);
             lv_label_set_text(badge, "(Conectado)");
-            lv_obj_set_style_text_font(badge, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_font(badge, &lv_font_montserrat_18_latin1, 0);
             lv_obj_set_style_text_color(badge, lv_color_hex(pal->accent), 0);
             lv_obj_clear_flag(badge, LV_OBJ_FLAG_CLICKABLE);
         } else if (dev->paired) {
             lv_obj_t *badge = lv_label_create(row);
             lv_label_set_text(badge, "(Pareado)");
-            lv_obj_set_style_text_font(badge, &lv_font_montserrat_14_latin1, 0);
+            lv_obj_set_style_text_font(badge, &lv_font_montserrat_18_latin1, 0);
             lv_obj_set_style_text_color(badge, lv_color_hex(pal->text_muted), 0);
             lv_obj_clear_flag(badge, LV_OBJ_FLAG_CLICKABLE);
         }
@@ -725,7 +725,7 @@ lv_obj_t *ui_bluetooth_create(void)
 
     /* Botão Buscar */
     scan_button = lv_obj_create(bt_scr);
-    lv_obj_set_height(scan_button, 38);
+    lv_obj_set_height(scan_button, 44);
     lv_obj_set_style_radius(scan_button, 8, 0);
     lv_obj_set_style_border_width(scan_button, 1, 0);
     lv_obj_set_style_pad_all(scan_button, 0, 0);
@@ -734,7 +734,7 @@ lv_obj_t *ui_bluetooth_create(void)
 
     scan_label = lv_label_create(scan_button);
     lv_label_set_text(scan_label, LV_SYMBOL_REFRESH "  Buscar Dispositivos");
-    lv_obj_set_style_text_font(scan_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(scan_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_clear_flag(scan_label, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_center(scan_label);
 
@@ -749,7 +749,7 @@ lv_obj_t *ui_bluetooth_create(void)
 
     connect_label = lv_label_create(connect_button);
     lv_label_set_text(connect_label, LV_SYMBOL_OK " Conectar");
-    lv_obj_set_style_text_font(connect_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(connect_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(connect_label);
 
     disconnect_button = lv_obj_create(bt_scr);
@@ -762,7 +762,7 @@ lv_obj_t *ui_bluetooth_create(void)
 
     disconnect_label = lv_label_create(disconnect_button);
     lv_label_set_text(disconnect_label, LV_SYMBOL_CLOSE " Desconectar");
-    lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(disconnect_label);
 
     forget_button = lv_obj_create(bt_scr);
@@ -775,13 +775,13 @@ lv_obj_t *ui_bluetooth_create(void)
 
     forget_label = lv_label_create(forget_button);
     lv_label_set_text(forget_label, LV_SYMBOL_TRASH " Esquecer");
-    lv_obj_set_style_text_font(forget_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(forget_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(forget_label);
 
     /* Label de status */
     status_label = lv_label_create(bt_scr);
     lv_label_set_text(status_label, "");
-    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_18_latin1, 0);
 
     /* Lista de dispositivos */
     device_list = lv_obj_create(bt_scr);

@@ -56,7 +56,7 @@ static void ui_calendar_build_icon(lv_obj_t *icon_box)
     /* Número do dia */
     lv_obj_t *day_lbl = lv_label_create(sheet);
     lv_label_set_text(day_lbl, "31");
-    lv_obj_set_style_text_font(day_lbl, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(day_lbl, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(day_lbl, lv_color_hex(pal->text), 0);
     lv_obj_align(day_lbl, LV_ALIGN_CENTER, 0, 6);
 }

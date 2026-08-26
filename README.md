@@ -38,7 +38,7 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 - **Rotação automática por IMU** — o vetor de gravidade do BMI270 aciona `lv_display_set_rotation` (0/90/180/270) com debounce
 - **Menu de configurações** — painel rápido integrado à barra superior com alternância de tema (claro/escuro), seletor de timeout do protetor de tela (Desativado, 1 min, 2 min, 5 min), timeout do desligamento automático de tela (Desativado, 30 s, 1, 2, 5 e 10 min), controle de rotação por IMU, interruptores para ligar/desligar Wi-Fi e Bluetooth com persistência em NVS, proteção de carregamento da bateria (corte em 90%), controle de volume geral persistido, controle de rádio e auto-reconexão inteligente
 - **Relógio RTC** — RX8130CE semeia o relógio do sistema no boot (`settimeofday`)
-- **Fonte Latin-1** — Montserrat 14px custom com o suplemento Latin-1 completo, para caracteres acentuados renderizarem corretamente
+- **Tipografia Latin-1 e Escala Touch Otimizada** — fontes personalizadas Montserrat 18px (geral) e JetBrains Mono 18px (relógio) com suporte completo ao suplemento Latin-1 e símbolos LVGL, garantindo perfeita legibilidade e áreas de toque confortáveis na tela de alta densidade 720×1280
 
 ## Hardware
 
@@ -71,8 +71,8 @@ idf.py -p /dev/ttyACM0 monitor --no-reset
 Validações automáticas garantem consistência de estilo e segurança no firmware:
 
 - **pre-commit** — hooks locais que rodam a cada commit: `clang-format` (estilo C/C++ do projeto), `cmake-lint` (CMakeLists) e `codespell` (typos, com ignore-list PT-BR).
-- **Testes unitários host-native** (`tools/ci/run_host_tests.sh`) — suíte GoogleTest com 84 testes sobre os módulos de lógica e persistência, cobertura gcov/lcov com gate ≥80% (atual: 92,4%) e redirecionamento de `/sdcard` para tmpdir via `--wrap` do linker.
-- **Regressão visual** (`tools/ci/run_sim_tests.sh`) — simulador SDL que executa a UI real em janela 720×1280 e compara capturas contra imagens douradas determinísticas de 15 cenários; detalhes em [tests/simulator/README.md](tests/simulator/README.md).
+- **Testes unitários host-native** (`tools/ci/run_host_tests.sh`) — suíte GoogleTest com 84 testes sobre os módulos de lógica e persistência, cobertura gcov/lcov com gate ≥80% (atual: 92,7%) e redirecionamento de `/sdcard` para tmpdir via `--wrap` do linker.
+- **Regressão visual** (`tools/ci/run_sim_tests.sh`) — simulador SDL que executa a UI real em janela 720×1280 e compara capturas contra imagens douradas determinísticas de 17 cenários; detalhes em [tests/simulator/README.md](tests/simulator/README.md).
 - **GitHub Actions**:
   - `ci.yml` — build com **ESP-IDF v5.5.5** (target `esp32p4`) + **clang-tidy** e **cppcheck** via `compile_commands.json`.
   - `codeql.yml` — análise estática de segurança (SAST) com **CodeQL** (C/C++), build manual `idf.py`.
@@ -141,7 +141,7 @@ tab5-os/
 
 - A rotação usa um limiar de inclinação de ~27° (magnitude do plano de 0.45 G) para evitar oscilação; inclinações decididas sempre giram.
 - `sw_rotate=true` é obrigatório (LVGL 9 + DSI).
-- A fonte custom é gerada do mesmo `Montserrat-Medium.ttf` usado pelos fonts built-in do LVGL, adicionando o suplemento Latin-1 (`0xA0–0xFF`).
+- A fonte custom é gerada do mesmo `Montserrat-Medium.ttf` usado pelos fonts built-in do LVGL em 18px, adicionando o suplemento Latin-1 (`0xA0–0xFF`), e o relógio utiliza JetBrains Mono 18px monoespaçada.
 
 ## Desenvolvimento de Novas Aplicações
 
