@@ -204,17 +204,17 @@ void act_open_calendar(void)
 
 void act_click_power(void)
 {
-    simact::click(24, 26);
+    ui_bar_open_power_menu();
 }
 
 void act_click_gear(void)
 {
-    simact::click(74, 26);
+    ui_bar_open_settings();
 }
 
 void act_click_clock(void)
 {
-    simact::click(650, 26);
+    ui_bar_open_calendar_popup();
 }
 
 /* Tela dedicada ao teclado: textarea propria + attach + texto digitado. */

@@ -1501,3 +1501,18 @@ void ui_bar_set_visible(bool visible)
         lv_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN);
     }
 }
+
+void ui_bar_open_power_menu(void)
+{
+    open_menu(MENU_PAGE_POWER);
+}
+
+void ui_bar_open_settings(void)
+{
+    open_menu(MENU_PAGE_MAIN);
+}
+
+void ui_bar_open_calendar_popup(void)
+{
+    show_calendar_popup();
+}

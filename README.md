@@ -40,6 +40,38 @@ Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): tec
 - **Relógio RTC** — RX8130CE semeia o relógio do sistema no boot (`settimeofday`)
 - **Tipografia Latin-1 e Escala Touch Otimizada** — fontes personalizadas Montserrat 18px (geral) e JetBrains Mono 18px (relógio) com suporte completo ao suplemento Latin-1 e símbolos LVGL, garantindo perfeita legibilidade e áreas de toque confortáveis na tela de alta densidade 720×1280
 
+## Galeria de Telas
+
+Capturas de referência geradas pelo simulador de regressão visual (`tests/simulator`), uma por aplicação e pelas telas do shell:
+
+| Bluetooth | Calendário |
+|-----------|-----------|
+| ![Bluetooth](docs/screenshots/app_bluetooth.png) | ![Calendário](docs/screenshots/app_calendar.png) |
+| Câmera | Chat |
+|-----------|-----------|
+| ![Câmera](docs/screenshots/app_camera.png) | ![Chat](docs/screenshots/app_chat.png) |
+| Arquivos | Servidor de Arquivos |
+|-----------|-----------|
+| ![Arquivos](docs/screenshots/app_files.png) | ![Servidor de Arquivos](docs/screenshots/app_fileserver.png) |
+| Galeria | Música |
+|-----------|-----------|
+| ![Galeria](docs/screenshots/app_gallery.png) | ![Música](docs/screenshots/app_music.png) |
+| Notas | Gravador |
+|-----------|-----------|
+| ![Notas](docs/screenshots/app_notas.png) | ![Gravador](docs/screenshots/app_recorder.png) |
+| Teclado | Terminal |
+|-----------|-----------|
+| ![Teclado](docs/screenshots/app_teclado.png) | ![Terminal](docs/screenshots/app_terminal.png) |
+| Wi-Fi | Área de Trabalho |
+|-----------|-----------|
+| ![Wi-Fi](docs/screenshots/app_wifi.png) | ![Área de Trabalho](docs/screenshots/shell_desktop.png) |
+| Configurações | Menu de Energia |
+|-----------|-----------|
+| ![Configurações](docs/screenshots/shell_settings.png) | ![Menu de Energia](docs/screenshots/shell_power.png) |
+| Popup de Calendário |  |
+|-----------|-----------|
+| ![Popup de Calendário](docs/screenshots/shell_calendar_popup.png) |  |
+
 ## Hardware
 
 - M5Stack Tab5 (SKU K145)
