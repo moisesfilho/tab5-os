@@ -260,7 +260,7 @@ void ui_screensaver_init(void)
     lv_obj_set_flex_align(s_box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     s_version_label = lv_label_create(s_box);
-    lv_label_set_text(s_version_label, "tab5-os v0.3.0");
+    lv_label_set_text(s_version_label, "tab5-os v0.4.0");
     lv_obj_set_style_text_font(s_version_label, &lv_font_montserrat_28_latin1, 0);
     lv_obj_set_style_text_color(s_version_label, lv_color_hex(0xA0A0A0), 0);
     lv_obj_set_style_pad_bottom(s_version_label, 4, 0);

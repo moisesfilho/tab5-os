@@ -106,7 +106,7 @@ extern "C" void app_main(void)
 
     /* Define fonte Latin-1 como padrão global para todos os componentes do sistema */
     lv_theme_t *th = lv_theme_default_init(disp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED),
-                                           false, &lv_font_montserrat_14_latin1);
+                                           false, &lv_font_montserrat_18_latin1);
     lv_display_set_theme(disp, th);
 
     ui_shell_init();

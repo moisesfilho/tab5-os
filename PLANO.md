@@ -37,7 +37,7 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 27** | Padronização do Shell e Registro Modular de Apps | Sistema / Arquitetura | Barra de título padronizada `ui_app_bar`, registro `app_registry`, desktop dinâmico, manifesto descentralizado de arquivos |
 | `[~]` | **Fase 28** | Modo Pen Drive USB (USB Mass Storage) | Sistema / Conectividade | TinyUSB MSC sobre USB-OTG, exposição do microSD como disco, recuperação de arquivos pelo computador |
 | `[x]` | **Fase 29** | Aplicativo "Música" — Player de Áudio Local (MP3/WAV) | Aplicativo / Mídia | Decoder `esp_audio_codec`, reprodução de `/sdcard/musica/*.mp3|wav`, controles e volume via ES8388 |
-| `[ ]` | **Fase 30** | Testes Unitários Automáticos com Cobertura ≥80% | Qualidade / Testes | Suíte GoogleTest em host nativo, cobertura gcov/lcov com gate ≥80%, job `test` no Quality Gate do CI |
+| `[x]` | **Fase 30** | Testes Unitários Automáticos com Cobertura ≥80% | Qualidade / Testes | Suíte GoogleTest em host nativo, cobertura gcov/lcov com gate ≥80%, job `test` no Quality Gate do CI |
 | `[x]` | **Fase 31** | Otimização de Memória Interna e Robustez do Servidor de Arquivos | Sistema / Memória | Upload HTTP sem erro "Out of DMA memory", `malloc()`/LVGL na PSRAM, reprodução de músicas em subpastas |
 | `[x]` | **Fase 32** | Ativação Manual do Servidor de Arquivos | Aplicativo / Segurança | Servidor HTTP não inicia mais ao abrir o app; ativação apenas pelo botão "Iniciar Servidor", desliga ao fechar o app |
 | `[x]` | **Fase 33** | Estabilidade do Relógio da Barra Superior | Sistema / UI | Fonte monoespaçada JetBrains Mono no relógio (`dd/mm/aaaa hh:mm`), largura fixa e alinhamento à direita: zero deslocamento lateral dos ícones |
@@ -46,6 +46,9 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 36** | Monitor de Bateria INA226 e Proteção de Carregamento | Sistema / Energia / UI | Driver próprio do INA226 (I2C 0x41, shunt 5 mΩ), ícone com percentual e popup de detalhes na barra, estados Carregando/Na tomada/Na bateria/Somente cabo, corte de carga em 90% via `CHG_EN` com retomada em 85% e switch persistido em NVS |
 | `[x]` | **Fase 37** | Persistência do Volume Geral de Áudio | Sistema / Áudio / UI | Volume geral (menu Configuração e app Música) salvo ao soltar o slider em NVS (`tab5/volume`) e SD (`/sdcard/tab5_os/audio.cfg`), restaurado no boot via lazy-load no player, seguindo o padrão do brilho (`display_storage`) |
 | `[x]` | **Fase 38** | Ajustes de Usabilidade do Menu de Configuração | Sistema / UI | Painel alargado de 230 px para 320 px eliminando texto cortado, e trilha dos sliders visível nos dois temas (`text_muted` com 40% de opacidade em `LV_PART_MAIN`) no Brilho/Volume do menu e no app Música |
+| `[x]` | **Fase 39** | Screenshot pela Barra do Sistema | Sistema / UI | Snapshot lógico RGB565 da tela ativa + blend alpha do `layer_top`, gravação BMP 24-bit assíncrona em `/sdcard/screenshots` com flash e toast, e `decode_bmp` da Galeria corrigido (escala por potências de 2 e stride correto) |
+| `[x]` | **Fase 40** | Simulador Host SDL e Regressão Visual da UI | Qualidade / Testes | UI real (shell + apps) compilada sobre o LVGL vendido com backend SDL2 720×1280, 15 cenários comparados contra imagens douradas determinísticas, comparador com tolerância e PNGs de diff |
+| `[x]` | **Fase 42** | Aplicativo Calendário Mensal | Aplicativo / Shell / UI | Popup mensal acionado pela data/hora, aplicativo em tela dedicada, navegação entre meses, integração com desktop e regressão visual |
 
 
 ---
@@ -769,7 +772,7 @@ Exemplos:
   - Fundo completamente preto (`#000000`) cobrindo 100% da área útil da tela.
   - Tipografia clara em alto contraste: branco puro (`#FFFFFF`) ou cinza suave (`#D0D0D0`).
   - **Em destaque principal**: **Hora atual** (tamanho grande/bold, formato `HH:MM:SS`) e **Data completa** (ex: `Segunda-feira, 17 de Agosto de 2026`).
-  - Nome do sistema operacional e versão em texto secundário discreto (`tab5-os v0.3.0`).
+  - Nome do sistema operacional e versão em texto secundário discreto (`tab5-os v0.4.0`).
 - **Mecanismo Anti-Burn-in (Relocação a cada 30 segundos)**:
   - Timer periódico de 30 segundos (`lv_timer_t`) que sorteia novas coordenadas `(x, y)` para o bloco de texto.
   - **Cálculo de Bounding Box Seguro**: As coordenadas sorteadas respeitam estritamente os limites da resolução ativa (`x_max = screen_w - block_w - margin`, `y_max = screen_h - block_h - margin`), garantindo que **nenhuma informação seja cortada** nas bordas da tela.
@@ -807,14 +810,14 @@ components/app/
 ┌─────────────────────────────────────────────────────────┐
 │                                                         │
 │        ┌─────────────────────────────┐                  │
-│        │  tab5-os v0.3.0             │                  │
+│        │  tab5-os v0.4.0             │                  │
 │        │  19:45:30                   │  ← Posição (x1, y1)
 │        │  Domingo, 16 de Agosto      │     no tempo T = 0s
 │        └─────────────────────────────┘                  │
 │                                                         │
 │                                                         │
 │                      ┌─────────────────────────────┐    │
-│                      │  tab5-os v0.3.0             │    │
+│                      │  tab5-os v0.4.0             │    │
 │                      │  19:46:00                   │    │ ← Nova posição (x2, y2)
 │                      │  Domingo, 16 de Agosto      │    │    no tempo T = 30s
 │                      └─────────────────────────────┘    │
@@ -1551,7 +1554,7 @@ main/
 
 ---
 
-# [ ] Fase 30: Testes Unitários Automáticos com Cobertura ≥80% `⏳ PLANEJADO`
+# [x] Fase 30: Testes Unitários Automáticos com Cobertura ≥80% `✅ IMPLEMENTADO`
 
 ## 1. Contexto & Objetivos
 O projeto `tab5-os` (firmware ESP-IDF para ESP32-P4) **não possui nenhum teste automatizado** — cobertura atual é **0%**. O Quality Gate do CI (`quality-gate.yml`) hoje cobre apenas **build**, **lint** (clang-tidy/cppcheck) e **codeql**, sem job de teste.
@@ -1622,13 +1625,13 @@ O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cob
 | Custo-benefício | Foco em código onde bugs de lógica (parsing, orientação, registro de apps, shell) têm maior risco e retorno, sem mockar WiFi/BLE/LVGL |
 
 ## 7. Fases de Execução da Funcionalidade
-1. Criar `tests/host/CMakeLists.txt` + `stubs/` + `mocks/` (layer mínimo p/ compilar os 9 módulos, com `--wrap`).
-2. Escrever testes do **Grupo A** (5 módulos).
-3. Escrever testes do **Grupo B** (4 módulos) com redirect `/sdcard`→tmpdir.
-4. Criar `tools/ci/run_host_tests.sh` + `lcovrc` com gate 80%.
-5. Adicionar job `test` ao quality-gate + upload de artefato do relatório.
-6. Validar localmente: rodar o script, medir %, ajustar testes até ≥80%.
-7. Rodar pre-commit (clang-format/codespell/cmake-lint) nos novos arquivos.
+- [x] **Etapa 1 — Infraestrutura host**: `tests/host/CMakeLists.txt` (GoogleTest via FetchContent, `--coverage`, `-Wl,--wrap=fopen/open/mkdir`) + `stubs/` + `mocks/` (NVS em memória, redirect `/sdcard`→tmpdir, `bsp_sdcard_mount` no-op).
+- [x] **Etapa 2 — Testes do Grupo A**: `test_orientation`, `test_file_assoc`, `test_app_registry`, `test_terminal_cmd` (tmpdir real como cwd) e `test_timezone_mgr`.
+- [x] **Etapa 3 — Testes do Grupo B**: `test_wifi_storage`, `test_bt_storage` (cache resetado via `save_all` por teste), `test_ai_storage` e `test_display_storage`.
+- [x] **Etapa 4 — Gate local**: `tools/ci/run_host_tests.sh` + `tools/ci/lcovrc`; métrica restrita aos `.cpp` de produção via `--extract`.
+- [x] **Etapa 5 — CI**: job `test` no `quality-gate.yml` (ubuntu-latest, apt g++/cmake/lcov) com resumo e artefato HTML do relatório.
+- [x] **Etapa 6 — Validação local**: 84 testes aprovados; cobertura de **92,4% de linhas** (866/937) sobre os 9 módulos — gate ≥80% atendido.
+- [x] **Etapa 7 — Qualidade**: pre-commit (clang-format/cmake-lint/codespell) aprovado nos novos arquivos.
 
 ## 8. Critérios de Validação
 1. `tools/ci/run_host_tests.sh` roda no host e exibe relatório `lcov` com **≥80% de linhas** no conjunto-alvo.
@@ -1636,8 +1639,10 @@ O `lcovrc` exclui `stubs/`, `mocks/` e `tests/` do relatório → a métrica cob
 3. O job `test` do GitHub Actions executa no PR e bloqueia merge se a cobertura cair abaixo de 80%.
 4. Nenhum código de produção foi modificado para viabilizar os testes (usando stubs + `--wrap`).
 
-## 9. Status de Conclusão: `[ ] PLANEJADO`
-- Plano arquitetado e especificado, aguardando início de implementação.
+## 9. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Suíte host-native operacional**: 84 testes GoogleTest cobrindo os 9 módulos-alvo (lógica pura + persistência), rodando em segundos sem hardware.
+- **Cobertura 92,4%** de linhas sobre o núcleo testável (meta ≥80%), com relatório lcov/genhtml e gate aplicado localmente e no Quality Gate.
+- **Zero alterações em código de produção**: isolamento garantido por stubs de headers ESP-IDF/LVGL, NVS mockado e redirecionamento de `/sdcard` via `--wrap` do linker.
 
 ---
 
@@ -2058,6 +2063,283 @@ components/os/
 
 ---
 
+# [x] Fase 39: Screenshot pela Barra do Sistema `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- O Tab5 OS não tinha forma nativa de capturar a tela; prints exigiam fotografar o painel ou acessar via fileserver.
+- Objetivo: botão de captura na barra do sistema que grava a imagem exatamente como exibida (barra superior, teclado, modais e overlays incluídos) no cartão microSD, visível no visualizador do dispositivo.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Fonte da captura | `lv_snapshot_take` da tela ativa (RGB565) + `lv_snapshot_take` do `layer_top` (ARGB8888) com blend por alpha | Primeira tentativa (dump do framebuffer MIPI-DSI com transposição física→lógica) falhou: a varredura do painel tem compensação de montagem que invertia o retrato em 180°. O snapshot é feito na orientação lógica, correto por construção em qualquer rotação (0/90/180/270), e o blend do `layer_top` garante barra, teclado e modais na imagem |
+| D2 | Habilitação da API | `CONFIG_LV_USE_SNAPSHOT=y` no sdkconfig e sdkconfig.defaults | Snapshot vem desabilitado por padrão no Kconfig do LVGL 9 |
+| D3 | Gravação | Task one-shot FreeRTOS gravando BMP 24-bit linha a linha (RGB565→BGR888) em `/sdcard/screenshots` | Evita travar a UI ~1–3 s de escrita no SD; conversão streaming gasta só uma linha de buffer interno (3,8 KB); pasta na raiz do SD para acesso direto |
+| D4 | Feedback | Flash branco overlay (~300 ms) imediato + toast com resultado (2,5 s) | Confirmação visual padrão de sistemas desktop; toast informa nome do arquivo ou falha; flash criado APÓS o snapshot para não sair na foto |
+| D5 | Visualizador | `decode_bmp` da Galeria escala por potências de 2 até caber em 640×640 e usa stride = largura final | Antes cortava a parte direita/inferior e não atualizava as dimensões do canvas; prints em retrato ficavam distorcidos (stride 640 em canvas de 360) |
+
+## 3. Estrutura de Arquivos & Componentes
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `components/os/core/screenshot.{h,cpp}` | Snapshot duplo + blend alpha, flash, task de gravação BMP e toast de resultado |
+| `components/os/shell/ui_bar.cpp` | Botão de câmera após a engrenagem, callback e tema |
+| `components/os/CMakeLists.txt` | Registro de `core/screenshot.cpp` |
+| `components/apps/gallery/ui_gallery.cpp` | `decode_bmp` com escala por potências de 2, stride correto e teto 640×640 |
+| `sdkconfig` / `sdkconfig.defaults` | `CONFIG_LV_USE_SNAPSHOT=y` |
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Módulo core**: captura, flash, writer task, BMP 24-bit bottom-up e toast.
+- [x] **Etapa 2 — UI**: ícone `LV_SYMBOL_IMAGE` à esquerda, após a engrenagem, com tema claro/escuro.
+- [x] **Etapa 3 — Correção de orientação**: dump do fb físico substituído por snapshot lógico + blend do `layer_top` (retrato saía invertido 180° pela compensação de montagem do painel).
+- [x] **Etapa 4 — Galeria**: `decode_bmp` com escala e stride corretos para imagens maiores que o canvas.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Pico de memória no snapshot duplo (base + ARGB8888 + destino ≈ 6–7 MB PSRAM) | Buffers liberados imediatamente após o blend; PSRAM de 32 MB comporta com folga |
+| Escrita SD lenta congelando UI | Gravação fora da task LVGL; captura síncrona custa só snapshot + blend (~100 ms) |
+| Flash/toast aparecendo no print | Flash criado após o snapshot; toast só existe após a gravação |
+| `layer_top` com dimensões diferentes da tela | Blend pulado com warning; print sai sem barra em vez de corrompido |
+
+## 6. Critérios de Validação & Teste em Hardware
+
+1. Print com app aberto: conteúdo, barra superior e relógio corretos, sem espelhamento. ✓
+2. Print nas orientações retrato e paisagem (IMU): imagens orientadas corretamente. ✓
+3. Arquivo `.bmp` abre no PC (via fileserver) com cores fiéis; toast mostra o nome gerado. ✓
+4. Print abre no visualizador do dispositivo sem corte nem distorção, nas duas orientações. ✓
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Validado em hardware real** (ago/2026): prints corretos em retrato e paisagem, salvos em `/sdcard/screenshots`, visualizados no PC e no visualizador do Tab5.
+
+---
+
+# [x] Fase 40: Simulador Host SDL e Regressão Visual da UI `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Toda validação da interface era manual, em hardware real — regressões visuais de layout, tema e fluxo de apps só apareciam depois do flash no Tab5.
+- Objetivo: compilar a **UI real** (`os/shell` + apps) em um binário host com backend **SDL2** (janela 720×1280 RGB565), executar cenários automatizados (boot, desktop, abertura de cada app, power menu) e comparar capturas BMP contra **imagens douradas** versionadas, tornando regressões visulares detectáveis sem hardware.
+- Ferramenta de regressão manual: roda em segundos na máquina do desenvolvedor; não é job de CI (depende de display para o backend SDL).
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Compilação da UI | LVGL vendido (`managed_components/lvgl__lvgl`) + `lv_sdl_window` + shims de BSP/FreeRTOS/ESP-IDF | Exerce o código de produção de verdade (shell, desktop, apps), não uma réplica |
+| D2 | Acesso a `/sdcard` | Extensão dos wraps de link para `opendir`/`stat` (além de `fopen`/`open`/`mkdir`) redirecionando para tmpdir | Galeria/Arquivos/Terminal listam diretórios via POSIX; zero alteração no código de produção |
+| D3 | Determinismo | Relógio congelado (`--wrap=time/localtime_r`, época fixa, TZ −3 → 21:00) e `srand(42)` | Duas execuções consecutivas produzem capturas idênticas — pré-requisito para comparação byte a byte com tolerância |
+| D4 | Comparação | Pillow com tolerância dupla: ≤0,5% dos pixels divergentes E delta RGB por canal ≤48 | Absorve anti-aliasing/redesenho benigno; falha grava PNG com as regiões diferentes em vermelho e relatório |
+| D5 | Goldens versionados | BMPs commitados em `tests/simulator/goldens/<cenario>/` | Mudança visual intencional exige regeneração explícita (`--update-goldens`) e revisão no diff |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+tests/simulator/
+├── CMakeLists.txt          # Build standalone: LVGL vendido + SDL2 + wraps de link
+├── lv_conf.h               # LVGL do simulador (RGB565, SDL, snapshot, malloc clib)
+├── main.cpp                # Boot da UI, modo interativo e runner de cenários
+├── README.md               # Uso, dependências e teclas do modo interativo
+├── scenarios/              # 15 cenários + injeção de clique SDL e fixtures
+├── shims/                  # BSP/FreeRTOS/esp_* stubs, sim_time (relógio congelado), sim_capture
+└── goldens/<cenario>/      # Imagens de referência 01_*.bmp (versionadas)
+tests/host/mocks/
+└── link_wrappers.cpp       # [MODIFY] Wraps estendidos com opendir/stat
+tools/ci/
+├── run_sim_tests.sh        # Orquestra build + cenários + comparação (--scenario, --update-goldens)
+└── compare_images.py       # Comparador com tolerância, PNGs de diff e relatório
+```
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Infraestrutura**: CMake standalone com LVGL vendido, `lv_conf.h` próprio e shims de BSP/FreeRTOS/ESP-IDF; janela SDL 720×1280 RGB565.
+- [x] **Etapa 2 — Determinismo**: relógio congelado via wrap de `time`/`localtime_r`, seed fixa de RNG e capturas após `lv_refr_now`.
+- [x] **Etapa 3 — Cenários**: 15 cenários (desktop, power menu, settings e os 12 apps) com injeção de clique SDL e fixtures no tmpdir.
+- [x] **Etapa 4 — Redirecionamento completo de `/sdcard`**: wraps `opendir`/`stat` adicionados aos testes host e ao simulador (galeria exibindo foto real do fixture).
+- [x] **Etapa 5 — Comparador e orquestrador**: `compare_images.py` (tolerância, diffs, relatório) e `run_sim_tests.sh` (`--scenario`, `--update-goldens`).
+- [x] **Etapa 6 — Validação**: duas execuções consecutivas completas com 15/15 PASS; suíte host-native segue 84/84 após a extensão dos wraps.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Backend SDL sem display disponível (CI/headless) | Regressão é ferramenta local; `SDL_VIDEODRIVER=dummy` não cria display LVGL e não é suportado |
+| Processo do simulador travado em loop de render | `gnutimeout -k 2` + `pkill -9 -x tab5_sim` entre cenários (SIGTERM não é entregue no loop) |
+| Falso negativo por anti-aliasing entre execuções | Tolerância dupla (0,5% dos pixels, delta RGB 48) medida pixel a pixel |
+| Fixture ausente distorcendo o golden | Fixtures criados dentro do próprio cenário (ex.: `mkdir /sdcard/imagens` antes do BMP da galeria) |
+
+## 6. Critérios de Validação
+
+1. `tools/ci/run_sim_tests.sh` executa os 15 cenários e reporta 15 PASS com exit 0. ✓
+2. Duas execuções consecutivas produzem resultados idênticos (determinismo). ✓
+3. Suíte host-native (`tools/ci/run_host_tests.sh`) permanece 84/84 com cobertura ≥80% após os novos wraps. ✓
+4. Falha induzida grava PNG de diff destacando as regiões divergentes em vermelho. ✓
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Regressão visual operacional**: 15 cenários dourados determinísticos, comparador com relatório de diffs e orquestrador único; detalhes de uso em `tests/simulator/README.md`.
+
+---
+
+# [x] Fase 41: Confiabilidade da Conexão Bluetooth HID `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Mouse BLE (Logitech Lift) aparecia no scan do app Bluetooth mas a conexão falhava em silêncio: o botão "Conectar" voltava ao estado inicial sem explicação.
+- Causas raiz: `bt_mgr_connect` retornava `ESP_OK` mesmo quando o procedimento GAP falhava ou estava ocupado; o dispositivo era persistido como "pareado" antes de conectar de verdade; slot de conexão órfão bloqueava rescan/reconexão; auto-conect monopolizava o GAP; MAC rotativo (RPA) dos Logitech tornava o endereço salvo stale.
+- Objetivo: fluxo de conexão honesto com feedback real na UI, reconexão confiável entre reboots e roteamento HID pelo Report Map real do dispositivo (em vez de Report IDs fixos no código).
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Resultado de conexão | Callback `bt_conn_cb_t` (`bt_mgr_set_conn_callback`) com eventos STARTED/CONNECTED/READY/FAILED/DISCONNECTED | NimBLE reporta sucesso/falha assincronamente via eventos GAP; a UI precisa do resultado real, não do "aceito" do início do procedimento |
+| D2 | Persistência como pareado | Só após inicialização HID concluída (GAP + descoberta GATT + CCCDs gravados) | Um tap não pode marcar o dispositivo como pareado — era isso que criava o loop de auto-conect contra um endereço inválido |
+| D3 | Endereço de reconexão | `peer_id_addr` capturado pós-bonding e gravado no bt.cfg | O RPA rotaciona a cada anúncio; o endereço identidade é estável. Remapeamento por nome cobre o intervalo até o novo anúncio |
+| D4 | Backoff de auto-conect | 15 s por MAC após falha, ignorado quando o cancelamento foi intencional (scan/forget/disconnect) | Evita martelar o controlador e monopolizar o procedimento GAP durante os 30 s de timeout |
+| D5 | Parser de Report Map | Unidade pura (`hid_report_map.cpp`, sem dependências ESP) testada em host; roteamento por report ID com heurísticas legadas como fallback | Mouses compostos (teclado+mouse+consumer+system+vendor) usam IDs diferentes dos fixos 0x01/0x02; parser testável sem hardware |
+| D6 | Bonding em NVS | `CONFIG_BT_NIMBLE_NVS_PERSIST=y` + transporte HCI exclusivamente VHCI (`BT_NIMBLE_TRANSPORT_UART=n`) + `esp_hosted_bt_controller_init/enable()` explícitos | Chaves sobrevivem ao reboot; elimina ambiguidade UART/VHCI do Kconfig; controller do C6 nasce desligado desde esp-hosted 2.5.2 |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/core/
+├── bt_mgr.h               # [MODIFY] bt_conn_event_t, bt_conn_cb_t, bt_mgr_set_conn_callback
+├── bt_mgr.cpp             # [MODIFY] Fluxo honesto, backoff, slots, persistência tardia, Report Map
+├── hid_report_map.h/.cpp  # [NEW] Parser puro de descritor HID (report ID → mouse/teclado/consumer)
+components/apps/bluetooth/
+└── ui_bluetooth.cpp       # [MODIFY] Estado "Conectando...", fila de eventos NimBLE→LVGL, erros reais
+tests/host/src/
+└── test_bt_report_map.cpp # [NEW] 11 testes do parser (boot, composto Logitech, truncado, item longo)
+```
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Gerenciador honesto**: `bt_mgr_connect` propaga erro real (ocupado/controlador recusou), remove slot pendente na falha, não grava no bt.cfg no tap; persistência apenas quando os CCCDs são gravados (HID pronto).
+- [x] **Etapa 2 — Canal de erro para a UI**: callback de eventos de conexão marshalled para a task LVGL (fila circular + `lv_async_call`); status mostra "Conectando…", "Tempo esgotado", "Falha na conexão (rc=N)" e o botão fica guardado durante a tentativa.
+- [x] **Etapa 3 — Auto-reconexão robusta**: backoff de 15 s por MAC, guarda de pendência ativa, remapeamento do MAC rotativo por nome no anúncio, slots liberados na desconexão/falha/reset do host.
+- [x] **Etapa 4 — Infra BT**: bonding persistente em NVS, VHCI explícito no sdkconfig.defaults (sdkconfig regenerado), controller BT do C6 inicializado/habilitado antes do host stack.
+- [x] **Etapa 5 — Report Map**: leitura GATT da característica 0x2A4B, parser de itens HID e roteamento das notificações pelo tipo real (mouse/teclado/consumer); heurísticas antigas preservadas para dispositivos sem mapa parseável.
+- [x] **Etapa 6 — Validação**: 98/98 testes host (+14 do parser), cobertura 93%, build firmware OK, regressão visual 15/15 PASS.
+- [x] **Etapa 7 — Ajustes pós-validação em hardware (Lift real)**: cursor exibido no evento READY (`ui_mouse_set_connected(true)` quando o slot é mouse); leitura do Report Map movida para o fim da inicialização HID (`read_report_map_if_needed`, reutilizada também no ENC_CHANGE); fallback que decodifica o payload composto de 7 bytes `[botões u16 | X/Y 12 bits | wheel | pan]` quando o firmware do Lift expõe um Report Map proprietário (22 bytes) que o parser não classifica; classificação por nome (`lift`/`mouse`/`trackpad`) na persistência e ícone de periférico correto na listagem sem exigir novo pareamento.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Dispositivo sem Report Map parseável (mapa truncado pela MTU) | Parser tolerante a truncamento + heurísticas legadas mantidas como fallback |
+| Teclado com modificador pressionado cair na heurística errada | Roteamento por ID tem precedência; guards `!kbd_routed` nos heurísticos de touchpad evitam engolir IDs 0x05/0x07 |
+| Consumer reports (volume/mídia) ainda sem ação na UI | Registrados em log para mapeamento futuro |
+| `esp_hosted_misc.h` sem `extern "C"` | Include envolvido manualmente em `extern "C"` dentro do bt_mgr |
+| Auto-conect contra dispositivo desligado | Backoff por MAC impede martelada; escuta passiva retomada após o período |
+
+## 6. Critérios de Validação
+
+1. `tools/ci/run_host_tests.sh`: 98/98 testes, cobertura 93,0% ≥ 80%. ✓
+2. `idf.py build` conclui com sdkconfig regenerado (`NVS_PERSIST=y`, `TRANSPORT_UART is not set`). ✓
+3. `tools/ci/run_sim_tests.sh`: 15/15 cenários visuais PASS (stub `bt_mgr_set_conn_callback` no simulador). ✓
+4. Hardware: parear o Lift → cursor aparece ao atingir READY e se move via fallback do payload composto de 7 bytes; reboot → reconexão automática sem re-pairing; listagem exibe ícone de mouse. ✓ (validado em dispositivo real)
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Fluxo de conexão honesto**: UI reflete o estado real (conectando/conectado/pronto/falhou), dispositivos só viram "pareados" depois de prontos, e o parser de Report Map torna o suporte HID independente de Report IDs fixos.
+- **Validado em hardware (Logitech Lift)**: conexão, cursor ativo em todas as rotações, reconexão automática pós-reboot e classificação correta como mouse — cobrindo também firmwares que anunciam Report Map proprietário não parseável.
+
+---
+
+# [x] Fase 42: Aplicativo Calendário Mensal `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+
+- Disponibilizar uma consulta rápida do mês atual a partir do relógio/data da
+  barra superior.
+- Disponibilizar também um aplicativo Calendário com ícone próprio no desktop,
+  ocupando toda a área útil da tela.
+- Nesta primeira versão não haverá eventos, lembretes ou persistência; o foco é
+  a visualização mensal, navegação e integração com o shell.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Widget mensal | Implementação própria sobre LVGL | Não há `lv_calendar` configurado ou utilizado no projeto; uma grade própria evita dependência indisponível |
+| D2 | Lógica de datas | Módulo puro `calendar_logic` | Permite testar ano bissexto, deslocamento do primeiro dia e transição de ano sem dependência de LVGL |
+| D3 | Renderização | `ui_calendar_view` compartilhada | O popup e o aplicativo dedicado devem exibir a mesma grade e comportamento |
+| D4 | Origem da data | `timezone_mgr_get_localtime()` | Mantém o calendário consistente com o relógio da barra, RTC e configuração de fuso existente |
+| D5 | Popup | Overlay no `lv_layer_top()` | Mantém o calendário disponível sem trocar a tela ativa e permite fechar ao tocar fora |
+| D6 | Aplicativo | Registro padrão em `app_registry` | O ícone próprio aparece automaticamente no desktop e segue o ciclo de vida do `ui_shell` |
+| D7 | Semana | Domingo como primeira coluna | Mantém a leitura no padrão brasileiro e deixa a decisão encapsulada no renderer |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/core/
+├── calendar_logic.h/.cpp       # [NEW] Cálculo puro de meses e dias
+components/os/shell/
+├── ui_calendar_view.h/.cpp     # [NEW] Grade LVGL reutilizável
+├── ui_bar.cpp                  # [MODIFY] Clique na data/hora e popup mensal
+├── ui_shell.h/.cpp             # [MODIFY] Ciclo de vida da tela do calendário
+components/apps/calendar/
+├── ui_calendar.h               # [NEW] API da aplicação
+└── ui_calendar.cpp             # [NEW] App, manifesto e tela dedicada
+tests/host/src/
+└── test_calendar_logic.cpp     # [NEW] Testes de datas e navegação
+tests/simulator/scenarios/
+└── sim_scenarios.cpp           # [MODIFY] Cenários popup e app Calendário
+```
+
+## 4. Etapas de Implementação
+
+- [x] **Etapa 1 — Lógica de calendário**: criar `calendar_logic` com cálculo de
+  dias por mês, ano bissexto, dia inicial, navegação mês/ano e nomes dos meses.
+- [x] **Etapa 2 — Visual compartilhado**: criar `ui_calendar_view` com cabeçalho,
+  botões anterior/próximo, sete colunas, destaque do dia atual e atualização de
+  tema/layout.
+- [x] **Etapa 3 — Popup da barra**: tornar a área da data/hora clicável, abrir o
+  overlay no `lv_layer_top()`, posicioná-lo sem sair da tela e fechá-lo ao tocar
+  fora, ao ocultar a barra ou ao abrir outro menu.
+- [x] **Etapa 4 — Aplicativo dedicado**: criar `ui_calendar`, manifesto com ID
+  `calendar`, nome `Calendário`, ícone próprio e tela usando `ui_app_bar` mais a
+  área útil restante.
+- [x] **Etapa 5 — Integração no shell**: registrar o app, criar sua tela,
+  implementar `ui_shell_open_calendar`/`close_calendar`, refresh de tema e
+  encaminhamento de layout.
+- [x] **Etapa 6 — Build e testes host**: incluir os novos fontes nos CMakeLists e
+  testar meses, anos bissextos, mudanças de ano, limites e datas inválidas.
+- [x] **Etapa 7 — Simulador**: adicionar cenários `calendar_popup` e
+  `app_calendar`, incluindo navegação mensal, e gerar goldens determinísticos.
+- [x] **Etapa 8 — Validação**: executar testes host, build do simulador, regressão
+  visual, build ESP-IDF e validação no hardware nas quatro orientações.
+
+## 5. Critérios de Aceite
+
+1. Clicar na data/hora abre o mês atual em um popup legível e fecha ao tocar
+   fora.
+2. O ícone Calendário aparece no desktop e abre uma tela dedicada na área útil
+   completa.
+3. A navegação funciona entre dezembro/janeiro e todos os meses respeitam a
+   quantidade correta de dias.
+4. O dia atual e o tema claro/escuro são refletidos corretamente.
+5. Popup e app funcionam em retrato e paisagem sem cobrir ou deslocar
+   incorretamente a barra do sistema.
+6. Testes host-native e cenários do simulador passam sem regressões visuais.
+
+## 6. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Grade não caber em paisagem ou retrato | Layout baseado na resolução disponível, com células flexíveis e limites de tamanho |
+| Popup conflitar com menus da barra | Função única de fechamento e criação no mesmo layer, fechando overlays anteriores |
+| Data divergente do relógio | Usar exclusivamente `timezone_mgr_get_localtime()` e congelar o tempo no simulador |
+| Texto de mês não existir na fonte | Usar nomes PT-BR compatíveis com Latin-1 ou fornecer fallback ASCII controlado |
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+
+- **Lógica e renderização**: Módulo de data pura `calendar_logic` com cobertura de 100% dos testes e grade compartilhada `ui_calendar_view` responsiva e adaptável aos temas claro/escuro.
+- **Popup e App**: Popup instantâneo via clique na data/hora na barra do sistema e aplicativo nativo registrado no launcher dinâmico.
+- **Qualidade e validação**: Cobertura de testes host em 92.7% (>= 80%), 17 cenários do simulador SDL aprovados (0 falhas), `pre-commit` 100% aprovado e build ESP-IDF do firmware concluído com sucesso.
+
+---
+
 ## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)
 
 > [!NOTE]
@@ -2066,7 +2348,6 @@ components/os/
 | Aplicação | Descrição Simplificada |
 |---|---|
 | **Calculadora** | Calculadora simples com botões em grade e histórico de operações. |
-| **Calendário / Agenda** | Visão mensal com lembretes persistidos no microSD, usando o RTC RX8130CE. |
 | **Cronômetro / Timer / Alarme** | Temporizadores com aviso sonoro via ES8388, aproveitando o RTC. |
 | **Jogo simples (Snake / 2048)** | Jogo leve para demonstrar loop de animação e entrada por toque. |
 | **Desenho / Pintura (Canvas)** | Tela de desenho livre com toque/mouse e salvamento de imagem no SD. |

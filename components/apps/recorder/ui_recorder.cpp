@@ -206,7 +206,7 @@ void show_delete_modal(const std::string &filepath, const std::string &filename)
 
     lv_obj_t *title = lv_label_create(confirm_modal);
     lv_label_set_text(title, "Excluir Gravação?");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(pal->text), 0);
 
     lv_obj_t *msg = lv_label_create(confirm_modal);
@@ -215,7 +215,7 @@ void show_delete_modal(const std::string &filepath, const std::string &filename)
     char buf[128];
     snprintf(buf, sizeof(buf), "Deseja excluir \"%s\"?", filename.c_str());
     lv_label_set_text(msg, buf);
-    lv_obj_set_style_text_font(msg, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(msg, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(msg, lv_color_hex(pal->text_muted), 0);
 
     lv_obj_t *btn_row = lv_obj_create(confirm_modal);
@@ -313,7 +313,7 @@ void render_recordings_list(void)
     if (s_recordings.empty()) {
         empty_label = lv_label_create(list_container);
         lv_label_set_text(empty_label, "Nenhuma gravação em /sdcard/gravacoes/");
-        lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(empty_label, lv_color_hex(pal->text_muted), 0);
         lv_obj_set_style_pad_all(empty_label, 12, 0);
         return;
@@ -321,7 +321,7 @@ void render_recordings_list(void)
 
     for (const auto &item : s_recordings) {
         lv_obj_t *row = lv_obj_create(list_container);
-        lv_obj_set_size(row, lv_pct(100), 52);
+        lv_obj_set_size(row, lv_pct(100), 64);
         lv_obj_set_style_bg_color(row, lv_color_hex(pal->surface), 0);
         lv_obj_set_style_border_color(row, lv_color_hex(pal->border), 0);
         lv_obj_set_style_border_width(row, 1, 0);
@@ -334,7 +334,8 @@ void render_recordings_list(void)
 
         /* Icone e Nome */
         lv_obj_t *info_col = lv_obj_create(row);
-        lv_obj_set_size(info_col, lv_pct(65), lv_pct(100));
+        lv_obj_set_flex_grow(info_col, 1);
+        lv_obj_set_height(info_col, LV_SIZE_CONTENT);
         lv_obj_set_style_bg_opa(info_col, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(info_col, 0, 0);
         lv_obj_set_style_pad_all(info_col, 0, 0);
@@ -348,7 +349,7 @@ void render_recordings_list(void)
         lv_label_set_text(lbl_name, name_buf);
         lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_DOT);
         lv_obj_set_width(lbl_name, lv_pct(100));
-        lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_14_latin1, 0);
+        lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(lbl_name, lv_color_hex(pal->text), 0);
 
         lv_obj_t *lbl_sub = lv_label_create(info_col);
@@ -359,11 +360,12 @@ void render_recordings_list(void)
             snprintf(sz_buf, sizeof(sz_buf), "%.2f MB", (float)item.size_bytes / (1024.0F * 1024.0F));
         }
         lv_label_set_text(lbl_sub, sz_buf);
+        lv_obj_set_style_text_font(lbl_sub, &lv_font_montserrat_18_latin1, 0);
         lv_obj_set_style_text_color(lbl_sub, lv_color_hex(pal->text_muted), 0);
 
         /* Acoes: Play e Trash */
         lv_obj_t *actions_row = lv_obj_create(row);
-        lv_obj_set_size(actions_row, lv_pct(32), lv_pct(100));
+        lv_obj_set_size(actions_row, LV_SIZE_CONTENT, lv_pct(100));
         lv_obj_set_style_bg_opa(actions_row, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(actions_row, 0, 0);
         lv_obj_set_style_pad_all(actions_row, 0, 0);
@@ -372,9 +374,9 @@ void render_recordings_list(void)
         lv_obj_set_flex_align(actions_row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
         lv_obj_t *btn_p = lv_button_create(actions_row);
-        lv_obj_set_size(btn_p, 40, 36);
+        lv_obj_set_size(btn_p, 44, 40);
         lv_obj_set_style_bg_color(btn_p, lv_color_hex(pal->accent_soft), 0);
-        lv_obj_set_style_radius(btn_p, 6, 0);
+        lv_obj_set_style_radius(btn_p, 8, 0);
         lv_obj_add_event_cb(btn_p, play_item_cb, LV_EVENT_CLICKED, (void *)item.fullpath.c_str());
         lv_obj_t *lbl_p = lv_label_create(btn_p);
         lv_label_set_text(lbl_p, LV_SYMBOL_PLAY);
@@ -382,9 +384,9 @@ void render_recordings_list(void)
         lv_obj_center(lbl_p);
 
         lv_obj_t *btn_t = lv_button_create(actions_row);
-        lv_obj_set_size(btn_t, 40, 36);
+        lv_obj_set_size(btn_t, 44, 40);
         lv_obj_set_style_bg_color(btn_t, lv_color_hex(pal->surface_alt), 0);
-        lv_obj_set_style_radius(btn_t, 6, 0);
+        lv_obj_set_style_radius(btn_t, 8, 0);
         lv_obj_set_style_margin_left(btn_t, 6, 0);
         lv_obj_add_event_cb(btn_t, delete_item_cb, LV_EVENT_CLICKED, (void *)item.fullpath.c_str());
         lv_obj_t *lbl_t = lv_label_create(btn_t);
@@ -590,7 +592,7 @@ lv_obj_t *ui_recorder_create(void)
 
     rec_title_label = lv_label_create(rec_card);
     lv_label_set_text(rec_title_label, "GRAVAÇÃO DE VOZ (MICROFONE)");
-    lv_obj_set_style_text_font(rec_title_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(rec_title_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(rec_title_label, lv_color_hex(pal->text_muted), 0);
 
     rec_time_label = lv_label_create(rec_card);
@@ -605,13 +607,13 @@ lv_obj_t *ui_recorder_create(void)
     lv_obj_add_event_cb(rec_action_btn, rec_action_btn_cb, LV_EVENT_CLICKED, nullptr);
     rec_action_label = lv_label_create(rec_action_btn);
     lv_label_set_text(rec_action_label, LV_SYMBOL_AUDIO "  Gravar");
-    lv_obj_set_style_text_font(rec_action_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(rec_action_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(rec_action_label, lv_color_white(), 0);
     lv_obj_center(rec_action_label);
 
     rec_info_label = lv_label_create(rec_card);
     lv_label_set_text(rec_info_label, "ES7210 - 16 kHz 16-bit WAV - Limite auto 5 min");
-    lv_obj_set_style_text_font(rec_info_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(rec_info_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(rec_info_label, lv_color_hex(pal->text_muted), 0);
 
     /* Card 2: Player de Audio */
@@ -631,7 +633,7 @@ lv_obj_t *ui_recorder_create(void)
     lv_label_set_text(play_file_label, "Nenhum áudio em reprodução");
     lv_label_set_long_mode(play_file_label, LV_LABEL_LONG_DOT);
     lv_obj_set_width(play_file_label, lv_pct(95));
-    lv_obj_set_style_text_font(play_file_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(play_file_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(play_file_label, lv_color_hex(pal->text), 0);
 
     play_bar = lv_bar_create(play_card);
@@ -685,7 +687,7 @@ lv_obj_t *ui_recorder_create(void)
 
     play_time_label = lv_label_create(play_ctrl_row);
     lv_label_set_text(play_time_label, "00:00 / 00:00");
-    lv_obj_set_style_text_font(play_time_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(play_time_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(play_time_label, lv_color_hex(pal->text_muted), 0);
 
     /* Card 3: Lista de Gravacoes */
@@ -704,7 +706,7 @@ lv_obj_t *ui_recorder_create(void)
 
     list_title_label = lv_label_create(list_card);
     lv_label_set_text(list_title_label, "Gravações Salvas (0)");
-    lv_obj_set_style_text_font(list_title_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(list_title_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(list_title_label, lv_color_hex(pal->text), 0);
 
     list_container = lv_obj_create(list_card);

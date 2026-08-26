@@ -222,7 +222,7 @@ void ui_keyboard_create(lv_obj_t *parent)
     lv_obj_set_size(keyboard, lv_pct(100), lv_pct(52));
     lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_mode(keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_obj_set_style_text_font(keyboard, &lv_font_montserrat_14_latin1, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(keyboard, &lv_font_montserrat_18_latin1, LV_PART_ITEMS);
 
     /* Pagina de acentos no modo SPECIAL (aberta pela tecla "1#"). */
     lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_SPECIAL, pt_br_map_spec, pt_br_ctrl_spec);

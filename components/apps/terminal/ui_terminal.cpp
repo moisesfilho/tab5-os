@@ -432,7 +432,7 @@ lv_obj_t *ui_terminal_create(void)
     lv_obj_set_style_radius(term_ta, 0, 0);
     lv_obj_set_style_border_width(term_ta, 0, 0);
     lv_obj_set_style_pad_all(term_ta, 10, 0);
-    lv_obj_set_style_text_font(term_ta, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(term_ta, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_anim_duration(term_ta, 500, LV_PART_CURSOR);
     lv_obj_add_event_cb(term_ta, textarea_event_cb, LV_EVENT_ALL, nullptr);
 

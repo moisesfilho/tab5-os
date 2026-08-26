@@ -1,7 +1,7 @@
 # tab5-os
 
 <p>
-  <img src="https://img.shields.io/badge/version-v0.3.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-v0.4.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/platform-ESP32--P4-blue" alt="Platform">
   <img src="https://img.shields.io/badge/ESP--IDF-v5.5.5-blue" alt="ESP-IDF">
@@ -12,8 +12,8 @@
 
 Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual keyboard, IMU-based auto-rotation, OS-style top bar with RTC clock and light/dark theme.
 
-## Features
-
+- **Monthly Calendar App & Top Bar Popup** — quick monthly calendar view triggered by tapping the date/time on the status bar (modal overlay popup on `lv_layer_top()`) or dedicated full-screen app on the Desktop with custom styled vector icon, structured grid view with vertical and horizontal separators, automatic highlighting of today's date in accent color, interactive date selection, fluid month/year navigation with December/January wrap-around, "Hoje" (Today) button, and full light/dark theme support
+- **System Bar Screenshot Capture** — camera icon in the top bar that captures the screen exactly as displayed (apps, system bar, virtual keyboard and modals) via LVGL snapshot of the active screen composed with the top layer (alpha blending), writing 24-bit BMP asynchronously to the SD card (`/sdcard/screenshots/print_YYYYMMDD_HHMMSS.bmp`), with a white confirmation flash, result toast, correct orientation across all 4 IMU rotations, and direct viewing in the Tab5 built-in viewer
 - **Voice Recorder & Audio Player App** — native voice recording via integrated microphones using the ES7210 ADC codec in standard WAV PCM 16-bit 16 kHz Mono format (`/sdcard/gravacoes/REC_YYYYMMDD_HHMMSS.wav`), automatic 5-minute safety timeout, audio player powered by the ES8388 DAC codec with real-time progress bar, chronological audio list with deletion modal, and direct association with `.wav` and `.pcm` files
 - **Camera App & V4L2/ISP Pipeline on ESP32-P4** — real-time 640×480 camera preview directly from SC202CS sensor over MIPI-CSI with hardware ISP acceleration, persistent V4L2 streaming architecture (`VIDIOC_STREAMON`/`VIDIOC_STREAMOFF`), ISP color correction matrix (CCM) clamping protection, and asynchronous JPEG photo capture via FreeRTOS task on SD card
 - **Photo Gallery App** — native photo viewer for JPEG images saved on the SD card (`/sdcard/photos/`), powered by high-performance Tiny JPEG Decompressor (TJpgDec) directly to PSRAM canvas buffer on LVGL 9, image navigation, and seamless integration with Camera and File Manager
@@ -27,7 +27,7 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 - **Anti-Burn-in Screensaver** — MIPI-DSI panel protection against image sticking, featuring a pure black background (`#000000`), prominent digital clock (`HH:MM:SS`), full date in Portuguese, OS version, intelligent random relocation every 30 seconds with safe bounding box across all 4 orientations (0°, 90°, 180°, 270°), temporary mouse cursor hiding, and instant wake-up on touch, keyboard, or mouse events
 - **Terminal App & Remote SSH Client** — Linux-style console shell integrated into the OS, with interactive prompt (`/sdcard $`), command history, support for core commands (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `rmdir`, `touch`, `cat`, `echo`, `clear`, `whoami`, `uname`, `help`) and **full SSH Client** (`ssh [user@]host [-p port]`) running on a dedicated asynchronous FreeRTOS task powered by `libssh`, VT100/xterm terminal emulation, masked password prompt, and robust ANSI/OSC sequence stripping
 - **Bluetooth Manager & Physical Keyboard (BLE HID)** — connection, pairing, and automatic reconnection with Bluetooth Low Energy peripherals (HOGP) like physical keyboards and combo touchpad/mice, direct keystroke injection into apps (e.g., Notes and Terminal), dynamic virtual keyboard hiding, and top-bar connection indicator
-- **Mouse & Touchpad BLE HID with Visual Pointer** — automatic detection of BLE mice and touchpads, high-visibility visual cursor on LVGL 9, navigation and clicks adapted to all screen orientations (0°, 90°, 180°, 270°), and tap-to-click gesture recognition
+- **Mouse & Touchpad BLE HID with Visual Pointer** — automatic detection of BLE mice and touchpads (including Logitech Lift composite reports), high-visibility visual cursor on LVGL 9 shown as soon as the HID transport is ready, navigation and clicks adapted to all screen orientations (0°, 90°, 180°, 270°), and tap-to-click gesture recognition
 - **File Manager ("Arquivos")** — SD card directory and file browser supporting interactive folder navigation, two view modes (Grid icons or Detailed list), and automatic opening of associated file types
 - **Notes App & File Associations** — integrated text editor with note creation, save modal with name suggestion/editing, and native opening/editing of `.txt` and `.cfg` files
 - **Advanced Wi-Fi Manager** — multi-network saved profiles in SD (`wifi.cfg`), intelligent mesh BSSID deduplication (keeping the highest RSSI), connected and saved visual badges, and connect/disconnect/forget network actions
@@ -35,10 +35,41 @@ Proof-of-concept operating system for the **M5Stack Tab5** (ESP32-P4): virtual k
 - **Reactive window resizing** — application windows and modals automatically adapt their height and position when the virtual keyboard opens and closes
 - **Orientation Persistence** — display rotation is automatically saved to the SD card and restored upon boot
 - **OS-style top bar** — gear button, Wi-Fi status indicator, Bluetooth connection indicator, battery icon with percentage, and live clock in a monospaced font (`dd/mm/yyyy hh:mm`), with fixed width and right alignment that eliminate any sideways shifting when values change
-- **Auto-rotation by IMU** — BMI270 gravity vector drives `lv_display_set_rotation` (0/90/180/270) with debounce
 - **Settings menu** — quick panel integrated into the top bar with theme toggle (light/dark), screensaver timeout selector (Disabled, 1 min, 2 min, 5 min), automatic screen-off timeout (Disabled, 30 s, 1, 2, 5 and 10 min), IMU auto-rotation switch, independent power switches for Wi-Fi and Bluetooth with NVS persistence, battery charging protection (90% cutoff), persistent master volume control, radio control, and smart auto-reconnection
 - **RTC clock** — RX8130CE seeds the system clock at boot (`settimeofday`)
-- **Latin-1 font** — custom Montserrat 14px with the full Latin-1 supplement, so accented characters render correctly
+- **Latin-1 Typography & Optimized Touch Usability** — custom 18px Montserrat (general UI) and 18px JetBrains Mono (status bar clock) fonts with full Latin-1 supplement and LVGL symbols, providing crisp readability and generous touch targets on the high-density 720×1280 screen
+
+## Screen Gallery
+
+Reference captures generated by the visual regression simulator (`tests/simulator`), one per application plus the shell screens:
+
+| Bluetooth | Calendar |
+|-----------|-----------|
+| ![Bluetooth](docs/screenshots/app_bluetooth.png) | ![Calendar](docs/screenshots/app_calendar.png) |
+| Camera | Chat |
+|-----------|-----------|
+| ![Camera](docs/screenshots/app_camera.png) | ![Chat](docs/screenshots/app_chat.png) |
+| Files | File Server |
+|-----------|-----------|
+| ![Files](docs/screenshots/app_files.png) | ![File Server](docs/screenshots/app_fileserver.png) |
+| Gallery | Music |
+|-----------|-----------|
+| ![Gallery](docs/screenshots/app_gallery.png) | ![Music](docs/screenshots/app_music.png) |
+| Notes | Recorder |
+|-----------|-----------|
+| ![Notes](docs/screenshots/app_notas.png) | ![Recorder](docs/screenshots/app_recorder.png) |
+| Keyboard | Terminal |
+|-----------|-----------|
+| ![Keyboard](docs/screenshots/app_teclado.png) | ![Terminal](docs/screenshots/app_terminal.png) |
+| Wi-Fi | Desktop |
+|-----------|-----------|
+| ![Wi-Fi](docs/screenshots/app_wifi.png) | ![Desktop](docs/screenshots/shell_desktop.png) |
+| Settings | Power Menu |
+|-----------|-----------|
+| ![Settings](docs/screenshots/shell_settings.png) | ![Power Menu](docs/screenshots/shell_power.png) |
+| Calendar Popup |  |
+|-----------|-----------|
+| ![Calendar Popup](docs/screenshots/shell_calendar_popup.png) |  |
 
 ## Hardware
 
@@ -71,6 +102,8 @@ idf.py -p /dev/ttyACM0 monitor --no-reset
 Automated checks keep the firmware consistent and secure:
 
 - **pre-commit** — local hooks that run on every commit: `clang-format` (project C/C++ style), `cmake-lint` (CMakeLists) and `codespell` (typos, with PT-BR ignore list).
+- **Host-native unit tests** (`tools/ci/run_host_tests.sh`) — GoogleTest suite with 84 tests over the logic and persistence modules, gcov/lcov coverage with an ≥80% gate (currently 92.7%) and `/sdcard` redirection to a tmpdir via linker `--wrap`.
+- **Visual regression** (`tools/ci/run_sim_tests.sh`) — SDL simulator that runs the real UI in a 720×1280 window and compares screenshots against deterministic golden images for 17 scenarios; see [tests/simulator/README.md](tests/simulator/README.md).
 - **GitHub Actions**:
   - `ci.yml` — build with **ESP-IDF v5.5.5** (target `esp32p4`) + **clang-tidy** and **cppcheck** via `compile_commands.json`.
   - `codeql.yml` — static security analysis (SAST) with **CodeQL** (C/C++), manual `idf.py` build.
@@ -108,6 +141,7 @@ tab5-os/
 │   │   ├── shell/            # OS graphical interface (ui_shell, desktop, bar, screensaver, keyboard, theme)
 │   │   └── fonts/            # Compiled Latin-1 fonts
 │   ├── apps/                 # User Applications (Package by Feature)
+│   │   ├── calendar/         # Monthly calendar and grid view
 │   │   ├── camera/           # Camera app with MIPI-CSI preview & JPEG capture
 │   │   ├── gallery/          # JPEG Photo Viewer
 │   │   ├── notas/            # Text & Notepad editor
@@ -121,7 +155,10 @@ tab5-os/
 │   ├── m5stack_tab5/         # Local BSP (override of the official one)
 │   └── rtc_rx8130/           # RX8130CE RTC driver
 ├── tools/
-│   └── ci/                   # Local quality check scripts (clang-tidy, cppcheck, idf.py)
+│   └── ci/                   # Local quality check scripts (clang-tidy, cppcheck, idf.py, host tests, visual regression)
+├── tests/
+│   ├── host/                 # Host-native GoogleTest unit tests (≥80% coverage)
+│   └── simulator/            # SDL UI simulator + golden-image visual regression
 ├── docs/                     # Technical documentation & developer guides
 ├── .github/workflows/        # CI: Quality Gate (build + lint) and CodeQL
 ├── .clang-format             # Project C/C++ style
@@ -135,7 +172,7 @@ tab5-os/
 
 - Rotation uses a ~27° tilt threshold (0.45 G plane magnitude) to avoid oscillation; decisive tilts always rotate.
 - `sw_rotate=true` is required (LVGL 9 + DSI).
-- The custom font is generated from the same `Montserrat-Medium.ttf` used by the LVGL built-ins, adding the Latin-1 supplement range (`0xA0–0xFF`).
+- The custom font is generated from the same `Montserrat-Medium.ttf` used by the LVGL built-ins at 18px, adding the Latin-1 supplement range (`0xA0–0xFF`), and the clock uses 18px monospaced JetBrains Mono.
 
 ## Developing New Applications
 

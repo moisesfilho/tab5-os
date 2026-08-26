@@ -72,8 +72,9 @@ typedef struct {
 ### 4.1. Barra de Título Padronizada (`ui_app_bar_t`)
 
 Localizada em [`ui_app_bar.h`](file:///home/moises/Projetos/tab5-os/components/os/shell/ui_app_bar.h), padroniza o cabeçalho de todas as aplicações com:
-- Título da aplicação alinhado à esquerda.
-- Botão "Fechar" à direita (estilo quadrado/retangular compacto 36×28px com raio 6px).
+- Altura padronizada em 52px (`UI_BAR_HEIGHT`).
+- Título da aplicação alinhado à esquerda em fonte 18px.
+- Botão "Fechar" à direita (estilo retangular 44×36px com raio 6px).
 - Suporte a botões de ação personalizados.
 
 #### API Principal:
@@ -127,14 +128,15 @@ lv_obj_set_style_text_color(meu_label, lv_color_hex(pal->text), 0);
 ### 4.3. Tipografia e Fontes (`ui_font`)
 
 Localizado em [`ui_font.h`](file:///home/moises/Projetos/tab5-os/components/os/shell/ui_font.h):
-- `lv_font_montserrat_14_latin1`: Fonte padrão do sistema configurada globalmente no tema do display (`lv_theme_default_init`). Possui suporte completo ao range Latin-1 (`0x20-0x7F`, `0xA0-0xFF`: á, é, í, ó, ú, ç, ã, õ, etc.) + símbolos do LVGL.
+- `lv_font_montserrat_18_latin1`: Fonte padrão do sistema configurada globalmente no tema do display (`lv_theme_default_init`). Possui suporte completo ao range Latin-1 (`0x20-0x7F`, `0xA0-0xFF`: á, é, í, ó, ú, ç, ã, õ, etc.) + símbolos do LVGL.
+- `lv_font_jetbrains_mono_18_clock`: Fonte **monoespaçada** (JetBrains Mono Regular 18px) com subconjunto mínimo (`espaço`, `/`, `:`, `0-9`), usada no relógio da barra superior. Como todo glifo ocupa exatamente a mesma largura, a mudança de valores não desloca o texto nem os ícones vizinhos. Gerada via `lv_font_conv --no-kerning`.
+- `lv_font_montserrat_14_latin1` e `lv_font_jetbrains_mono_14_clock`: Fontes compactas legadas de 14px.
 - `lv_font_montserrat_28_latin1`: Fonte grande para ícones do desktop, contadores e cabeçalhos de destaque.
 - `lv_font_montserrat_56_latin1`: Fonte extra grande usada no relógio do protetor de tela. Gerada com o mesmo comando/cobertura da de 28px (`--size 56` via `lv_font_conv`).
-- `lv_font_jetbrains_mono_14_clock`: Fonte **monoespaçada** (JetBrains Mono Regular 14px) com subconjunto mínimo (`espaço`, `/`, `:`, `0-9`), usada no relógio da barra superior. Como todo glifo ocupa exatamente a mesma largura, a mudança de valores não desloca o texto nem os ícones vizinhos. Gerada via `lv_font_conv --no-kerning`.
 
 > [!TIP]
 > **Herança e Ortografia PT-BR:**
-> - Como `lv_font_montserrat_14_latin1` é a fonte padrão do tema do sistema operacional, qualquer widget criado herda nativamente a capacidade de renderizar caracteres acentuados sem gerar caracteres desconhecidos (tofu `[]`).
+> - Como `lv_font_montserrat_18_latin1` é a fonte padrão do tema do sistema operacional, qualquer widget criado herda nativamente a capacidade de renderizar caracteres acentuados sem gerar caracteres desconhecidos (tofu `[]`).
 > - **Regra de Ortografia:** Sempre escreva textos da interface com a acentuação e pontuação corretas em português (ex: `"Gravação"`, `"Configurações"`, `"Áudio"`, `"Exclusão"`, `"Nenhum áudio em reprodução"`).
 
 ---

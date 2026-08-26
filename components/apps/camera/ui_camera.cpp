@@ -264,7 +264,7 @@ lv_obj_t *ui_camera_create(void)
 
     gallery_label = lv_label_create(gallery_btn);
     lv_label_set_text(gallery_label, LV_SYMBOL_IMAGE);
-    lv_obj_set_style_text_font(gallery_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(gallery_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(gallery_label);
 
     /* Botao circular central de disparo */
@@ -291,7 +291,7 @@ lv_obj_t *ui_camera_create(void)
     lv_obj_set_style_pad_hor(toast_label, 16, 0);
     lv_obj_set_style_pad_ver(toast_label, 8, 0);
     lv_obj_set_style_border_width(toast_label, 1, 0);
-    lv_obj_set_style_text_font(toast_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(toast_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_add_flag(toast_label, LV_OBJ_FLAG_HIDDEN);
 
     /* Overlay de flash ao disparar */

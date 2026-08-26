@@ -1,6 +1,11 @@
 build/
+build-sim/
 sdkconfig
 sdkconfig.old
 managed_components/
 dependencies.lock
 captured_photos/
+tests/simulator/out/
+tests/simulator/preview/
+tests/simulator/diffs/
+tests/simulator/report.txt

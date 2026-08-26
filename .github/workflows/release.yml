@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -65,7 +65,7 @@ jobs:
           echo "✨ **Status do Release:** ${{ job.status == 'success' && '✅ Publicado no GitHub Releases' || '❌ Falha' }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             tab5_os_firmware.zip

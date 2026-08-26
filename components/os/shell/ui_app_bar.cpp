@@ -28,7 +28,7 @@ ui_app_bar_t ui_app_bar_create(lv_obj_t *parent, const char *title, lv_event_cb_
     app_bar.title_label = lv_label_create(app_bar.bar);
     lv_label_set_text(app_bar.title_label, title != nullptr ? title : "");
     lv_label_set_long_mode(app_bar.title_label, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(app_bar.title_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(app_bar.title_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_flex_grow(app_bar.title_label, 1);
 
     /* Container flexível para ações personalizadas da aplicação */
@@ -41,10 +41,10 @@ ui_app_bar_t ui_app_bar_create(lv_obj_t *parent, const char *title, lv_event_cb_
     lv_obj_set_flex_flow(app_bar.actions_cont, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(app_bar.actions_cont, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    /* Botão fechar padronizado à direita (estilo quadrado/retangular com raio 6) */
+    /* Botão fechar padronizado à direita */
     app_bar.close_btn = lv_button_create(app_bar.bar);
-    lv_obj_set_size(app_bar.close_btn, 36, 28);
-    lv_obj_set_style_radius(app_bar.close_btn, 6, 0);
+    lv_obj_set_size(app_bar.close_btn, 44, 36);
+    lv_obj_set_style_radius(app_bar.close_btn, 8, 0);
     lv_obj_set_style_border_width(app_bar.close_btn, 1, 0);
     lv_obj_set_style_shadow_width(app_bar.close_btn, 0, 0);
     lv_obj_set_style_pad_all(app_bar.close_btn, 0, 0);
@@ -55,7 +55,7 @@ ui_app_bar_t ui_app_bar_create(lv_obj_t *parent, const char *title, lv_event_cb_
 
     app_bar.close_label = lv_label_create(app_bar.close_btn);
     lv_label_set_text(app_bar.close_label, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(app_bar.close_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(app_bar.close_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(app_bar.close_label);
 
     ui_app_bar_refresh_theme(&app_bar);
@@ -73,10 +73,10 @@ lv_obj_t *ui_app_bar_add_action_button(ui_app_bar_t *app_bar, const char *symbol
     const ui_palette_t *pal = ui_theme_get();
 
     lv_obj_t *btn = lv_button_create(app_bar->actions_cont);
-    lv_obj_set_size(btn, 36, 28);
-    lv_obj_set_style_radius(btn, 6, 0);
+    lv_obj_set_size(btn, 44, 36);
+    lv_obj_set_style_radius(btn, 8, 0);
     lv_obj_set_style_border_width(btn, 1, 0);
-    lv_obj_set_style_margin_right(btn, 6, 0);
+    lv_obj_set_style_margin_right(btn, 8, 0);
     lv_obj_set_style_pad_all(btn, 0, 0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(btn, lv_color_hex(pal->surface), 0);
@@ -90,7 +90,7 @@ lv_obj_t *ui_app_bar_add_action_button(ui_app_bar_t *app_bar, const char *symbol
 
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, symbol_or_text != nullptr ? symbol_or_text : "");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(pal->text), 0);
     lv_obj_center(label);
 

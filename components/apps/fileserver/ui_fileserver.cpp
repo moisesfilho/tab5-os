@@ -235,32 +235,32 @@ lv_obj_t *ui_fileserver_create(void)
 
     status_title = lv_label_create(card_status);
     lv_label_set_text(status_title, "Estado do Serviço");
-    lv_obj_set_style_text_font(status_title, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(status_title, &lv_font_montserrat_18_latin1, 0);
     lv_obj_align(status_title, LV_ALIGN_TOP_LEFT, 0, 4);
 
     status_badge = lv_obj_create(card_status);
-    lv_obj_set_size(status_badge, 110, 32);
+    lv_obj_set_size(status_badge, 120, 36);
     lv_obj_align(status_badge, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_set_style_radius(status_badge, 16, 0);
+    lv_obj_set_style_radius(status_badge, 18, 0);
     lv_obj_set_style_border_width(status_badge, 0, 0);
     lv_obj_set_style_pad_all(status_badge, 0, 0);
     lv_obj_clear_flag(status_badge, LV_OBJ_FLAG_SCROLLABLE);
 
     status_badge_label = lv_label_create(status_badge);
     lv_label_set_text(status_badge_label, "ATIVO");
-    lv_obj_set_style_text_font(status_badge_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(status_badge_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(status_badge_label, lv_color_white(), 0);
     lv_obj_center(status_badge_label);
 
     toggle_btn = lv_button_create(card_status);
-    lv_obj_set_size(toggle_btn, lv_pct(100), 44);
-    lv_obj_align(toggle_btn, LV_ALIGN_TOP_MID, 0, 44);
+    lv_obj_set_size(toggle_btn, lv_pct(100), 46);
+    lv_obj_align(toggle_btn, LV_ALIGN_TOP_MID, 0, 48);
     lv_obj_set_style_radius(toggle_btn, 10, 0);
     lv_obj_add_event_cb(toggle_btn, toggle_btn_cb, LV_EVENT_CLICKED, nullptr);
 
     toggle_btn_label = lv_label_create(toggle_btn);
     lv_label_set_text(toggle_btn_label, LV_SYMBOL_POWER " Desligar Servidor");
-    lv_obj_set_style_text_font(toggle_btn_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(toggle_btn_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_set_style_text_color(toggle_btn_label, lv_color_white(), 0);
     lv_obj_center(toggle_btn_label);
 
@@ -275,12 +275,12 @@ lv_obj_t *ui_fileserver_create(void)
 
     net_title = lv_label_create(card_network);
     lv_label_set_text(net_title, "Acesso Web na Rede Local");
-    lv_obj_set_style_text_font(net_title, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(net_title, &lv_font_montserrat_18_latin1, 0);
     lv_obj_align(net_title, LV_ALIGN_TOP_LEFT, 0, 0);
 
     url_box = lv_obj_create(card_network);
-    lv_obj_set_size(url_box, lv_pct(100), 40);
-    lv_obj_align(url_box, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_size(url_box, lv_pct(100), 44);
+    lv_obj_align(url_box, LV_ALIGN_TOP_MID, 0, 30);
     lv_obj_set_style_radius(url_box, 8, 0);
     lv_obj_set_style_border_width(url_box, 1, 0);
     lv_obj_set_style_pad_all(url_box, 8, 0);
@@ -288,19 +288,19 @@ lv_obj_t *ui_fileserver_create(void)
 
     url_label = lv_label_create(url_box);
     lv_label_set_text(url_label, "http://192.168.68.107:8080/");
-    lv_obj_set_style_text_font(url_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(url_label, &lv_font_montserrat_18_latin1, 0);
     lv_obj_center(url_label);
 
     net_info_label = lv_label_create(card_network);
     lv_label_set_text(net_info_label, "IP: 192.168.68.107 | Porta: 8080");
-    lv_obj_set_style_text_font(net_info_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_align(net_info_label, LV_ALIGN_TOP_LEFT, 0, 74);
+    lv_obj_set_style_text_font(net_info_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_align(net_info_label, LV_ALIGN_TOP_LEFT, 0, 84);
 
     net_hint_label = lv_label_create(card_network);
     lv_label_set_text(net_hint_label, "Dica: Digite o endereço acima no navegador do computador ou celular\nconectado "
                                       "à mesma rede Wi-Fi para visualizar e baixar as fotos.");
-    lv_obj_set_style_text_font(net_hint_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_align(net_hint_label, LV_ALIGN_TOP_LEFT, 0, 98);
+    lv_obj_set_style_text_font(net_hint_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_align(net_hint_label, LV_ALIGN_TOP_LEFT, 0, 114);
 
     /* 3. Card Estatisticas */
     card_stats = lv_obj_create(content_container);
@@ -313,13 +313,13 @@ lv_obj_t *ui_fileserver_create(void)
 
     stats_title = lv_label_create(card_stats);
     lv_label_set_text(stats_title, "Armazenamento Compartilhado");
-    lv_obj_set_style_text_font(stats_title, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_font(stats_title, &lv_font_montserrat_18_latin1, 0);
     lv_obj_align(stats_title, LV_ALIGN_TOP_LEFT, 0, 0);
 
     stats_info_label = lv_label_create(card_stats);
     lv_label_set_text(stats_info_label, "Fotos em /sdcard/imagens: 0 fotos\nEspaço Ocupado: 0 MB");
-    lv_obj_set_style_text_font(stats_info_label, &lv_font_montserrat_14_latin1, 0);
-    lv_obj_align(stats_info_label, LV_ALIGN_TOP_LEFT, 0, 26);
+    lv_obj_set_style_text_font(stats_info_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_align(stats_info_label, LV_ALIGN_TOP_LEFT, 0, 30);
 
     apply_fileserver_theme();
     return fileserver_scr;

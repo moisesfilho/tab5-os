@@ -20,6 +20,7 @@ idf_component_register(
         "bluetooth/ui_bluetooth.cpp"
         "music/music_player.cpp"
         "music/ui_music.cpp"
+        "calendar/ui_calendar.cpp"
     INCLUDE_DIRS
         "camera"
         "gallery"
@@ -32,6 +33,7 @@ idf_component_register(
         "wifi"
         "bluetooth"
         "music"
+        "calendar"
         "."
     REQUIRES os lvgl m5stack_tab5 libssh esp_video espressif__esp_cam_sensor
             esp_http_server esp_codec_dev esp_http_client json esp-tls

@@ -23,6 +23,17 @@ typedef struct {
 
 typedef void (*bt_scan_cb_t)(const bt_device_info_t *devices, int count, void *ctx);
 
+/* Ciclo de vida de uma tentativa de conexao (reportado via bt_conn_cb_t) */
+typedef enum {
+    BT_CONN_STARTED = 0,  /* procedimento GAP iniciado */
+    BT_CONN_CONNECTED,    /* link fisico estabelecido (pairing em curso) */
+    BT_CONN_READY,        /* HID pronto: descoberta GATT concluida e CCCDs ativos */
+    BT_CONN_FAILED,       /* falhou ao conectar; reason = status NimBLE/controller */
+    BT_CONN_DISCONNECTED, /* conexao encerrada; reason = motivo da pilha */
+} bt_conn_event_t;
+
+typedef void (*bt_conn_cb_t)(const char *mac, bt_conn_event_t event, int reason, void *ctx);
+
 typedef struct {
     bool any_connected;
     bool keyboard_connected;
@@ -40,8 +51,14 @@ esp_err_t bt_mgr_start(void);
 /* Inicia scan de dispositivos proximos; chama cb ao concluir */
 esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx);
 
-/* Conecta e pareia com o dispositivo especificado pelo MAC */
+/* Conecta e pareia com o dispositivo especificado pelo MAC.
+ * Retorna ESP_OK apenas se o procedimento GAP foi iniciado de fato; erros
+ * reais (ocupado, falha do controlador) sao propagados. O resultado final
+ * chega pelo callback registrado em bt_mgr_set_conn_callback. */
 esp_err_t bt_mgr_connect(const char *mac, const char *name, bt_dev_type_t type);
+
+/* Registra callback de resultado de conexao (chamado na task do NimBLE). */
+void bt_mgr_set_conn_callback(bt_conn_cb_t cb, void *ctx);
 
 /* Desconecta um dispositivo ativo */
 esp_err_t bt_mgr_disconnect(const char *mac);

@@ -1,0 +1,10 @@
+# Fase 30 — configuracao do lcov para os testes em host.
+# O escopo da metrica (somente os .cpp de producao sob teste) e aplicado
+# via --extract em run_host_tests.sh: stubs/, mocks/ e tests/ ficam fora
+# do calculo por construcao. Aqui ficam apenas ajustes gerais.
+
+# Gate baseado em cobertura de linhas
+branch_coverage = 0
+
+# Blocos nao executados em linhas sem ramificacao (alarme comum do GCC/lcov)
+geninfo_unexecuted_blocks = 1
