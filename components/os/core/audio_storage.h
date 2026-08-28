@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-#define AUDIO_CFG_PATH "/sdcard/tab5_os/audio.cfg"
+#define AUDIO_CFG_PATH "/sdcard/.tab5_os/audio.cfg"
 
 #define AUDIO_MIN_VOLUME 0
 #define AUDIO_MAX_VOLUME 100

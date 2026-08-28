@@ -49,6 +49,9 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[x]` | **Fase 39** | Screenshot pela Barra do Sistema | Sistema / UI | Snapshot lógico RGB565 da tela ativa + blend alpha do `layer_top`, gravação BMP 24-bit assíncrona em `/sdcard/screenshots` com flash e toast, e `decode_bmp` da Galeria corrigido (escala por potências de 2 e stride correto) |
 | `[x]` | **Fase 40** | Simulador Host SDL e Regressão Visual da UI | Qualidade / Testes | UI real (shell + apps) compilada sobre o LVGL vendido com backend SDL2 720×1280, 15 cenários comparados contra imagens douradas determinísticas, comparador com tolerância e PNGs de diff |
 | `[x]` | **Fase 42** | Aplicativo Calendário Mensal | Aplicativo / Shell / UI | Popup mensal acionado pela data/hora, aplicativo em tela dedicada, navegação entre meses, integração com desktop e regressão visual |
+| `[ ]` | **Fase 43** | TTS em Nuvem no Chat (Leitura de Respostas) | Aplicativo / Conectividade / Áudio | Auto-falar resposta do assistente via API TTS (OpenAI/Google/Azure/ElevenLabs) → MP3 → minimp3 → es8388, com config e parada |
+| `[x]` | **Fase 44** | Visualização de Arquivos/Pastas Ocultos no app Arquivos | Aplicativo / UI | Toggle "Mostrar ocultos" na barra (ocultos por padrão, persistido em NVS), filtro de nomes iniciados em `.` em `load_directory` |
+| `[x]` | **Fase 45** | Consolidação das Configs do SO em Pasta Oculta | Sistema / Config | Todas as configs em `/sdcard/.tab5_os/` (corrigindo `timezone.cfg` que sai de `/sdcard/`), migração automática no boot com fallback de leitura |
 
 
 ---
@@ -2340,10 +2343,168 @@ tests/simulator/scenarios/
 
 ---
 
+---
+
+# [ ] Fase 43: TTS em Nuvem no Chat (Leitura de Respostas) `⏳ PLANEJADO`
+
+## 1. Contexto & Objetivos
+- **Motivação**: O app Chat IA (`components/apps/chat/`) já entrega respostas textuais do assistente (`on_ai_response`, `ui_chat.cpp:206`). Esta fase adiciona a leitura automática em voz alta dessas respostas, tornando o chat acessível e hands-free.
+- **Decisão de arquitetura**: TTS em **nuvem** (API TTS configurável) em vez de `esp-tts` offline. Motivo: o `esp-tts` só distribui modelos EN/ZH (sem PT-BR). O áudio retorna como **MP3** e é decodificado pelo `minimp3` já vendored em `music/`, reaproveitando o caminho de reprodução.
+- **Sem novos componentes ESP-IDF**: reutiliza `esp_http_client` (já em `PRIV_REQUIRES`) e `minimp3.h` (já no `INCLUDE_DIRS` do componente `apps`). Nenhuma mudança em `idf_component.yml`, partições ou `sdkconfig`.
+
+## 2. Requisitos & Dependências
+- Wi-Fi ativo (já dependência do chat) para alcançar a API TTS.
+- `esp_http_client` (download do MP3) e `esp_codec_dev` (saída PCM) — já presentes.
+- `minimp3.h` em `components/apps/music/` — incluído via `INCLUDE_DIRS` do componente `apps`.
+- `audio_storage` para respeitar o volume geral; `bsp_audio_codec_speaker_init` / `bsp_headphone_is_connected` para o speaker.
+
+## 3. Arquivos & Interfaces (Novos em `components/apps/chat/`)
+- **`tts_storage.h/.cpp`**:
+  - `typedef enum { TTS_PROVIDER_OPENAI, TTS_PROVIDER_GOOGLE, TTS_PROVIDER_AZURE, TTS_PROVIDER_ELEVENLABS } tts_provider_t;`
+  - `typedef struct { tts_provider_t provider; char api_key[1024]; char base_url[512]; char voice[128]; bool enabled; } tts_cfg_t;`
+  - `tts_storage_get_default(tts_cfg_t*)`, `tts_storage_load(tts_cfg_t*)`, `tts_storage_save(const tts_cfg_t*)` — persistência em `/sdcard/tab5_os/tts.cfg` (espelha `ai_storage`).
+- **`tts_client.h/.cpp`**:
+  - `esp_err_t tts_speak(const char *text)` — monta a requisição HTTP por provedor (primeiro **OpenAI TTS**: `POST {base_url}/v1/audio/speech`, JSON `{model, voice, input:text}`, `Authorization: Bearer <key>`), baixa o MP3 via `esp_http_client` (evento `on_data`) para buffer em PSRAM, e encadeia para o player. Roda em FreeRTOS task; cancelável.
+  - `void tts_cancel(void)` — aborta requisição/decodificação em andamento.
+  - Builder de requisição por provedor (plugável p/ Google/Azure/ElevenLabs depois do OpenAI).
+- **`tts_player.h/.cpp`**:
+  - `esp_err_t tts_player_play(const uint8_t *mp3_buf, size_t len)` — decodifica com `minimp3` e toca via `esp_codec_dev_write` (padrão de `audio_recorder.cpp:355`): `bsp_audio_codec_speaker_init()` → unmute → `bsp_feature_enable(BSP_FEATURE_SPEAKER, !bsp_headphone_is_connected())` → loop decode+write → mute/close.
+  - `void tts_player_stop(void)` — para a reprodução.
+  - Aplica volume de `audio_storage_load_volume()`.
+  - *Tradeoff considerado*: baixar para `/sdcard/tab5_os/tts_cache.mp3` e chamar `music_player_start()` reutilizaria o player de música, mas acoplaria à UI do app Música; optou-se por `tts_player` dedicado.
+
+## 4. Integração no Chat (`ui_chat.cpp`)
+- `on_ai_response` (`ui_chat.cpp:206`): após `add_message_bubble`, se `tts_cfg.enabled`, dispara `tts_speak(response_text)` numa task (não bloquear sob `bsp_display_lock`).
+- Modal de config (`ui_chat.cpp:~447-577`, `config_btn`): adicionar checkbox "Ler respostas em voz alta" + dropdown de provedor + campo API key + campo voice/model + URL base; salvar via `tts_storage_save`.
+- Indicador "Falando…" (reaproveita `thinking_bubble`/status) e parada: `do_send_message` (`ui_chat.cpp:256`) e `ui_chat_on_close` chamam `tts_player_stop()` + `tts_cancel()`.
+- Falha (Wi-Fi down / erro HTTP): `ESP_LOG` + `add_message_bubble("system", …)` — não quebra o chat (segue padrão existente).
+
+## 5. Build (`components/apps/CMakeLists.txt`)
+- Adicionar `tts_storage.cpp`, `tts_client.cpp`, `tts_player.cpp` em `SRCS`. `INCLUDE_DIRS` já inclui `chat` e `music`; `PRIV_REQUIRES` já tem `esp_http_client` e `esp_codec_dev`.
+
+## 6. Testes (manter gates F40 / visual)
+- Host test `tests/host/src/test_tts.cpp`: mock de `esp_http_client` (MP3 fixture) + `esp_codec_dev_write`; validar builder de requisição por provedor, cancelamento e path decode+play. Seguir padrão GoogleTest+stubs existente.
+- (Opcional) golden no simulador SDL: cenário "chat falando".
+
+## 7. Validação em Hardware
+- Build/flash (`IDF_PYTHON_ENV_PATH` + `export.sh` + `idf.py build/flash`), testar: enviar prompt → ouvir resposta; configurar provedor/chave; verificar volume e parada.
+
+## 8. Riscos & Caveats
+- Exige conta + chave do provedor e **texto sai para a nuvem** (privacidade).
+- Latência de rede (~200-800ms); respostas de chat são pequenas (PSRAM tranquilo).
+- Escolher voz PT-BR na config (OpenAI/Azure oferecem `pt-BR`).
+
+## 9. Status de Conclusão: `[ ] PLANEJADO (0%)`
+
+---
+
+# [x] Fase 44: Visualização de Arquivos e Pastas Ocultos no app Arquivos `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Hoje `load_directory` (`components/apps/files/ui_files.cpp:130`) apenas ignora `.` e `..`; qualquer outro item iniciado em `.` (ex.: `.bashrc`, ou a futura pasta `.tab5_os` da Fase 45) acaba sendo exibido na listagem.
+- Adicionar um *toggle* "Mostrar ocultos" na barra do app, com arquivos e pastas cujo nome inicia em `.` **ocultos por padrão** (exceto a navegação `..`).
+- Ao ativar o toggle, os itens ocultos passam a ser exibidos nos modos Grade e Lista.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Filtro de oculteza | `if (name[0]=='.' && name!=".." && !show_hidden) skip` dentro de `load_directory` | Regra centralizada em um único ponto, sem duplicar lógica na renderização |
+| D2 | Controle de UI | Botão extra na `ui_app_bar` (ícone `LV_SYMBOL_EYE_OPEN` / `LV_SYMBOL_EYE_CLOSE`) | Paridade com o botão existente de alternar Grade/Lista |
+| D3 | Persistência | NVS (`files/show_hidden`, bool) | A preferência do usuário sobrevive a reboots |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/apps/files/
+├── ui_files.cpp   # [MODIFY] flag show_hidden, filtro em load_directory, botão na app_bar, persistência NVS
+└── ui_files.h     # [MODIFY] declaração do estado show_hidden
+```
+
+## 4. Fases de Execução da Funcionalidade
+- [x] **Etapa 1 — Flag e filtro**: Adicionar `bool s_show_hidden = false` e pular entradas cujo `d_name[0]=='.'` (diferente de `".."`) quando a flag estiver desligada.
+- [x] **Etapa 2 — Botão "Mostrar ocultos"**: Novo botão de ação na `ui_app_bar` com `toggle_hidden_click_cb` alternando ícone (`LV_SYMBOL_EYE_OPEN` / `LV_SYMBOL_EYE_CLOSE`) e recarregando via `load_directory(current_path)`.
+- [x] **Etapa 3 — Persistência NVS**: Gravar/ler `tab5/files_hidden` e restaurar em `ui_files_create`.
+- [x] **Etapa 4 — Validação em hardware**: Alternar visibilidade, navegar e reboot.
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Usuário se "perder" em pasta oculta sem ver o `..` | `..` nunca é filtrado, independentemente da flag |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Abrir Arquivos e confirmar que `/sdcard/.tab5_os` (Fase 45) não aparece por padrão.
+2. Ativar o toggle e confirmar que a pasta oculta passa a ser listada.
+3. Reboot e confirmar que a preferência "Mostrar ocultos" persiste.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Arquivos & Ocultos**: Toggle "Mostrar ocultos" na barra, filtro em `load_directory` e persistência em NVS implementados e compilados com sucesso (build validado).
+
+---
+
+# [x] Fase 45: Consolidação das Configurações do SO em Pasta Oculta `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+- Centralizar toda a configuração do sistema em `/sdcard/.tab5_os/` (pasta oculta, padrão Unix de dot-prefix), unificando o que hoje está em `/sdcard/tab5_os/` e o que está fora de qualquer pasta de config.
+- **Correção explícita de `timezone.cfg`**: hoje ele é gravado diretamente em `/sdcard/timezone.cfg` (`components/os/core/timezone_mgr.h:14`), fora de qualquer diretório de configuração. Deve passar a residir em `/sdcard/.tab5_os/timezone.cfg`, junto de todas as demais configs do SO.
+- Migração automática no boot: se a pasta/pasta antiga existir, mover os `*.cfg` para a nova localização; manter *fallback* de leitura na origem para segurança.
+
+## 2. Decisões de Arquitetura
+
+| # | Decisão | Escolha | Justificativa |
+|---|---|---|---|
+| D1 | Caminho base | `#define OS_CFG_DIR "/sdcard/.tab5_os"` em novo `os_config_paths.h` | Única fonte da verdade para todos os módulos de config |
+| D2 | Montagem | `wifi_storage_mount()` cria `.tab5_os` em vez de `tab5_os` | Reaproveita o helper de montagem já consumido por todos os módulos |
+| D3 | Migração | `os_config_migrate()` chamado em `app_main` antes das leituras | Move `tab5_os/*.cfg` e `/sdcard/timezone.cfg`; operação idempotente |
+| D4 | Fallback de leitura | leitura tenta novo caminho, depois antigo | Evita perda de config em caso de falha de migração |
+
+## 3. Estrutura de Arquivos & Componentes
+
+```
+components/os/core/
+├── os_config_paths.h         # [NEW] OS_CFG_DIR e paths derivados (*_CFG_PATH)
+├── os_config_migrate.cpp/.h  # [NEW] migração de configs no boot
+├── wifi_storage.cpp/.h       # [MODIFY] usa OS_CFG_DIR (wifi.cfg)
+├── bt_storage.cpp/.h         # [MODIFY] usa OS_CFG_DIR (bt.cfg)
+├── display_storage.cpp/.h    # [MODIFY] usa OS_CFG_DIR (display.cfg)
+├── audio_storage.cpp/.h      # [MODIFY] usa OS_CFG_DIR (audio.cfg)
+├── timezone_mgr.cpp/.h       # [MODIFY] usa OS_CFG_DIR (timezone.cfg) — correção de localização
+components/apps/chat/ai_storage.h  # [MODIFY] usa OS_CFG_DIR (ai.cfg)
+main/app_main.cpp             # [MODIFY] chama os_config_migrate() antes de carregar configs
+```
+
+## 4. Fases de Execução da Funcionalidade
+- [x] **Etapa 0 — Correção de `timezone.cfg`**: Redefinir `TIMEZONE_CFG_PATH` para `/sdcard/.tab5_os/timezone.cfg`.
+- [x] **Etapa 1 — `wifi_storage.h`**: Definir `TAB5_CONFIG_DIR` (`/sdcard/.tab5_os`) e redefinir `*_CFG_PATH` (`wifi`, `bt`, `display`, `audio`, `ai`, `timezone`).
+- [x] **Etapa 2 — Realinhamento de módulos**: `wifi_storage_mount` cria `.tab5_os`; `bt_storage` garante o diretório oculto.
+- [x] **Etapa 3 — Migração one-shot**: `config_storage_migrate()` moveu `tab5_os/*.cfg` e `timezone.cfg` para `.tab5_os/` no dispositivo; removida após validação (nada mais escreve nos caminhos legados).
+- [x] **Etapa 4 — Chamada no boot**: `config_storage_migrate()` foi invocado via `wifi_storage_mount()` durante a transição.
+- [x] **Etapa 5 — Validação em hardware**: Migração confirmada no dispositivo real (configs preservadas após reboot).
+
+## 5. Riscos & Mitigações
+
+| Risco | Impacto / Mitigação |
+|---|---|
+| Troca de SD por cartão com firmware antigo (configs em `tab5_os/`) | Caso raro e aceito; configs antigas não são auto-migradas após a remoção do código |
+| `timezone.cfg` fora de `tab5_os` | Corrigido na Etapa 0 (passou a residir em `.tab5_os`) |
+
+## 6. Critérios de Validação & Teste em Hardware
+1. Boot move `tab5_os/*.cfg` e `/sdcard/timezone.cfg` para `/sdcard/.tab5_os/`.
+2. Brilho, volume, Wi-Fi, BT, IA e fuso horário ainda carregam corretamente.
+3. `/sdcard/.tab5_os` não aparece no app Arquivos por padrão (Fase 44).
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+- **Configs em pasta oculta**: Todas as configs em `/sdcard/.tab5_os/`, `timezone.cfg` corrigido; migração one-shot executada no dispositivo e código removido (build validado).
+
+---
+
 ## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)
 
 > [!NOTE]
 > As aplicações abaixo são apenas **sugestões** para o roadmap futuro. Ainda **não** foram arquitetadas nem especificadas, portanto não possuem fase própria no caderno. Elas serão promovidas a uma fase formal (com detalhamento completo) quando forem priorizadas para implementação.
+>
+> Itens já promovidos a fase formal: **Arquivos** (visualização de ocultos → Fase 44) e **OS** (configs em pasta oculta, incluindo correção de `timezone.cfg` → Fase 45).
 
 | Aplicação | Descrição Simplificada |
 |---|---|
@@ -2352,5 +2513,3 @@ tests/simulator/scenarios/
 | **Jogo simples (Snake / 2048)** | Jogo leve para demonstrar loop de animação e entrada por toque. |
 | **Desenho / Pintura (Canvas)** | Tela de desenho livre com toque/mouse e salvamento de imagem no SD. |
 | **Chat AI** | Manter contexto e salvar conversas como notas. |
-| **Arquivos** | Permitir controlar visualização de diretórios ocultos (definidos por inicar com "."). |
-| **OS** | Salvar arquivos de configuração do sistema em pasta oculta. |

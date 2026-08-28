@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define DISPLAY_CFG_PATH "/sdcard/tab5_os/display.cfg"
+#define DISPLAY_CFG_PATH "/sdcard/.tab5_os/display.cfg"
 
 #define DISPLAY_DEFAULT_BRIGHTNESS 80
 #define DISPLAY_MIN_BRIGHTNESS 10

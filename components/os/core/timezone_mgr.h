@@ -11,7 +11,7 @@ extern "C" {
 #define TIMEZONE_DEFAULT_OFFSET (-3)
 #define TIMEZONE_MIN_OFFSET (-12)
 #define TIMEZONE_MAX_OFFSET (14)
-#define TIMEZONE_CFG_PATH "/sdcard/timezone.cfg"
+#define TIMEZONE_CFG_PATH "/sdcard/.tab5_os/timezone.cfg"
 
 /**
  * @brief Inicializa o subsistema de fuso horário restaurando do NVS/SD.

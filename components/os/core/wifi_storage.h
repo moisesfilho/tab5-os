@@ -8,8 +8,11 @@
 extern "C" {
 #endif
 
-#define WIFI_CFG_PATH "/sdcard/tab5_os/wifi.cfg"
+#define WIFI_CFG_PATH "/sdcard/.tab5_os/wifi.cfg"
 #define WIFI_MAX_SAVED_NETWORKS 16
+
+/* Diretório oculto onde o SO consolida todas as suas configurações no SD */
+#define TAB5_CONFIG_DIR "/sdcard/.tab5_os"
 
 typedef struct {
     char ssid[33];
@@ -21,7 +24,7 @@ typedef struct {
     int count;
 } wifi_saved_list_t;
 
-/* Monta o SD (idempotente) e garante o diretorio /sdcard/tab5_os */
+/* Monta o SD (idempotente) e garante o diretorio /sdcard/.tab5_os */
 esp_err_t wifi_storage_mount(void);
 
 /* Carrega a primeira config do wifi.cfg (retrocompatibilidade) */

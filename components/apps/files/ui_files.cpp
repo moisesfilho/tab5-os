@@ -9,6 +9,8 @@
 #include "file_assoc.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -46,6 +48,34 @@ lv_obj_t *empty_label = nullptr;
 std::string current_path = "/sdcard";
 ViewMode current_view_mode = ViewMode::ICONS;
 std::vector<FileEntry> entries;
+
+bool s_show_hidden = false;
+lv_obj_t *files_hidden_label = nullptr;
+
+static const char *NVS_NS_FILES = "tab5";
+static const char *NVS_KEY_HIDDEN = "files_hidden";
+
+void load_files_show_hidden(void)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NS_FILES, NVS_READONLY, &nvs) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(nvs, NVS_KEY_HIDDEN, &v) == ESP_OK) {
+            s_show_hidden = (v != 0);
+        }
+        nvs_close(nvs);
+    }
+}
+
+void save_files_show_hidden(bool show)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NS_FILES, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_u8(nvs, NVS_KEY_HIDDEN, show ? 1 : 0);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+    }
+}
 
 void render_content(void);
 void load_directory(const std::string &path);
@@ -129,6 +159,10 @@ void load_directory(const std::string &path)
             struct dirent *entry;
             while ((entry = readdir(dir)) != nullptr) {
                 if (std::strcmp(entry->d_name, ".") == 0 || std::strcmp(entry->d_name, "..") == 0) {
+                    continue;
+                }
+                /* Ocultos iniciam com '.' e ficam escondidos por padrao (toggle na barra) */
+                if (!s_show_hidden && entry->d_name[0] == '.') {
                     continue;
                 }
                 std::string full_path = current_path;
@@ -360,6 +394,17 @@ void close_click_cb(lv_event_t *event)
     ui_shell_close_files();
 }
 
+void toggle_hidden_click_cb(lv_event_t *event)
+{
+    (void)event;
+    s_show_hidden = !s_show_hidden;
+    if (files_hidden_label != nullptr) {
+        lv_label_set_text(files_hidden_label, s_show_hidden ? LV_SYMBOL_EYE_OPEN : LV_SYMBOL_EYE_CLOSE);
+    }
+    save_files_show_hidden(s_show_hidden);
+    load_directory(current_path);
+}
+
 } // namespace
 
 lv_obj_t *ui_files_create(void)
@@ -371,6 +416,11 @@ lv_obj_t *ui_files_create(void)
     files_app_bar = ui_app_bar_create(files_scr, init_title.c_str(), close_click_cb, nullptr);
     files_view_btn =
         ui_app_bar_add_action_button(&files_app_bar, LV_SYMBOL_LIST, toggle_view_click_cb, nullptr, &files_view_label);
+
+    /* Botao de alternar exibicao de arquivos/pastas ocultos (inicia oculto por padrao) */
+    load_files_show_hidden();
+    ui_app_bar_add_action_button(&files_app_bar, s_show_hidden ? LV_SYMBOL_EYE_OPEN : LV_SYMBOL_EYE_CLOSE,
+                                 toggle_hidden_click_cb, nullptr, &files_hidden_label);
 
     /* Container de conteudo (pastas e arquivos) */
     files_container = lv_obj_create(files_scr);

@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define BT_CFG_PATH "/sdcard/tab5_os/bt.cfg"
+#define BT_CFG_PATH "/sdcard/.tab5_os/bt.cfg"
 #define BT_MAX_SAVED_DEVICES 16
 
 typedef enum {
