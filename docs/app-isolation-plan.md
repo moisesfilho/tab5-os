@@ -242,10 +242,88 @@ Cada app tem **repositório próprio** com pipeline de build → `.tab5pkg`:
 
 ---
 
-## 8. Decisões Registradas
+## 8. Apps Embutidas no Flash Principal (Submodules + Partição LittleFS)
+
+As 9 apps padrão vivem em **repositórios separados**, mas o flash do firmware deve entregá-las **junto com o SO base, em um único comando**. A estratégia adotada é **Híbrida — submodules pinados por tag**, com uma partição dedicada `apps` (LittleFS) gravada pelo `idf.py flash`.
+
+### 8.1. Arquitetura de integração
+
+```
+tab5-os (firmware)                        Repos externos (tab5-app-*)
+┌─────────────────────────────┐
+│ embedded_apps/              │  submodules pinados por tag (gitlink)
+│   ├─ wifi/        → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-wifi
+│   ├─ notas/       → v0.1.0  │
+│   ├─ terminal/    → v0.1.0  │  (cada repo compila .tab5pkg com wasi-sdk)
+│   └─ ... (9 apps)           │
+└─────────────────────────────┘
+          │ tools/ci/build_embedded_apps.sh (wasi-sdk → .tab5pkg)
+          ▼
+   embedded_apps_pkg/  (9 .tab5pkg)
+          │ littlefs_create_partition_image(apps ... FLASH_IN_PROJECT)
+          ▼
+┌──────────────────────────────────────────────┐
+│  idf.py flash  (um único comando)            │
+│  bootloader + partition-table + factory + apps│
+└──────────────────────────────────────────────┘
+```
+
+### 8.2. Tarefas de implementação
+
+**T1 — Repositórios e tags:** criar os 9 repos `tab5-app-*`, pipeline de build `.tab5pkg` e tag inicial `v0.1.0` em cada.
+
+**T2 — Submodules no branch `feat/app-isolation`:**
+
+```bash
+git submodule add <url> embedded_apps/wifi
+git submodule add <url> embedded_apps/notas
+# ... 9 no total; pinar em tags (não em HEAD)
+```
+
+**T3 — Partição `apps`:** adicionar em `partitions.csv`:
+
+```
+apps, data, littlefs, , 4M,
+```
+
+(16MB flash; factory 4M + apps 4M + nvs/phy = folgado)
+
+**T4 — Dependência `esp_littlefs`:** adicionar `espressif/esp_littlefs` em `main/idf_component.yml`.
+
+**T5 — Imagem da partição no build:** no `CMakeLists.txt` raiz:
+
+```cmake
+littlefs_create_partition_image(apps ${CMAKE_SOURCE_DIR}/embedded_apps_pkg FLASH_IN_PROJECT)
+```
+
+→ `idf.py flash` grava OS + apps num comando; gera `build/apps.bin` para o release.
+
+**T6 — Script `tools/ci/build_embedded_apps.sh`:** compila cada submodule com wasi-sdk, empacota `.tab5pkg`, popula `embedded_apps_pkg/`. Deve rodar **antes** do `idf.py build` (pasta precisa existir no configure do CMake). Fallback: se um submodule estiver vazio, pular o app (build sem ele).
+
+**T7 — Runtime:** no boot, montar `apps` read-only (esp_littlefs), enumerar `.tab5pkg`, registrar no `app_registry` dinâmico (ver Fase 3). Precedência: versão instalada no SD (`/sdcard/apps/installed/`) > embutida, por `app_id`.
+
+**T8 — CI:**
+
+- `quality-gate.yml`: instalar wasi-sdk + rodar `build_embedded_apps.sh` antes do build.
+- `release.yml`: coletar `build/apps.bin` no zip de gravação (`tab5_os_firmware.zip`).
+
+**T9 — Documentação:** manter esta seção atualizada com as decisões do flash único.
+
+### 8.3. Detalhes e gotchas
+
+- **Reprodutibilidade:** submodule pinado por tag = o firmware declara exatamente qual versão de cada app embarca. Release de app = bump da tag no submodule + commit no OS.
+- **Imune a SD removido:** partição littlefs fica no flash; SD só para pacotes opcionais (`music`/`chat`) e dados do usuário.
+- **Build local:** `git submodule update --init --recursive` + `tools/ci/build_embedded_apps.sh` + `idf.py flash` = tudo num comando.
+- **Pre-push hook** (`run_idf_build.sh`) já roda `idf.py build`; será necessário rodar o script de apps antes (ou integrar o script ao hook).
+- **`FLASH_IN_PROJECT`** regrava a partição em todo flash — correto para conteúdo imutável de fábrica.
+
+---
+
+## 9. Decisões Registradas
 
 - **Mecanismo de instalação:** SD Card Package (`.tab5pkg`) — apps instaladas por cima do SO base, com instalador próprio.
 - **Modelo de execução:** WebAssembly via WAMR (sandbox, máxima segurança, acesso a API LVGL/SO via símbolos nativos).
 - **Branch do SO base:** criado a partir da `develop` atual.
-- **Apps padrão:** embutidas no firmware (partição dedicada), imunes à remoção do SD.
+- **Apps padrão:** embutidas no firmware (partição `apps` LittleFS de 4MB), imunes à remoção do SD.
+- **Integração dos apps embutidos:** Híbrida — submodules pinados por tag + `littlefs_create_partition_image(..., FLASH_IN_PROJECT)` para flash único.
 - **Apps opcionais:** `music` e `chat` — não instaladas por padrão, disponíveis como `.tab5pkg`.
