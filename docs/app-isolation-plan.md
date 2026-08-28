@@ -237,6 +237,7 @@ Cada app tem **repositório próprio** com pipeline de build → `.tab5pkg`:
 | **Fase 3: Package Manager** | Pacotes `.tab5pkg` & manifestos | Parser JSON, instalador/desinstalador SD, app registry dinâmico. |
 | **Fase 4: Embedded Bundle** | Partição de apps padrão | Partição LittleFS/custom com 9 `.tab5pkg`; seed/registro no boot; precedência SD > embutido. |
 | **Fase 5: Installer UI / App Store** | Interface de instalação | Confirmação (nome, versão, permissões); integração com `ui_files`; instalar/atualizar/remover. |
+| **Fase 5b: Storage Manager** | Gerenciamento de memória e armazenamento | Módulo `storage_mgr` no OS core + app `tab5-app-storage` (ver seção 9). |
 | **Fase 6: SDK & Migração** | `tab5-app-sdk` + provas de conceito | Template de repo (CMake + clang wasi-sdk/Emscripten + `pack.py`); migrar `notas` e `calendar`. |
 | **Fase 7: Migração completa** | Portar todas as apps | Migrar 9 padrão p/ embutido + publicar `music`/`chat` opcionais; merge → `develop` → release. |
 
@@ -319,7 +320,57 @@ littlefs_create_partition_image(apps ${CMAKE_SOURCE_DIR}/embedded_apps_pkg FLASH
 
 ---
 
-## 9. Decisões Registradas
+## 9. Aplicação de Gerenciamento de Memória e Armazenamento
+
+App do sistema que responde a duas perguntas do usuário: **"o que está instalado?"** e **"quanto espaço ainda tenho para instalação?"**. É parte do fluxo de instalação (Fase 5) e fundamental para controlar os apps embutidos (partição `apps`) e os instalados no SD.
+
+### 9.1. Objetivo
+
+- Listar tudo que está instalado, com origem (embutido no firmware ou instalado no SD), versão e tamanho.
+- Exibir o espaço usado/livre em cada armazenamento (partição `apps` do flash, cartão SD, RAM).
+- Permitir desinstalar apps do SD (embutidas são read-only) e instalar pacotes pendentes.
+- Alertar sobre falta de espaço antes de iniciar uma instalação.
+
+### 9.2. Fontes de dados (módulo `storage_mgr` no OS core)
+
+Módulo novo em `components/os/core/storage_mgr` (API C, exposta ao app via host bindings da Fase 1), com funções:
+
+| Função | Dados | Fonte técnica |
+| :--- | :--- | :--- |
+| `storage_mgr_partition_stats()` | total/usado/livre da partição `apps` (embutidos) | `esp_littlefs_info()` |
+| `storage_mgr_sd_stats()` | total/usado/livre do cartão SD | `statvfs("/sdcard")` |
+| `storage_mgr_ram_stats()` | heap interna, DMA e PSRAM livres | `heap_caps_get_free_size()` |
+| `storage_mgr_installed_apps()` | lista de apps instaladas (id, versão, origem, tamanho) | Package Manager (Fase 3) |
+| `storage_mgr_pending_packages()` | `.tab5pkg` em `/sdcard/apps/` prontos para instalar | varredura do diretório |
+
+O módulo é testável no host (padrão F40: GoogleTest + stubs/mocks).
+
+### 9.3. Telas da aplicação
+
+1. **Instalados** — lista agrupada por origem (**Embutidas** / **No SD**). Cada item: ícone, nome, versão, origem e tamanho. Ações: *Desinstalar* (somente apps do SD) e *Abrir*.
+2. **Armazenamento** — barras de uso percentual + bytes para:
+   - Partição embutida `apps` (flash),
+   - Cartão SD,
+   - RAM interna / heap DMA e PSRAM.
+3. **Pacotes pendentes** — `.tab5pkg` localizados em `/sdcard/apps/` com nome, versão e tamanho; botão **Instalar** que abre o instalador (Fase 5).
+
+### 9.4. Regras e alertas
+
+- Alerta de **espaço baixo**: SD ou partição `apps` com < 10% livre (ou < 512 KB).
+- Estimativa de **quantos apps médios ainda cabem**, com base no tamanho médio dos instalados.
+- **Desinstalação de app embutida bloqueada** (partição read-only) com aviso claro; atualização só via re-flash do firmware.
+- Ao desinstalar um app do SD, oferecer **apagar os dados do usuário** em `/sdcard/data/<app_id>`.
+- Antes de instalar, o instalador consulta `storage_mgr_*` e bloqueia se o pacote não couber.
+
+### 9.5. Entrega
+
+- Módulo `storage_mgr` no OS core com testes host (F40).
+- App **`tab5-app-storage`** embutida por padrão (sempre disponível, fundamental para o instalador).
+- Repo próprio `tab5-app-storage` + pipeline `.tab5pkg`, integrada como submodule (seção 8).
+
+---
+
+## 10. Decisões Registradas
 
 - **Mecanismo de instalação:** SD Card Package (`.tab5pkg`) — apps instaladas por cima do SO base, com instalador próprio.
 - **Modelo de execução:** WebAssembly via WAMR (sandbox, máxima segurança, acesso a API LVGL/SO via símbolos nativos).
@@ -327,3 +378,4 @@ littlefs_create_partition_image(apps ${CMAKE_SOURCE_DIR}/embedded_apps_pkg FLASH
 - **Apps padrão:** embutidas no firmware (partição `apps` LittleFS de 4MB), imunes à remoção do SD.
 - **Integração dos apps embutidos:** Híbrida — submodules pinados por tag + `littlefs_create_partition_image(..., FLASH_IN_PROJECT)` para flash único.
 - **Apps opcionais:** `music` e `chat` — não instaladas por padrão, disponíveis como `.tab5pkg`.
+- **Gerenciamento de memória:** módulo `storage_mgr` no OS core + app `tab5-app-storage` embutida por padrão; exibe instalados, espaço livre (flash/SD/RAM) e pacotes pendentes.
