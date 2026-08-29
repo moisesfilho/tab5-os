@@ -140,13 +140,13 @@ tab5_err_t tab5_manifest_parse_json(const char *json_str, tab5_manifest_t *out_m
             cJSON *perm_elem = cJSON_GetArrayItem(item_perms, i);
             if (perm_elem != nullptr && cJSON_IsString(perm_elem)) {
                 const char *p = perm_elem->valuestring;
-                if (strcmp(p, "storage.read") == 0) {
+                if (strcmp(p, "storage.read") == 0 || strcmp(p, "storage_read") == 0) {
                     out_manifest->permissions |= TAB5_PERM_STORAGE_READ;
-                } else if (strcmp(p, "storage.write") == 0) {
+                } else if (strcmp(p, "storage.write") == 0 || strcmp(p, "storage_write") == 0) {
                     out_manifest->permissions |= TAB5_PERM_STORAGE_WRITE;
-                } else if (strcmp(p, "storage.readwrite") == 0) {
+                } else if (strcmp(p, "storage.readwrite") == 0 || strcmp(p, "storage_readwrite") == 0) {
                     out_manifest->permissions |= (TAB5_PERM_STORAGE_READ | TAB5_PERM_STORAGE_WRITE);
-                } else if (strcmp(p, "ui.keyboard") == 0) {
+                } else if (strcmp(p, "ui.keyboard") == 0 || strcmp(p, "ui_keyboard") == 0) {
                     out_manifest->permissions |= TAB5_PERM_UI_KEYBOARD;
                 } else if (strcmp(p, "network") == 0) {
                     out_manifest->permissions |= TAB5_PERM_NETWORK;

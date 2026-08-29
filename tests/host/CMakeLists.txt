@@ -41,6 +41,7 @@ add_executable(tab5_host_tests
     src/test_manifest.cpp
     src/test_package_mgr.cpp
     src/test_storage_mgr.cpp
+    src/test_sdk_integration.cpp
     stubs/cJSON.c
     mocks/path_redirect.cpp
     mocks/link_wrappers.cpp
