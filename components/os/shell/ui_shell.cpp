@@ -22,6 +22,7 @@
 #include "ui_installer.h"
 #include "ui_storage_view.h"
 #include "tab5_package_mgr.h"
+#include "tab5_ui_host.h"
 
 namespace {
 
@@ -422,5 +423,7 @@ void ui_shell_notify_keyboard_layout(void)
         ui_calendar_apply_layout();
     } else if (act == storage_scr) {
         ui_storage_view_apply_layout();
+    } else {
+        tab5_ui_host_apply_layout();
     }
 }

@@ -114,6 +114,26 @@ tab5_ui_obj_t tab5_ui_app_bar_add_action_button(const char *symbol_or_text, void
                                                 void *user_data);
 
 /**
+ * @brief Retorna o widget de textarea principal/editor da aplicação.
+ */
+tab5_ui_obj_t tab5_ui_get_main_textarea(void);
+
+/**
+ * @brief Define o texto de um widget textarea.
+ */
+tab5_err_t tab5_ui_textarea_set_text(tab5_ui_obj_t ta, const char *text);
+
+/**
+ * @brief Obtém o texto atual de um widget textarea.
+ */
+const char *tab5_ui_textarea_get_text(tab5_ui_obj_t ta);
+
+/**
+ * @brief Define o texto de placeholder do textarea.
+ */
+tab5_err_t tab5_ui_textarea_set_placeholder(tab5_ui_obj_t ta, const char *placeholder);
+
+/**
  * @brief Exibe o teclado virtual na tela associado a um textarea.
  */
 tab5_err_t tab5_ui_keyboard_show(tab5_ui_obj_t target_textarea);

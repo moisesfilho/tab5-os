@@ -42,6 +42,26 @@ bool tab5_ui_host_keyboard_is_visible(void);
  */
 tab5_err_t tab5_ui_host_show_toast(const char *message, uint32_t duration_ms);
 
+/**
+ * @brief Define o texto de um widget textarea.
+ */
+tab5_err_t tab5_ui_host_textarea_set_text(tab5_ui_obj_t ta, const char *text);
+
+/**
+ * @brief Obtém o texto atual de um widget textarea.
+ */
+const char *tab5_ui_host_textarea_get_text(tab5_ui_obj_t ta);
+
+/**
+ * @brief Define o texto de placeholder do textarea.
+ */
+tab5_err_t tab5_ui_host_textarea_set_placeholder(tab5_ui_obj_t ta, const char *placeholder);
+
+/**
+ * @brief Ajusta o layout do editor/conteúdo em relação ao teclado virtual.
+ */
+void tab5_ui_host_apply_layout(void);
+
 #ifdef __cplusplus
 }
 #endif

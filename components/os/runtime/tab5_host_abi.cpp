@@ -14,6 +14,7 @@
     defined(TAB5_SIMULATOR)
 #include "lvgl.h"
 #include "ui_app_bar.h"
+#include "ui_font.h"
 #define HAVE_LVGL 1
 #else
 #define HAVE_LVGL 0
@@ -82,7 +83,11 @@ tab5_err_t tab5_ui_app_bar_set_title(const char *title)
 
 #if HAVE_LVGL
     if (s_active_app_ctx->app_bar != nullptr) {
-        // Atualiza título se a app_bar estiver ativa
+        lv_obj_t *bar = (lv_obj_t *)s_active_app_ctx->app_bar;
+        lv_obj_t *lbl = lv_obj_get_child(bar, 0);
+        if (lbl != nullptr) {
+            lv_label_set_text(lbl, title);
+        }
     }
 #endif
     strncpy(s_active_app_ctx->app_name, title, sizeof(s_active_app_ctx->app_name) - 1);
@@ -93,14 +98,82 @@ tab5_err_t tab5_ui_app_bar_set_title(const char *title)
 tab5_ui_obj_t tab5_ui_app_bar_add_action_button(const char *symbol_or_text, void (*on_click)(void *user_data),
                                                 void *user_data)
 {
-    (void)symbol_or_text;
-    (void)on_click;
-    (void)user_data;
+    if (s_active_app_ctx == nullptr || symbol_or_text == nullptr) {
+        return nullptr;
+    }
+#if HAVE_LVGL
+    if (s_active_app_ctx->app_bar != nullptr) {
+        lv_obj_t *bar = (lv_obj_t *)s_active_app_ctx->app_bar;
+        lv_obj_t *actions_cont = lv_obj_get_child(bar, 1);
+        if (actions_cont == nullptr) {
+            actions_cont = bar;
+        }
+
+        const char *sym = symbol_or_text;
+        if (strcmp(symbol_or_text, "LV_SYMBOL_PLUS") == 0) {
+            sym = LV_SYMBOL_PLUS;
+        } else if (strcmp(symbol_or_text, "LV_SYMBOL_SAVE") == 0) {
+            sym = LV_SYMBOL_SAVE;
+        } else if (strcmp(symbol_or_text, "LV_SYMBOL_EDIT") == 0) {
+            sym = LV_SYMBOL_EDIT;
+        } else if (strcmp(symbol_or_text, "LV_SYMBOL_TRASH") == 0) {
+            sym = LV_SYMBOL_TRASH;
+        }
+
+        lv_obj_t *btn = lv_button_create(actions_cont);
+        lv_obj_set_size(btn, 44, 36);
+        lv_obj_set_style_radius(btn, 8, 0);
+        lv_obj_set_style_border_width(btn, 1, 0);
+        lv_obj_set_style_shadow_width(btn, 0, 0);
+        lv_obj_set_style_pad_all(btn, 0, 0);
+        lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+
+        struct action_cb_data_t {
+            void (*cb)(void *);
+            void *data;
+        };
+        auto *cb_data = new action_cb_data_t{on_click, user_data};
+        lv_obj_add_event_cb(
+            btn,
+            [](lv_event_t *e) {
+                auto *d = (action_cb_data_t *)lv_event_get_user_data(e);
+                if (d && d->cb) {
+                    d->cb(d->data);
+                }
+            },
+            LV_EVENT_CLICKED, cb_data);
+
+        lv_obj_t *lbl = lv_label_create(btn);
+        lv_label_set_text(lbl, sym != nullptr ? sym : "");
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18_latin1, 0);
+        lv_obj_center(lbl);
+        return (tab5_ui_obj_t)btn;
+    }
+#endif
+    return (tab5_ui_obj_t)0x3000;
+}
+
+tab5_ui_obj_t tab5_ui_get_main_textarea(void)
+{
     if (s_active_app_ctx == nullptr) {
         return nullptr;
     }
-    // Suporte a adicionar botão de ação nativo
-    return (tab5_ui_obj_t)0x3000;
+    return s_active_app_ctx->content_area;
+}
+
+tab5_err_t tab5_ui_textarea_set_text(tab5_ui_obj_t ta, const char *text)
+{
+    return tab5_ui_host_textarea_set_text(ta, text);
+}
+
+const char *tab5_ui_textarea_get_text(tab5_ui_obj_t ta)
+{
+    return tab5_ui_host_textarea_get_text(ta);
+}
+
+tab5_err_t tab5_ui_textarea_set_placeholder(tab5_ui_obj_t ta, const char *placeholder)
+{
+    return tab5_ui_host_textarea_set_placeholder(ta, placeholder);
 }
 
 tab5_err_t tab5_ui_keyboard_show(tab5_ui_obj_t target_textarea)
@@ -195,7 +268,12 @@ void tab5_system_log(int level, const char *tag, const char *message)
 static const tab5_native_symbol_t s_native_symbols[] = {
     {"tab5_lifecycle_register", (void *)tab5_lifecycle_register, "(*)i"},
     {"tab5_ui_get_screen", (void *)tab5_ui_get_screen, "()r"},
+    {"tab5_ui_get_main_textarea", (void *)tab5_ui_get_main_textarea, "()r"},
+    {"tab5_ui_textarea_set_text", (void *)tab5_ui_textarea_set_text, "(r$)i"},
+    {"tab5_ui_textarea_get_text", (void *)tab5_ui_textarea_get_text, "(r)$"},
+    {"tab5_ui_textarea_set_placeholder", (void *)tab5_ui_textarea_set_placeholder, "(r$)i"},
     {"tab5_ui_app_bar_set_title", (void *)tab5_ui_app_bar_set_title, "($)i"},
+    {"tab5_ui_app_bar_add_action_button", (void *)tab5_ui_app_bar_add_action_button, "($*r)r"},
     {"tab5_ui_keyboard_show", (void *)tab5_ui_keyboard_show, "(r)i"},
     {"tab5_ui_keyboard_hide", (void *)tab5_ui_keyboard_hide, "()i"},
     {"tab5_ui_keyboard_is_visible", (void *)tab5_ui_keyboard_is_visible, "()i"},

@@ -49,6 +49,7 @@ typedef struct {
     tab5_app_state_t state;               /**< Estado atual do ciclo de vida */
     tab5_ui_obj_t root_screen;            /**< lv_obj_t* da tela da app */
     tab5_ui_obj_t app_bar;                /**< Handle da barra de título padrão */
+    tab5_ui_obj_t content_area;           /**< Handle do widget de edição/conteúdo principal (textarea) */
     tab5_lifecycle_callbacks_t lifecycle; /**< Callbacks registrados pela app */
     void *user_data;                      /**< Ponteiro genérico do runtime/instância */
 } tab5_app_context_t;
