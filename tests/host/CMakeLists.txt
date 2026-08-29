@@ -40,6 +40,7 @@ add_executable(tab5_host_tests
     src/test_wasm_runtime.cpp
     src/test_manifest.cpp
     src/test_package_mgr.cpp
+    src/test_storage_mgr.cpp
     stubs/cJSON.c
     mocks/path_redirect.cpp
     mocks/link_wrappers.cpp
@@ -48,6 +49,7 @@ add_executable(tab5_host_tests
     ${REPO_ROOT}/components/os/core/orientation.cpp
     ${REPO_ROOT}/components/os/core/file_assoc.cpp
     ${REPO_ROOT}/components/os/core/app_registry.cpp
+    ${REPO_ROOT}/components/os/core/storage_mgr.cpp
     ${REPO_ROOT}/components/os/core/timezone_mgr.cpp
     ${REPO_ROOT}/components/os/core/wifi_storage.cpp
     ${REPO_ROOT}/components/os/core/bt_storage.cpp

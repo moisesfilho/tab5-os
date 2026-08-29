@@ -20,6 +20,9 @@
 #include "ui_font.h"
 #include "app_registry.h"
 #include "file_assoc.h"
+#include "ui_installer.h"
+#include "ui_storage_view.h"
+#include "tab5_package_mgr.h"
 
 namespace {
 
@@ -132,6 +135,9 @@ void ui_shell_init(void)
     /* Inicializa subsistemas de registro e associacao de arquivos */
     app_registry_init();
     file_assoc_init();
+    tab5_package_mgr_init();
+    ui_installer_init();
+    ui_storage_view_init();
 
     /* Cada aplicacao registra seu manifesto (icone, launch, extensoes) no SO */
     ui_notas_register();
@@ -146,6 +152,9 @@ void ui_shell_init(void)
     ui_chat_register();
     ui_music_register();
     ui_calendar_register();
+
+    /* Varre pacotes embutidos e instalados no SD */
+    tab5_package_mgr_scan_and_register_all();
 
     /* Cria a area de trabalho dinamicamente a partir dos apps registrados */
     ui_desktop_create(desktop_scr);
