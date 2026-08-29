@@ -10,3 +10,5 @@ tests/simulator/preview/
 tests/simulator/diffs/
 tests/simulator/report.txt
 embedded_apps_pkg/
+__pycache__/
+*.pyc
