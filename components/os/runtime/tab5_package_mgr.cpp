@@ -22,6 +22,7 @@
 
 #ifdef ESP_PLATFORM
 #include "esp_log.h"
+#include "esp_spiffs.h"
 static const char *TAG = "tab5_pkg_mgr";
 #define LOG_I(fmt, ...) ESP_LOGI(TAG, fmt, ##__VA_ARGS__)
 #define LOG_W(fmt, ...) ESP_LOGW(TAG, fmt, ##__VA_ARGS__)
@@ -37,6 +38,7 @@ namespace {
 struct DynamicAppEntry {
     tab5_manifest_t manifest;
     std::string install_dir;
+    bool is_embedded;
     std::string id_str;
     std::string name_str;
     std::string icon_symbol_str;
@@ -153,6 +155,18 @@ static const struct {
 
 tab5_err_t tab5_package_mgr_init(void)
 {
+#ifdef ESP_PLATFORM
+    esp_vfs_spiffs_conf_t conf = {.base_path = TAB5_APPS_EMBEDDED_DIR,
+                                  .partition_label = "apps",
+                                  .max_files = 32,
+                                  .format_if_mount_failed = false};
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+    if (ret != ESP_OK) {
+        LOG_W("Particao /apps (spiffs) nao montada ou vazia (ret=%s)", esp_err_to_name(ret));
+    } else {
+        LOG_I("Particao /apps montada com sucesso");
+    }
+#endif
     mkdir(TAB5_APPS_DIR, 0755);
     mkdir(TAB5_APPS_INSTALLED_DIR, 0755);
     mkdir(TAB5_APPS_DATA_DIR, 0755);
@@ -162,10 +176,29 @@ tab5_err_t tab5_package_mgr_init(void)
     return TAB5_OK;
 }
 
-static tab5_err_t register_dynamic_app_entry(const tab5_manifest_t &manifest, const std::string &install_dir)
+static tab5_err_t register_dynamic_app_entry(const tab5_manifest_t &manifest, const std::string &install_dir,
+                                             bool is_embedded)
 {
     std::string id = manifest.id;
-    if (s_dynamic_apps.contains(id)) {
+    auto it = s_dynamic_apps.find(id);
+    if (it != s_dynamic_apps.end()) {
+        DynamicAppEntry *existing = it->second.get();
+        // Se a app existente for embutida e a nova for do SD, compara versões
+        if (existing->is_embedded && !is_embedded) {
+            int cmp = tab5_manifest_version_compare(manifest.version, existing->manifest.version);
+            if (cmp >= 0) {
+                LOG_I("App %s do SD (v%s) tem precedencia sobre embutida (v%s)", id.c_str(), manifest.version,
+                      existing->manifest.version);
+                existing->manifest = manifest;
+                existing->install_dir = install_dir;
+                existing->is_embedded = false;
+                existing->host_ctx.permissions = manifest.permissions;
+                return TAB5_OK;
+            }
+            LOG_I("App embutida %s (v%s) e mais recente que SD (v%s), mantendo embutida", id.c_str(),
+                  existing->manifest.version, manifest.version);
+            return TAB5_OK;
+        }
         return TAB5_OK; // Já registrado
     }
 
@@ -180,6 +213,7 @@ static tab5_err_t register_dynamic_app_entry(const tab5_manifest_t &manifest, co
     auto entry = std::make_unique<DynamicAppEntry>();
     entry->manifest = manifest;
     entry->install_dir = install_dir;
+    entry->is_embedded = is_embedded;
     entry->id_str = manifest.id;
     entry->name_str = manifest.name;
     entry->icon_symbol_str = manifest.icon_symbol[0] ? manifest.icon_symbol : "#";
@@ -209,7 +243,7 @@ static tab5_err_t register_dynamic_app_entry(const tab5_manifest_t &manifest, co
     s_dynamic_apps[id] = std::move(entry);
 
     app_registry_register(&s_dynamic_apps[id]->desc);
-    LOG_I("App dinamicamente registrada: %s (%s)", manifest.id, manifest.name);
+    LOG_I("App dinamicamente registrada: %s (%s, embutida=%d)", manifest.id, manifest.name, (int)is_embedded);
     return TAB5_OK;
 }
 
@@ -255,7 +289,7 @@ tab5_err_t tab5_package_mgr_install(const char *source_path, char *out_app_id, s
     mkdir(data_dir.c_str(), 0755);
 
     // Registra dynamic entry
-    register_dynamic_app_entry(manifest, target_dir);
+    register_dynamic_app_entry(manifest, target_dir, false);
 
     if (out_app_id != nullptr && id_buf_size > 0) {
         strncpy(out_app_id, manifest.id, id_buf_size - 1);
@@ -294,10 +328,10 @@ tab5_err_t tab5_package_mgr_uninstall(const char *app_id, bool delete_user_data)
     return TAB5_OK;
 }
 
-int tab5_package_mgr_scan_and_register_all(void)
+static int scan_directory_and_register(const char *base_dir, bool is_embedded)
 {
     int count = 0;
-    DIR *d = opendir(TAB5_APPS_INSTALLED_DIR);
+    DIR *d = opendir(base_dir);
     if (d == nullptr) {
         return 0;
     }
@@ -308,13 +342,13 @@ int tab5_package_mgr_scan_and_register_all(void)
             continue;
         }
 
-        std::string app_dir = std::string(TAB5_APPS_INSTALLED_DIR) + "/" + entry->d_name;
+        std::string app_dir = std::string(base_dir) + "/" + entry->d_name;
         struct stat st;
         if (stat(app_dir.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
             std::string manifest_path = app_dir + "/manifest.json";
             tab5_manifest_t manifest = {};
             if (tab5_manifest_load_from_file(manifest_path.c_str(), &manifest) == TAB5_OK) {
-                if (register_dynamic_app_entry(manifest, app_dir) == TAB5_OK) {
+                if (register_dynamic_app_entry(manifest, app_dir, is_embedded) == TAB5_OK) {
                     count++;
                 }
             }
@@ -322,6 +356,16 @@ int tab5_package_mgr_scan_and_register_all(void)
     }
     closedir(d);
     return count;
+}
+
+int tab5_package_mgr_scan_and_register_all(void)
+{
+    int embedded_count = scan_directory_and_register(TAB5_APPS_EMBEDDED_DIR, true);
+    int sd_count = scan_directory_and_register(TAB5_APPS_INSTALLED_DIR, false);
+    (void)embedded_count;
+    (void)sd_count;
+    LOG_I("Varredura de apps concluida: %d embutidas, %d instaladas no SD", embedded_count, sd_count);
+    return static_cast<int>(s_dynamic_apps.size());
 }
 
 tab5_err_t tab5_package_mgr_get_app_info(const char *app_id, tab5_installed_app_info_t *out_info)
@@ -337,7 +381,7 @@ tab5_err_t tab5_package_mgr_get_app_info(const char *app_id, tab5_installed_app_
 
     out_info->manifest = it->second->manifest;
     strncpy(out_info->install_path, it->second->install_dir.c_str(), sizeof(out_info->install_path) - 1);
-    out_info->is_embedded = false;
+    out_info->is_embedded = it->second->is_embedded;
     return TAB5_OK;
 }
 

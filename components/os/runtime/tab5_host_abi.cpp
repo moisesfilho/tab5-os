@@ -82,9 +82,7 @@ tab5_err_t tab5_ui_app_bar_set_title(const char *title)
 
 #if HAVE_LVGL
     if (s_active_app_ctx->app_bar != nullptr) {
-        ui_app_bar_t bar_struct;
-        bar_struct.bar = (lv_obj_t *)s_active_app_ctx->app_bar;
-        // Atualiza título se a struct puder ser manipulada
+        // Atualiza título se a app_bar estiver ativa
     }
 #endif
     strncpy(s_active_app_ctx->app_name, title, sizeof(s_active_app_ctx->app_name) - 1);

@@ -16,6 +16,7 @@ extern "C" {
 
 #define TAB5_APPS_DIR "/sdcard/apps"
 #define TAB5_APPS_INSTALLED_DIR "/sdcard/apps/installed"
+#define TAB5_APPS_EMBEDDED_DIR "/apps"
 #define TAB5_APPS_DATA_DIR "/sdcard/data"
 
 typedef struct {

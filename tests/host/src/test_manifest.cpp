@@ -85,3 +85,13 @@ TEST(ManifestTest, InvalidJsonAndMissingFields)
     EXPECT_EQ(tab5_manifest_parse_json("{\"id\": \"com/tab5/bad\", \"name\": \"Bad\"}", &manifest),
               TAB5_ERR_INVALID_ARG);
 }
+
+TEST(ManifestTest, VersionCompare)
+{
+    EXPECT_GT(tab5_manifest_version_compare("1.2.0", "1.1.9"), 0);
+    EXPECT_GT(tab5_manifest_version_compare("2.0.0", "1.9.9"), 0);
+    EXPECT_GT(tab5_manifest_version_compare("1.0.1", "1.0.0"), 0);
+    EXPECT_EQ(tab5_manifest_version_compare("1.0.0", "1.0.0"), 0);
+    EXPECT_LT(tab5_manifest_version_compare("1.0.0", "1.0.1"), 0);
+    EXPECT_LT(tab5_manifest_version_compare("0.9.0", "1.0.0"), 0);
+}

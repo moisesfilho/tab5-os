@@ -42,6 +42,6 @@ idf_component_register(
         "fonts/lv_font_montserrat_56_latin1.c"
     INCLUDE_DIRS "core" "shell" "fonts" "runtime" "runtime/include" "."
     REQUIRES lvgl m5stack_tab5 sensor_hub nvs_flash esp_wifi esp_netif esp_event
-            fatfs sdmmc bt apps json espressif__esp_hosted
+            fatfs sdmmc bt apps json spiffs espressif__esp_hosted
             espressif__wasm-micro-runtime
 )

@@ -21,6 +21,7 @@ const std::string &make_root()
         mkdir((base + "/tab5_os").c_str(), 0755);
         mkdir((base + "/.tab5_os").c_str(), 0755);
         mkdir((base + "/data").c_str(), 0755);
+        mkdir((base + "/apps").c_str(), 0755);
         return base;
     }();
     return root;
@@ -45,6 +46,14 @@ std::string redirect_path(const char *path)
     }
     if (std::strcmp(path, "/sdcard") == 0) {
         return tmp_root();
+    }
+    constexpr const char kPrefixApps[] = "/apps/";
+    const size_t apps_len = sizeof(kPrefixApps) - 1;
+    if (std::strncmp(path, kPrefixApps, apps_len) == 0) {
+        return tmp_root() + "/apps/" + (path + apps_len);
+    }
+    if (std::strcmp(path, "/apps") == 0) {
+        return tmp_root() + "/apps";
     }
     return path;
 }

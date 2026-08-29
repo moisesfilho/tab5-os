@@ -217,3 +217,30 @@ tab5_err_t tab5_manifest_load_from_file(const char *filepath, tab5_manifest_t *o
     free(buf);
     return err;
 }
+
+int tab5_manifest_version_compare(const char *v1, const char *v2)
+{
+    if (v1 == nullptr && v2 == nullptr) {
+        return 0;
+    }
+    if (v1 == nullptr) {
+        return -1;
+    }
+    if (v2 == nullptr) {
+        return 1;
+    }
+
+    int maj1 = 0, min1 = 0, pat1 = 0;
+    int maj2 = 0, min2 = 0, pat2 = 0;
+
+    sscanf(v1, "%d.%d.%d", &maj1, &min1, &pat1);
+    sscanf(v2, "%d.%d.%d", &maj2, &min2, &pat2);
+
+    if (maj1 != maj2) {
+        return (maj1 - maj2);
+    }
+    if (min1 != min2) {
+        return (min1 - min2);
+    }
+    return (pat1 - pat2);
+}

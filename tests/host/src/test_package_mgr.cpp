@@ -98,3 +98,35 @@ TEST_F(PackageMgrTest, ScanInstalledApps)
     tab5_package_mgr_uninstall("com.tab5.app1", false);
     tab5_package_mgr_uninstall("com.tab5.app2", false);
 }
+
+TEST_F(PackageMgrTest, EmbeddedAppPrecedence)
+{
+    // 1. Cria app embutida v1.0.0
+    std::string emb_dir = std::string(TAB5_APPS_EMBEDDED_DIR) + "/com.tab5.calc";
+    mkdir(TAB5_APPS_EMBEDDED_DIR, 0755);
+    mkdir(emb_dir.c_str(), 0755);
+
+    FILE *f_emb = fopen((emb_dir + "/manifest.json").c_str(), "w");
+    ASSERT_NE(f_emb, nullptr);
+    fputs("{\"id\": \"com.tab5.calc\", \"name\": \"Calc Embutida\", \"version\": \"1.0.0\"}", f_emb);
+    fclose(f_emb);
+
+    // 2. Cria app no SD v1.1.0
+    std::string sd_dir = std::string(TAB5_APPS_INSTALLED_DIR) + "/com.tab5.calc";
+    mkdir(sd_dir.c_str(), 0755);
+
+    FILE *f_sd = fopen((sd_dir + "/manifest.json").c_str(), "w");
+    ASSERT_NE(f_sd, nullptr);
+    fputs("{\"id\": \"com.tab5.calc\", \"name\": \"Calc Atualizada SD\", \"version\": \"1.1.0\"}", f_sd);
+    fclose(f_sd);
+
+    tab5_package_mgr_scan_and_register_all();
+
+    tab5_installed_app_info_t info = {};
+    EXPECT_EQ(tab5_package_mgr_get_app_info("com.tab5.calc", &info), TAB5_OK);
+    EXPECT_STREQ(info.manifest.version, "1.1.0");
+    EXPECT_STREQ(info.manifest.name, "Calc Atualizada SD");
+    EXPECT_FALSE(info.is_embedded);
+
+    tab5_package_mgr_uninstall("com.tab5.calc", true);
+}

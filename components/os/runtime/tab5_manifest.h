@@ -50,6 +50,12 @@ tab5_err_t tab5_manifest_load_from_file(const char *filepath, tab5_manifest_t *o
  */
 bool tab5_manifest_is_valid(const tab5_manifest_t *manifest);
 
+/**
+ * @brief Compara duas versões semânticas (ex: "1.2.0" vs "1.0.0").
+ * @return > 0 se v1 > v2, 0 se v1 == v2, < 0 se v1 < v2.
+ */
+int tab5_manifest_version_compare(const char *v1, const char *v2);
+
 #ifdef __cplusplus
 }
 #endif
