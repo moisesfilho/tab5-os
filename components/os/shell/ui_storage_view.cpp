@@ -301,26 +301,55 @@ static void apply_storage_theme(void)
 
     const ui_palette_t *pal = ui_theme_get();
     lv_obj_set_style_bg_color(s_storage_scr, lv_color_hex(pal->background), 0);
+    lv_obj_set_style_bg_opa(s_storage_scr, LV_OPA_COVER, 0);
     ui_app_bar_refresh_theme(&s_app_bar);
 
     if (s_tabview != nullptr) {
+        lv_obj_set_style_bg_color(s_tabview, lv_color_hex(pal->background), 0);
+        lv_obj_set_style_bg_opa(s_tabview, LV_OPA_COVER, 0);
+
         lv_obj_t *tab_bar = lv_tabview_get_tab_bar(s_tabview);
         if (tab_bar != nullptr) {
             lv_obj_set_style_bg_color(tab_bar, lv_color_hex(pal->surface_alt), 0);
+            lv_obj_set_style_bg_opa(tab_bar, LV_OPA_COVER, 0);
             lv_obj_set_style_border_color(tab_bar, lv_color_hex(pal->border), 0);
             lv_obj_set_style_border_width(tab_bar, 1, 0);
             lv_obj_set_style_border_side(tab_bar, LV_BORDER_SIDE_BOTTOM, 0);
             lv_obj_set_style_text_color(tab_bar, lv_color_hex(pal->text), 0);
+            lv_obj_set_style_text_font(tab_bar, &lv_font_montserrat_18_latin1, 0);
+
+            uint32_t btn_cnt = lv_obj_get_child_count(tab_bar);
+            for (uint32_t i = 0; i < btn_cnt; i++) {
+                lv_obj_t *btn = lv_obj_get_child(tab_bar, i);
+                if (btn != nullptr) {
+                    lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
+                    lv_obj_set_style_text_color(btn, lv_color_hex(pal->text_muted), 0);
+                    lv_obj_set_style_text_color(btn, lv_color_hex(pal->accent), LV_STATE_CHECKED);
+                    lv_obj_set_style_border_color(btn, lv_color_hex(pal->accent), LV_STATE_CHECKED);
+                    lv_obj_set_style_border_width(btn, 2, LV_STATE_CHECKED);
+                    lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_BOTTOM, LV_STATE_CHECKED);
+                }
+            }
+        }
+
+        lv_obj_t *tab_content = lv_tabview_get_content(s_tabview);
+        if (tab_content != nullptr) {
+            lv_obj_set_style_bg_color(tab_content, lv_color_hex(pal->background), 0);
+            lv_obj_set_style_bg_opa(tab_content, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(tab_content, 0, 0);
         }
 
         if (s_tab_disks != nullptr) {
             lv_obj_set_style_bg_color(s_tab_disks, lv_color_hex(pal->background), 0);
+            lv_obj_set_style_bg_opa(s_tab_disks, LV_OPA_COVER, 0);
         }
         if (s_tab_apps != nullptr) {
             lv_obj_set_style_bg_color(s_tab_apps, lv_color_hex(pal->background), 0);
+            lv_obj_set_style_bg_opa(s_tab_apps, LV_OPA_COVER, 0);
         }
         if (s_tab_pending != nullptr) {
             lv_obj_set_style_bg_color(s_tab_pending, lv_color_hex(pal->background), 0);
+            lv_obj_set_style_bg_opa(s_tab_pending, LV_OPA_COVER, 0);
         }
     }
 
