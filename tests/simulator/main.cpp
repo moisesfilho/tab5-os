@@ -100,7 +100,7 @@ int watch_interactive_keys(void *userdata, SDL_Event *event)
         ui_shell_open_files();
         break;
     case SDLK_3:
-        ui_shell_open_notas();
+        app_registry_launch("com.tab5.notas");
         break;
     case SDLK_4:
         ui_shell_open_terminal();

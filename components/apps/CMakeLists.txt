@@ -4,7 +4,6 @@ idf_component_register(
         "camera/ui_camera.cpp"
         "gallery/tjpgd.c"
         "gallery/ui_gallery.cpp"
-        "notas/ui_notas.cpp"
         "recorder/audio_recorder.cpp"
         "recorder/ui_recorder.cpp"
         "chat/ai_storage.cpp"
@@ -24,7 +23,6 @@ idf_component_register(
     INCLUDE_DIRS
         "camera"
         "gallery"
-        "notas"
         "recorder"
         "chat"
         "terminal"

@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
 #include <memory>
 #include <cstring>
 #include <cstdio>
@@ -337,20 +338,28 @@ static int scan_directory_and_register(const char *base_dir, bool is_embedded)
     }
 
     struct dirent *entry;
+    std::set<std::string> inspected_dirs;
+
     while ((entry = readdir(d)) != nullptr) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
 
-        std::string app_dir = std::string(base_dir) + "/" + entry->d_name;
-        struct stat st;
-        if (stat(app_dir.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
-            std::string manifest_path = app_dir + "/manifest.json";
-            tab5_manifest_t manifest = {};
-            if (tab5_manifest_load_from_file(manifest_path.c_str(), &manifest) == TAB5_OK) {
-                if (register_dynamic_app_entry(manifest, app_dir, is_embedded) == TAB5_OK) {
-                    count++;
-                }
+        std::string name = entry->d_name;
+        size_t slash_pos = name.find('/');
+        std::string pkg_name = (slash_pos != std::string::npos) ? name.substr(0, slash_pos) : name;
+
+        if (inspected_dirs.contains(pkg_name)) {
+            continue;
+        }
+        inspected_dirs.insert(pkg_name);
+
+        std::string app_dir = std::string(base_dir) + "/" + pkg_name;
+        std::string manifest_path = app_dir + "/manifest.json";
+        tab5_manifest_t manifest = {};
+        if (tab5_manifest_load_from_file(manifest_path.c_str(), &manifest) == TAB5_OK) {
+            if (register_dynamic_app_entry(manifest, app_dir, is_embedded) == TAB5_OK) {
+                count++;
             }
         }
     }

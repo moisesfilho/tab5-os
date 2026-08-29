@@ -12,6 +12,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <string>
+#include <set>
 
 #ifdef ESP_PLATFORM
 #include "esp_log.h"
@@ -200,11 +202,21 @@ std::vector<tab5_app_storage_item_t> tab5_storage_mgr_list_installed_apps(void)
     DIR *d_emb = opendir(TAB5_APPS_EMBEDDED_DIR);
     if (d_emb != nullptr) {
         struct dirent *entry;
+        std::set<std::string> inspected_dirs;
         while ((entry = readdir(d_emb)) != nullptr) {
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
                 continue;
             }
-            std::string app_dir = std::string(TAB5_APPS_EMBEDDED_DIR) + "/" + entry->d_name;
+            std::string name = entry->d_name;
+            size_t slash_pos = name.find('/');
+            std::string pkg_name = (slash_pos != std::string::npos) ? name.substr(0, slash_pos) : name;
+
+            if (inspected_dirs.contains(pkg_name)) {
+                continue;
+            }
+            inspected_dirs.insert(pkg_name);
+
+            std::string app_dir = std::string(TAB5_APPS_EMBEDDED_DIR) + "/" + pkg_name;
             std::string manifest_path = app_dir + "/manifest.json";
             tab5_manifest_t manifest = {};
             if (tab5_manifest_load_from_file(manifest_path.c_str(), &manifest) == TAB5_OK) {

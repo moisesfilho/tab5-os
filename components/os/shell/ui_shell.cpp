@@ -2,7 +2,6 @@
 #include "ui_bar.h"
 #include "ui_keyboard.h"
 #include "ui_desktop.h"
-#include "ui_notas.h"
 #include "ui_wifi.h"
 #include "ui_files.h"
 #include "ui_bluetooth.h"
@@ -27,8 +26,6 @@
 namespace {
 
 lv_obj_t *desktop_scr = nullptr;
-lv_obj_t *notas_scr = nullptr;
-lv_obj_t *notas_caller_scr = nullptr;
 lv_obj_t *wifi_scr = nullptr;
 lv_obj_t *files_scr = nullptr;
 lv_obj_t *bt_scr = nullptr;
@@ -141,7 +138,6 @@ void ui_shell_init(void)
     ui_installer_init();
 
     /* Cada aplicacao registra seu manifesto (icone, launch, extensoes) no SO */
-    ui_notas_register();
     ui_wifi_register();
     ui_files_register();
     ui_bluetooth_register();
@@ -160,7 +156,6 @@ void ui_shell_init(void)
 
     /* Cria a area de trabalho dinamicamente a partir dos apps registrados */
     ui_desktop_create(desktop_scr);
-    notas_scr = ui_notas_create();
     wifi_scr = ui_wifi_create();
     files_scr = ui_files_create();
     bt_scr = ui_bluetooth_create();
@@ -179,33 +174,6 @@ void ui_shell_init(void)
     lv_timer_create(inactivity_timer_cb, 1000, nullptr);
 
     splash_start();
-}
-
-void ui_shell_open_notas(void)
-{
-    ui_keyboard_hide();
-    notas_caller_scr = desktop_scr;
-    shell_load_scr(notas_scr);
-    ui_notas_on_open();
-}
-
-void ui_shell_open_notas_with_file(const char *filepath)
-{
-    ui_keyboard_hide();
-    /* Salva a tela atualmente ativa (ex: files_scr) para retorno ao fechar */
-    lv_obj_t *act = lv_disp_get_scr_act(NULL);
-    notas_caller_scr = (act != nullptr && act != notas_scr) ? act : desktop_scr;
-    ui_notas_open_file(filepath);
-    shell_load_scr(notas_scr);
-    ui_notas_on_open();
-}
-
-void ui_shell_close_notas(void)
-{
-    ui_keyboard_hide();
-    lv_obj_t *target = (notas_caller_scr != nullptr) ? notas_caller_scr : desktop_scr;
-    notas_caller_scr = nullptr;
-    shell_load_scr(target);
 }
 
 void ui_shell_open_wifi(void)
@@ -408,7 +376,6 @@ void ui_shell_close_storage(void)
 void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
-    ui_notas_refresh_theme();
     ui_wifi_refresh_theme();
     ui_files_refresh_theme();
     ui_bluetooth_refresh_theme();
@@ -431,9 +398,7 @@ void ui_shell_refresh_theme(void)
 void ui_shell_notify_keyboard_layout(void)
 {
     lv_obj_t *act = lv_disp_get_scr_act(NULL);
-    if (act == notas_scr) {
-        ui_notas_apply_layout();
-    } else if (act == wifi_scr) {
+    if (act == wifi_scr) {
         ui_wifi_apply_layout();
     } else if (act == files_scr) {
         ui_files_apply_layout();

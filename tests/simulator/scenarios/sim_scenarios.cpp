@@ -153,7 +153,7 @@ void act_open_files(void)
 
 void act_open_notas(void)
 {
-    ui_shell_open_notas();
+    app_registry_launch("com.tab5.notas");
 }
 
 void act_open_terminal(void)
