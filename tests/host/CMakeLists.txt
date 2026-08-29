@@ -35,6 +35,12 @@ add_executable(tab5_host_tests
     src/test_ai_storage.cpp
     src/test_display_storage.cpp
     src/test_calendar_logic.cpp
+    src/test_storage_sandbox.cpp
+    src/test_host_abi.cpp
+    src/test_wasm_runtime.cpp
+    src/test_manifest.cpp
+    src/test_package_mgr.cpp
+    stubs/cJSON.c
     mocks/path_redirect.cpp
     mocks/link_wrappers.cpp
     mocks/nvs_mock.cpp
@@ -48,6 +54,14 @@ add_executable(tab5_host_tests
     ${REPO_ROOT}/components/os/core/hid_report_map.cpp
     ${REPO_ROOT}/components/os/core/display_storage.cpp
     ${REPO_ROOT}/components/os/core/calendar_logic.cpp
+    ${REPO_ROOT}/components/os/runtime/tab5_storage_sandbox.cpp
+    ${REPO_ROOT}/components/os/runtime/tab5_ui_host.cpp
+    ${REPO_ROOT}/components/os/runtime/tab5_sys_host.cpp
+    ${REPO_ROOT}/components/os/runtime/tab5_lifecycle_host.cpp
+    ${REPO_ROOT}/components/os/runtime/tab5_host_abi.cpp
+    ${REPO_ROOT}/components/os/runtime/tab5_wasm_runtime.cpp
+    ${REPO_ROOT}/components/os/runtime/tab5_manifest.cpp
+    ${REPO_ROOT}/components/os/runtime/tab5_package_mgr.cpp
     ${REPO_ROOT}/components/apps/chat/ai_storage.cpp
     ${REPO_ROOT}/components/apps/terminal/terminal_cmd.cpp
 )
@@ -56,6 +70,8 @@ target_include_directories(tab5_host_tests PRIVATE
     stubs
     mocks
     ${REPO_ROOT}/components/os/core
+    ${REPO_ROOT}/components/os/runtime
+    ${REPO_ROOT}/components/os/runtime/include
     ${REPO_ROOT}/components/apps/chat
     ${REPO_ROOT}/components/apps/terminal
 )

@@ -19,6 +19,8 @@ const std::string &make_root()
         const std::string base = dir != nullptr ? dir : tmpl;
         /* Provisiona o diretorio padrao do sistema, como o mount real */
         mkdir((base + "/tab5_os").c_str(), 0755);
+        mkdir((base + "/.tab5_os").c_str(), 0755);
+        mkdir((base + "/data").c_str(), 0755);
         return base;
     }();
     return root;

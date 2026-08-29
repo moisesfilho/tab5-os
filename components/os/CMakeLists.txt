@@ -15,6 +15,14 @@ idf_component_register(
         "core/screenshot.cpp"
         "core/orientation.cpp"
         "core/calendar_logic.cpp"
+        "runtime/tab5_storage_sandbox.cpp"
+        "runtime/tab5_ui_host.cpp"
+        "runtime/tab5_sys_host.cpp"
+        "runtime/tab5_lifecycle_host.cpp"
+        "runtime/tab5_host_abi.cpp"
+        "runtime/tab5_wasm_runtime.cpp"
+        "runtime/tab5_manifest.cpp"
+        "runtime/tab5_package_mgr.cpp"
         "shell/ui_shell.cpp"
         "shell/ui_desktop.cpp"
         "shell/ui_bar.cpp"
@@ -32,7 +40,8 @@ idf_component_register(
         "fonts/lv_font_jetbrains_mono_18_clock.c"
         "fonts/lv_font_montserrat_28_latin1.c"
         "fonts/lv_font_montserrat_56_latin1.c"
-    INCLUDE_DIRS "core" "shell" "fonts" "."
+    INCLUDE_DIRS "core" "shell" "fonts" "runtime" "runtime/include" "."
     REQUIRES lvgl m5stack_tab5 sensor_hub nvs_flash esp_wifi esp_netif esp_event
-            fatfs sdmmc bt apps espressif__esp_hosted
+            fatfs sdmmc bt apps json espressif__esp_hosted
+            espressif__wasm-micro-runtime
 )

@@ -56,6 +56,13 @@ const app_desc_t *app_registry_get_by_index(int index);
  */
 const app_desc_t *app_registry_find_by_id(const char *id);
 
+/**
+ * @brief Remove uma aplicação do registro e desassocia suas extensões.
+ * @param id ID único da aplicação.
+ * @return ESP_OK se removido, ESP_ERR_NOT_FOUND se não encontrado.
+ */
+esp_err_t app_registry_unregister(const char *id);
+
 #ifdef __cplusplus
 }
 
