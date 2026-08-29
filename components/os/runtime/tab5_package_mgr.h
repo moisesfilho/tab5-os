@@ -64,6 +64,16 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
  */
 tab5_err_t tab5_package_mgr_close_active(void);
 
+/**
+ * @brief Lê o manifest.json diretamente de um arquivo de pacote .tab5pkg (TAR).
+ */
+bool tab5_package_read_manifest_from_tar(const char *tar_path, tab5_manifest_t *out_manifest);
+
+/**
+ * @brief Extrai o conteúdo de um pacote .tab5pkg (TAR) para um diretório destino.
+ */
+bool tab5_package_extract_tar(const char *tar_path, const char *dest_dir);
+
 #ifdef __cplusplus
 }
 #endif

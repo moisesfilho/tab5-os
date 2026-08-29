@@ -269,7 +269,8 @@ std::vector<tab5_pending_package_t> tab5_storage_mgr_list_pending_packages(void)
         if (stat(full_path.c_str(), &st) == 0) {
             std::string manifest_path = full_path + "/manifest.json";
             tab5_manifest_t manifest = {};
-            if (tab5_manifest_load_from_file(manifest_path.c_str(), &manifest) == TAB5_OK ||
+            if (tab5_package_read_manifest_from_tar(full_path.c_str(), &manifest) ||
+                tab5_manifest_load_from_file(manifest_path.c_str(), &manifest) == TAB5_OK ||
                 tab5_manifest_load_from_file(full_path.c_str(), &manifest) == TAB5_OK) {
                 tab5_pending_package_t pkg = {};
                 strncpy(pkg.filename, entry->d_name, sizeof(pkg.filename) - 1);

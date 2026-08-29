@@ -5,6 +5,7 @@
 
 #include "tab5_ui_host.h"
 #include "tab5_lifecycle_host.h"
+#include "tab5_package_mgr.h"
 #include <cstring>
 
 #if defined(ESP_PLATFORM) || defined(LV_LVGL_H_INCLUDE_SIMPLE) || defined(LV_CONF_INCLUDE_SIMPLE) ||                   \
@@ -19,12 +20,12 @@
 #endif
 
 #if HAVE_LVGL
+static lv_obj_t *s_previous_screen = nullptr;
+
 static void on_app_bar_close_clicked(lv_event_t *e)
 {
-    tab5_app_context_t *ctx = (tab5_app_context_t *)lv_event_get_user_data(e);
-    if (ctx != nullptr) {
-        tab5_lifecycle_host_destroy_app(ctx);
-    }
+    (void)e;
+    tab5_package_mgr_close_active();
 }
 #endif
 
@@ -35,6 +36,7 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
     }
 
 #if HAVE_LVGL
+    s_previous_screen = lv_disp_get_scr_act(NULL);
     lv_obj_t *scr = lv_obj_create(NULL);
     if (scr == nullptr) {
         return TAB5_ERR_NO_MEM;
@@ -49,7 +51,7 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
     ctx->root_screen = (tab5_ui_obj_t)scr;
     ctx->app_bar = (tab5_ui_obj_t)bar.bar;
 
-    lv_screen_load(scr);
+    lv_disp_load_scr(scr);
     return TAB5_OK;
 #else
     (void)app_name;
@@ -69,9 +71,20 @@ tab5_err_t tab5_ui_host_destroy_app_screen(tab5_app_context_t *ctx)
 #if HAVE_LVGL
     if (ctx->root_screen != nullptr) {
         lv_obj_t *scr = (lv_obj_t *)ctx->root_screen;
-        lv_obj_delete_async(scr);
         ctx->root_screen = nullptr;
         ctx->app_bar = nullptr;
+
+        ui_keyboard_hide();
+        lv_obj_t *act = lv_disp_get_scr_act(NULL);
+        if (act == scr) {
+            lv_obj_t *target =
+                (s_previous_screen != nullptr && s_previous_screen != scr) ? s_previous_screen : lv_screen_active();
+            if (target != nullptr && target != scr) {
+                lv_disp_load_scr(target);
+            }
+        }
+        s_previous_screen = nullptr;
+        lv_obj_delete_async(scr);
     }
 #else
     ctx->root_screen = nullptr;

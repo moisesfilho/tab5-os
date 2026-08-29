@@ -34,6 +34,114 @@ static const char *TAG = "tab5_pkg_mgr";
 #define LOG_E(fmt, ...)
 #endif
 
+static size_t parse_octal(const char *str, size_t max_len)
+{
+    size_t val = 0;
+    for (size_t i = 0; i < max_len && str[i] >= '0' && str[i] <= '7'; i++) {
+        val = (val << 3) + (str[i] - '0');
+    }
+    return val;
+}
+
+extern "C" bool tab5_package_read_manifest_from_tar(const char *tar_path, tab5_manifest_t *out_manifest)
+{
+    if (tar_path == nullptr || out_manifest == nullptr) {
+        return false;
+    }
+    FILE *tar = fopen(tar_path, "rb");
+    if (!tar) {
+        return false;
+    }
+
+    char header[512];
+    bool found = false;
+    while (fread(header, 1, 512, tar) == 512) {
+        if (header[0] == '\0') {
+            break;
+        }
+        size_t file_size = parse_octal(&header[124], 12);
+        size_t blocks = (file_size + 511) / 512;
+        std::string name(header, 100);
+        size_t nul_pos = name.find('\0');
+        if (nul_pos != std::string::npos) {
+            name.resize(nul_pos);
+        }
+
+        if (name.find("manifest.json") != std::string::npos && file_size > 0 && file_size < 65536) {
+            std::vector<char> buf(file_size + 1, 0);
+            size_t read_bytes = fread(buf.data(), 1, file_size, tar);
+            if (read_bytes == file_size) {
+                buf[file_size] = '\0';
+                found = (tab5_manifest_parse_json(buf.data(), out_manifest) == TAB5_OK);
+            }
+            break;
+        }
+        fseek(tar, static_cast<long>(blocks) * 512, SEEK_CUR);
+    }
+    fclose(tar);
+    return found;
+}
+
+extern "C" bool tab5_package_extract_tar(const char *tar_path, const char *dest_dir)
+{
+    if (tar_path == nullptr || dest_dir == nullptr) {
+        return false;
+    }
+    FILE *tar = fopen(tar_path, "rb");
+    if (!tar) {
+        return false;
+    }
+    mkdir(dest_dir, 0755);
+
+    char header[512];
+    while (fread(header, 1, 512, tar) == 512) {
+        if (header[0] == '\0') {
+            break;
+        }
+        size_t file_size = parse_octal(&header[124], 12);
+        size_t blocks = (file_size + 511) / 512;
+        char typeflag = header[156];
+        std::string filename(header, 100);
+        size_t nul_pos = filename.find('\0');
+        if (nul_pos != std::string::npos) {
+            filename.resize(nul_pos);
+        }
+
+        if (filename.rfind("./", 0) == 0) {
+            filename = filename.substr(2);
+        }
+        if (filename.rfind('/', 0) == 0) {
+            filename = filename.substr(1);
+        }
+
+        std::string full_dest = std::string(dest_dir) + "/" + filename;
+        if (typeflag == '5' || (!filename.empty() && filename.back() == '/')) {
+            mkdir(full_dest.c_str(), 0755);
+        } else {
+            size_t slash = full_dest.find_last_of('/');
+            if (slash != std::string::npos) {
+                mkdir(full_dest.substr(0, slash).c_str(), 0755);
+            }
+            FILE *out = fopen(full_dest.c_str(), "wb");
+            if (out != nullptr) {
+                char buf[512];
+                size_t remaining = file_size;
+                while (remaining > 0) {
+                    size_t to_read = (remaining < sizeof(buf)) ? remaining : sizeof(buf);
+                    fread(buf, 1, sizeof(buf), tar);
+                    fwrite(buf, 1, to_read, out);
+                    remaining -= to_read;
+                }
+                fclose(out);
+            } else {
+                fseek(tar, static_cast<long>(blocks) * 512, SEEK_CUR);
+            }
+        }
+    }
+    fclose(tar);
+    return true;
+}
+
 namespace {
 
 struct DynamicAppEntry {
@@ -255,16 +363,20 @@ tab5_err_t tab5_package_mgr_install(const char *source_path, char *out_app_id, s
     }
 
     tab5_manifest_t manifest = {};
-    std::string manifest_file = std::string(source_path) + "/manifest.json";
+    bool is_tar = false;
 
-    // Tenta carregar manifest da pasta
-    tab5_err_t err = tab5_manifest_load_from_file(manifest_file.c_str(), &manifest);
-    if (err != TAB5_OK) {
-        // Tenta como arquivo único manifest.json
-        err = tab5_manifest_load_from_file(source_path, &manifest);
+    // 1. Tenta carregar direto do arquivo .tab5pkg / TAR
+    if (tab5_package_read_manifest_from_tar(source_path, &manifest)) {
+        is_tar = true;
+    } else {
+        std::string manifest_file = std::string(source_path) + "/manifest.json";
+        tab5_err_t err = tab5_manifest_load_from_file(manifest_file.c_str(), &manifest);
         if (err != TAB5_OK) {
-            LOG_E("Falha ao carregar manifesto de instalacao: %s", source_path);
-            return err;
+            err = tab5_manifest_load_from_file(source_path, &manifest);
+            if (err != TAB5_OK) {
+                LOG_E("Falha ao carregar manifesto de instalacao: %s", source_path);
+                return err;
+            }
         }
     }
 
@@ -276,14 +388,17 @@ tab5_err_t tab5_package_mgr_install(const char *source_path, char *out_app_id, s
     std::string target_dir = std::string(TAB5_APPS_INSTALLED_DIR) + "/" + manifest.id;
     mkdir(target_dir.c_str(), 0755);
 
-    // Copia manifest.json
-    std::string dest_manifest = target_dir + "/manifest.json";
-    copy_file_contents(manifest_file.c_str(), dest_manifest.c_str());
+    if (is_tar) {
+        tab5_package_extract_tar(source_path, target_dir.c_str());
+    } else {
+        std::string manifest_file = std::string(source_path) + "/manifest.json";
+        std::string dest_manifest = target_dir + "/manifest.json";
+        copy_file_contents(manifest_file.c_str(), dest_manifest.c_str());
 
-    // Copia app.wasm
-    std::string src_wasm = std::string(source_path) + "/" + manifest.entry;
-    std::string dest_wasm = target_dir + "/" + manifest.entry;
-    copy_file_contents(src_wasm.c_str(), dest_wasm.c_str());
+        std::string src_wasm = std::string(source_path) + "/" + manifest.entry;
+        std::string dest_wasm = target_dir + "/" + manifest.entry;
+        copy_file_contents(src_wasm.c_str(), dest_wasm.c_str());
+    }
 
     // Cria diretório de dados privados da app
     std::string data_dir = std::string(TAB5_APPS_DATA_DIR) + "/" + manifest.id;
@@ -355,11 +470,22 @@ static int scan_directory_and_register(const char *base_dir, bool is_embedded)
         inspected_dirs.insert(pkg_name);
 
         std::string app_dir = std::string(base_dir) + "/" + pkg_name;
-        std::string manifest_path = app_dir + "/manifest.json";
         tab5_manifest_t manifest = {};
-        if (tab5_manifest_load_from_file(manifest_path.c_str(), &manifest) == TAB5_OK) {
-            if (register_dynamic_app_entry(manifest, app_dir, is_embedded) == TAB5_OK) {
-                count++;
+
+        // Caso 1: Arquivo .tab5pkg
+        if (pkg_name.length() > 8 && pkg_name.substr(pkg_name.length() - 8) == ".tab5pkg") {
+            if (tab5_package_read_manifest_from_tar(app_dir.c_str(), &manifest)) {
+                if (register_dynamic_app_entry(manifest, app_dir, is_embedded) == TAB5_OK) {
+                    count++;
+                }
+            }
+        } else {
+            // Caso 2: Pasta descompactada
+            std::string manifest_path = app_dir + "/manifest.json";
+            if (tab5_manifest_load_from_file(manifest_path.c_str(), &manifest) == TAB5_OK) {
+                if (register_dynamic_app_entry(manifest, app_dir, is_embedded) == TAB5_OK) {
+                    count++;
+                }
             }
         }
     }
@@ -432,8 +558,12 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
     if (err != TAB5_OK) {
         LOG_W("Bytecode Wasm nao encontrado (%s), rodando em modo container nativo", wasm_file.c_str());
     } else {
-        // Executa app_main
-        tab5_wasm_call_function(&entry->wasm_inst, "app_main", 0, nullptr);
+        // Tenta app_main, depois main, depois _start
+        if (tab5_wasm_call_function(&entry->wasm_inst, "app_main", 0, nullptr) != TAB5_OK) {
+            if (tab5_wasm_call_function(&entry->wasm_inst, "main", 0, nullptr) != TAB5_OK) {
+                tab5_wasm_call_function(&entry->wasm_inst, "_start", 0, nullptr);
+            }
+        }
     }
 
     tab5_lifecycle_host_resume_app(&entry->host_ctx);

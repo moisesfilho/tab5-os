@@ -39,11 +39,14 @@ class TestPackTool(unittest.TestCase):
 
         out_dir = os.path.join(self.test_dir, "dist")
         pkg_path = pack.pack_app(app_dir, out_dir)
-
-        self.assertTrue(os.path.isdir(pkg_path))
+        self.assertTrue(os.path.isfile(pkg_path))
         self.assertTrue(pkg_path.endswith("com.example.testapp.tab5pkg"))
-        self.assertTrue(os.path.exists(os.path.join(pkg_path, "manifest.json")))
-        self.assertTrue(os.path.exists(os.path.join(pkg_path, "app.wasm")))
+
+        import tarfile
+        with tarfile.open(pkg_path, "r") as tar:
+            names = tar.getnames()
+            self.assertTrue("manifest.json" in names)
+            self.assertTrue("app.wasm" in names)
 
     def test_missing_manifest_raises_error(self):
         app_dir = os.path.join(self.test_dir, "empty_app")

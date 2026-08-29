@@ -130,3 +130,62 @@ TEST_F(PackageMgrTest, EmbeddedAppPrecedence)
 
     tab5_package_mgr_uninstall("com.tab5.calc", true);
 }
+
+static std::string find_sdk_file(const char *rel_path)
+{
+    const char *prefixes[] = {"", "../../", "../", "../../../"};
+    for (const char *p : prefixes) {
+        std::string candidate = std::string(p) + rel_path;
+        FILE *f = fopen(candidate.c_str(), "r");
+        if (f != nullptr) {
+            fclose(f);
+            return candidate;
+        }
+    }
+    return "";
+}
+
+TEST_F(PackageMgrTest, SingleFileTarPackageInstall)
+{
+    // Usa o arquivo gerado de teste do pack_app
+    std::string test_app_dir = hostmock::tmp_root() + "/tar_test_app";
+    mkdir(test_app_dir.c_str(), 0755);
+
+    FILE *f_man = fopen((test_app_dir + "/manifest.json").c_str(), "w");
+    ASSERT_NE(f_man, nullptr);
+    fputs("{\"id\": \"com.tab5.tartest\", \"name\": \"Tar Test App\", \"version\": \"1.0.0\"}", f_man);
+    fclose(f_man);
+
+    FILE *f_wasm = fopen((test_app_dir + "/app.wasm").c_str(), "wb");
+    ASSERT_NE(f_wasm, nullptr);
+    uint8_t wasm_bytes[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00};
+    fwrite(wasm_bytes, 1, sizeof(wasm_bytes), f_wasm);
+    fclose(f_wasm);
+
+    std::string out_tar = hostmock::tmp_root() + "/com.tab5.tartest.tab5pkg";
+
+    // Chama pack.py via system
+    std::string pack_script = find_sdk_file("sdk/tab5-app-sdk/tools/pack.py");
+    ASSERT_FALSE(pack_script.empty());
+    std::string cmd = "python3 " + pack_script + " " + test_app_dir + " -o " + hostmock::tmp_root();
+    int res = system(cmd.c_str());
+    EXPECT_EQ(res, 0);
+
+    // Valida leitura de manifest do TAR
+    tab5_manifest_t manifest = {};
+    EXPECT_TRUE(tab5_package_read_manifest_from_tar(out_tar.c_str(), &manifest));
+    EXPECT_STREQ(manifest.id, "com.tab5.tartest");
+    EXPECT_STREQ(manifest.name, "Tar Test App");
+
+    // Instala arquivo TAR único
+    char installed_id[64] = {0};
+    EXPECT_EQ(tab5_package_mgr_install(out_tar.c_str(), installed_id, sizeof(installed_id)), TAB5_OK);
+    EXPECT_STREQ(installed_id, "com.tab5.tartest");
+
+    // Lança e fecha
+    EXPECT_EQ(tab5_package_mgr_launch("com.tab5.tartest", nullptr), TAB5_OK);
+    EXPECT_EQ(tab5_package_mgr_close_active(), TAB5_OK);
+
+    // Desinstala
+    EXPECT_EQ(tab5_package_mgr_uninstall("com.tab5.tartest", true), TAB5_OK);
+}
