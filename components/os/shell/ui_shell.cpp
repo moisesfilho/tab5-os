@@ -44,6 +44,8 @@ lv_obj_t *chat_caller_scr = nullptr;
 lv_obj_t *music_scr = nullptr;
 lv_obj_t *music_caller_scr = nullptr;
 lv_obj_t *calendar_scr = nullptr;
+lv_obj_t *storage_scr = nullptr;
+lv_obj_t *storage_caller_scr = nullptr;
 lv_obj_t *splash = nullptr;
 lv_obj_t *splash_label = nullptr;
 
@@ -137,7 +139,6 @@ void ui_shell_init(void)
     file_assoc_init();
     tab5_package_mgr_init();
     ui_installer_init();
-    ui_storage_view_init();
 
     /* Cada aplicacao registra seu manifesto (icone, launch, extensoes) no SO */
     ui_notas_register();
@@ -152,6 +153,7 @@ void ui_shell_init(void)
     ui_chat_register();
     ui_music_register();
     ui_calendar_register();
+    ui_storage_view_register();
 
     /* Varre pacotes embutidos e instalados no SD */
     tab5_package_mgr_scan_and_register_all();
@@ -170,6 +172,7 @@ void ui_shell_init(void)
     chat_scr = ui_chat_create();
     music_scr = ui_music_create();
     calendar_scr = ui_calendar_create();
+    storage_scr = ui_storage_view_create();
     ui_screensaver_init();
     ui_screen_off_init();
 
@@ -386,6 +389,22 @@ void ui_shell_close_calendar(void)
     shell_load_scr(desktop_scr);
 }
 
+void ui_shell_open_storage(void)
+{
+    ui_keyboard_hide();
+    storage_caller_scr = desktop_scr;
+    shell_load_scr(storage_scr);
+    ui_storage_view_on_open();
+}
+
+void ui_shell_close_storage(void)
+{
+    ui_keyboard_hide();
+    lv_obj_t *target = (storage_caller_scr != nullptr) ? storage_caller_scr : desktop_scr;
+    storage_caller_scr = nullptr;
+    shell_load_scr(target);
+}
+
 void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
@@ -401,6 +420,7 @@ void ui_shell_refresh_theme(void)
     ui_chat_refresh_theme();
     ui_music_refresh_theme();
     ui_calendar_refresh_theme();
+    ui_storage_view_refresh_theme();
 
     if (splash != nullptr) {
         lv_obj_set_style_bg_color(splash, lv_color_hex(ui_theme_get()->background), 0);
@@ -435,5 +455,7 @@ void ui_shell_notify_keyboard_layout(void)
         ui_music_apply_layout();
     } else if (act == calendar_scr) {
         ui_calendar_apply_layout();
+    } else if (act == storage_scr) {
+        ui_storage_view_apply_layout();
     }
 }

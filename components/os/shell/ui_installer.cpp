@@ -10,6 +10,7 @@
 #include "file_assoc.h"
 #include "ui_theme.h"
 #include "ui_font.h"
+#include "ui_bar.h"
 #include <string>
 #include <cstring>
 #include <cstdio>
@@ -42,18 +43,19 @@ static tab5_manifest_t s_pending_manifest;
 #if HAVE_LVGL
 static void show_installer_toast(const char *msg)
 {
+    const ui_palette_t *pal = ui_theme_get();
     lv_obj_t *top = lv_layer_top();
     lv_obj_t *toast = lv_label_create(top);
     lv_label_set_text(toast, msg);
-    lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, 48);
+    lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT * 2 + 10);
     lv_obj_set_style_radius(toast, 12, 0);
     lv_obj_set_style_pad_hor(toast, 16, 0);
     lv_obj_set_style_pad_ver(toast, 8, 0);
     lv_obj_set_style_bg_opa(toast, LV_OPA_90, 0);
-    lv_obj_set_style_bg_color(toast, lv_color_hex(0x181825), 0);
-    lv_obj_set_style_text_color(toast, lv_color_white(), 0);
+    lv_obj_set_style_bg_color(toast, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_text_color(toast, lv_color_hex(pal->text), 0);
     lv_obj_set_style_border_width(toast, 1, 0);
-    lv_obj_set_style_border_color(toast, lv_color_hex(0x89B4FA), 0);
+    lv_obj_set_style_border_color(toast, lv_color_hex(pal->accent), 0);
 
     lv_timer_t *timer = lv_timer_create(
         [](lv_timer_t *t) {
@@ -146,9 +148,12 @@ void ui_installer_open(const char *pkg_path)
         ui_installer_close();
     }
 
+    const ui_palette_t *pal = ui_theme_get();
+
     lv_obj_t *top_layer = lv_layer_top();
     s_modal_mask = lv_obj_create(top_layer);
-    lv_obj_set_size(s_modal_mask, LV_PCT(100), LV_PCT(100));
+    lv_obj_clear_flag(s_modal_mask, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(s_modal_mask, lv_pct(100), lv_pct(100));
     lv_obj_set_style_bg_color(s_modal_mask, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(s_modal_mask, LV_OPA_60, 0);
     lv_obj_set_style_border_width(s_modal_mask, 0, 0);
@@ -158,35 +163,40 @@ void ui_installer_open(const char *pkg_path)
 
     // Card central
     lv_obj_t *card = lv_obj_create(s_modal_mask);
-    lv_obj_set_size(card, 520, 540);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(card, 520, 500);
     lv_obj_set_style_radius(card, 12, 0);
-    lv_obj_set_style_pad_all(card, 20, 0);
-    lv_obj_set_style_bg_color(card, ui_theme_is_dark() ? lv_color_hex(0x1E1E1E) : lv_color_white(), 0);
+    lv_obj_set_style_pad_all(card, 18, 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(pal->surface), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(pal->border), 0);
     lv_obj_set_style_border_width(card, 1, 0);
-    lv_obj_set_style_border_color(card, ui_theme_is_dark() ? lv_color_hex(0x333333) : lv_color_hex(0xDDDDDD), 0);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(card, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     // Título do modal
     lv_obj_t *lbl_header = lv_label_create(card);
     lv_label_set_text(lbl_header, "Instalador de Aplicativo");
     lv_obj_set_style_text_font(lbl_header, &lv_font_montserrat_18_latin1, 0);
-    lv_obj_set_style_text_color(lbl_header, ui_theme_is_dark() ? lv_color_hex(0x00E5FF) : lv_color_hex(0x007ACC), 0);
+    lv_obj_set_style_text_color(lbl_header, lv_color_hex(pal->accent), 0);
 
     // Ícone e Nome da App
     lv_obj_t *app_row = lv_obj_create(card);
-    lv_obj_set_size(app_row, LV_PCT(100), 70);
+    lv_obj_clear_flag(app_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(app_row, lv_pct(100), 65);
     lv_obj_set_style_bg_opa(app_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(app_row, 0, 0);
+    lv_obj_set_style_pad_all(app_row, 0, 0);
     lv_obj_set_flex_flow(app_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(app_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_t *icon_lbl = lv_label_create(app_row);
     lv_label_set_text(icon_lbl, s_pending_manifest.icon_symbol[0] ? s_pending_manifest.icon_symbol : "#");
     lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_28_latin1, 0);
+    lv_obj_set_style_text_color(icon_lbl, lv_color_hex(pal->accent), 0);
     lv_obj_set_style_margin_right(icon_lbl, 15, 0);
 
     lv_obj_t *info_col = lv_obj_create(app_row);
+    lv_obj_clear_flag(info_col, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_opa(info_col, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(info_col, 0, 0);
     lv_obj_set_style_pad_all(info_col, 0, 0);
@@ -195,41 +205,44 @@ void ui_installer_open(const char *pkg_path)
     lv_obj_t *name_lbl = lv_label_create(info_col);
     lv_label_set_text(name_lbl, s_pending_manifest.name);
     lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(name_lbl, lv_color_hex(pal->text), 0);
 
     char meta_str[128];
     snprintf(meta_str, sizeof(meta_str), "v%s  •  %s", s_pending_manifest.version,
              s_pending_manifest.author[0] ? s_pending_manifest.author : "Comunidade");
     lv_obj_t *ver_lbl = lv_label_create(info_col);
     lv_label_set_text(ver_lbl, meta_str);
-    lv_obj_set_style_text_color(ver_lbl, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_color(ver_lbl, lv_color_hex(pal->text_muted), 0);
 
     // Descrição
     if (s_pending_manifest.description[0] != '\0') {
         lv_obj_t *desc_lbl = lv_label_create(card);
         lv_label_set_text(desc_lbl, s_pending_manifest.description);
         lv_label_set_long_mode(desc_lbl, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(desc_lbl, LV_PCT(100));
-        lv_obj_set_style_text_color(desc_lbl, ui_theme_is_dark() ? lv_color_hex(0xCCCCCC) : lv_color_hex(0x444444), 0);
-        lv_obj_set_style_margin_bottom(desc_lbl, 10, 0);
+        lv_obj_set_width(desc_lbl, lv_pct(100));
+        lv_obj_set_style_text_color(desc_lbl, lv_color_hex(pal->text_muted), 0);
     }
 
     // Caixa de permissões
     lv_obj_t *perm_box = lv_obj_create(card);
-    lv_obj_set_size(perm_box, LV_PCT(100), 160);
-    lv_obj_set_style_bg_color(perm_box, ui_theme_is_dark() ? lv_color_hex(0x121212) : lv_color_hex(0xF5F5F5), 0);
-    lv_obj_set_style_border_color(perm_box, ui_theme_is_dark() ? lv_color_hex(0x282828) : lv_color_hex(0xE0E0E0), 0);
+    lv_obj_set_size(perm_box, lv_pct(100), 150);
+    lv_obj_set_scroll_dir(perm_box, LV_DIR_VER);
+    lv_obj_set_style_bg_color(perm_box, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_border_color(perm_box, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_border_width(perm_box, 1, 0);
     lv_obj_set_style_radius(perm_box, 8, 0);
     lv_obj_set_style_pad_all(perm_box, 10, 0);
     lv_obj_set_flex_flow(perm_box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(perm_box, 4, 0);
 
     lv_obj_t *perm_title = lv_label_create(perm_box);
     lv_label_set_text(perm_title, "Permissoes Requisitadas:");
-    lv_obj_set_style_text_color(perm_title, lv_color_hex(0xAAAAAA), 0);
+    lv_obj_set_style_text_color(perm_title, lv_color_hex(pal->text_muted), 0);
 
-    auto add_perm_item = [perm_box](const char *text) {
+    auto add_perm_item = [perm_box, pal](const char *text) {
         lv_obj_t *lbl = lv_label_create(perm_box);
         lv_label_set_text_fmt(lbl, " • %s", text);
-        lv_obj_set_style_text_color(lbl, ui_theme_is_dark() ? lv_color_hex(0xE0E0E0) : lv_color_hex(0x222222), 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(pal->text), 0);
     };
 
     if (s_pending_manifest.permissions & (TAB5_PERM_STORAGE_READ | TAB5_PERM_STORAGE_WRITE)) {
@@ -253,26 +266,34 @@ void ui_installer_open(const char *pkg_path)
 
     // Botões Cancelar / Instalar
     lv_obj_t *btn_row = lv_obj_create(card);
-    lv_obj_set_size(btn_row, LV_PCT(100), 55);
+    lv_obj_clear_flag(btn_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(btn_row, lv_pct(100), 50);
     lv_obj_set_style_bg_opa(btn_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(btn_row, 0, 0);
+    lv_obj_set_style_pad_all(btn_row, 0, 0);
     lv_obj_set_flex_flow(btn_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btn_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_t *btn_cancel = lv_button_create(btn_row);
     lv_obj_set_size(btn_cancel, 180, 42);
-    lv_obj_set_style_bg_color(btn_cancel, lv_color_hex(0x555555), 0);
+    lv_obj_set_style_bg_color(btn_cancel, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_border_color(btn_cancel, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_border_width(btn_cancel, 1, 0);
+    lv_obj_set_style_radius(btn_cancel, 8, 0);
     lv_obj_add_event_cb(btn_cancel, btn_cancel_event_cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t *lbl_c = lv_label_create(btn_cancel);
     lv_label_set_text(lbl_c, "Cancelar");
+    lv_obj_set_style_text_color(lbl_c, lv_color_hex(pal->text), 0);
     lv_obj_center(lbl_c);
 
     lv_obj_t *btn_install = lv_button_create(btn_row);
     lv_obj_set_size(btn_install, 180, 42);
-    lv_obj_set_style_bg_color(btn_install, lv_color_hex(0x00A86B), 0);
+    lv_obj_set_style_bg_color(btn_install, lv_color_hex(pal->accent), 0);
+    lv_obj_set_style_radius(btn_install, 8, 0);
     lv_obj_add_event_cb(btn_install, btn_install_event_cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t *lbl_i = lv_label_create(btn_install);
     lv_label_set_text(lbl_i, "Instalar");
+    lv_obj_set_style_text_color(lbl_i, lv_color_white(), 0);
     lv_obj_center(lbl_i);
 
 #endif

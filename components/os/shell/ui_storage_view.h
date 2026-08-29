@@ -13,19 +13,29 @@ extern "C" {
 #endif
 
 /**
- * @brief Inicializa e registra a app de Armazenamento no registry do sistema.
+ * @brief Registra a aplicação de Gerenciamento de Armazenamento no registry do sistema.
  */
-void ui_storage_view_init(void);
+void ui_storage_view_register(void);
 
 /**
- * @brief Abre a tela de gerenciamento de armazenamento e memória.
+ * @brief Cria a tela de gerenciamento de armazenamento e memória.
  */
-void ui_storage_view_open(void);
+lv_obj_t *ui_storage_view_create(void);
 
 /**
- * @brief Fecha a tela de armazenamento.
+ * @brief Executado quando a tela é aberta no shell (atualiza dados de disco e memória).
  */
-void ui_storage_view_close(void);
+void ui_storage_view_on_open(void);
+
+/**
+ * @brief Reaplica o tema visual (Dark/Light).
+ */
+void ui_storage_view_refresh_theme(void);
+
+/**
+ * @brief Atualiza posicionamento e dimensões da tela de acordo com a resolução.
+ */
+void ui_storage_view_apply_layout(void);
 
 #ifdef __cplusplus
 }
