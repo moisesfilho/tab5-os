@@ -2499,6 +2499,77 @@ main/app_main.cpp             # [MODIFY] chama os_config_migrate() antes de carr
 
 ---
 
+# [x] Fase 46: Isolamento e Modularização de Aplicações (WebAssembly WAMR, Package Manager, Storage Manager & SDK) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+
+- Desacoplar as aplicações do código principal do firmware do Tab5 OS.
+- Implementar modelo de execução isolado em sandbox via WebAssembly (WAMR).
+- Criar a Host ABI do sistema com bindings seguros para LVGL, hardware, armazenamento privado e ciclo de vida de processos.
+- Implementar o Package Manager com formato `.tab5pkg`, parser JSON de `manifest.json`, registro dinâmico e precedência de armazenamento.
+- Implementar a Interface do Instalador de Aplicações com modal de confirmação e auditoria de permissões.
+- Implementar o Gerenciador de Armazenamento e Memória em 3 abas (Memória & Discos, Apps Instaladas e Pacotes Pendentes).
+- Disponibilizar o **Tab5 App SDK** (`sdk/tab5-app-sdk/`) com headers, CLI `pack.py`, macros CMake, templates e exemplos.
+
+## 2. Decisões Arquiteturais
+
+| Decisão | Escolha | Motivação |
+|---|---|---|
+| Runtime | WebAssembly Micro Runtime (WAMR) | Segurança por sandbox, isolamento de falhas, portabilidade e eficiência em PSRAM no ESP32-P4 |
+| Formato de Pacote | Diretório/Bundle `.tab5pkg` | Empacotamento declarativo com `manifest.json`, binário `app.wasm` e pasta `assets/` |
+| Sandboxing de Armazenamento | `/sdcard/data/<app_id>/` | Isolamento estrito de dados privados por aplicação, impedindo corrupção entre apps |
+| Precedência de Apps | SD Card > Partição Embutida (`/apps`) | Permite aos desenvolvedores testar e atualizar versões mais recentes de apps pelo SD sem re-flash |
+| Gestão de Espaço | Módulo `storage_mgr` + UI 3 abas | Transparência total de recursos (Flash, SD e RAM) com desinstalação segura e limpeza de dados |
+| Toolchain do Desenvolvedor | Tab5 App SDK + `pack.py` + CMake | Automação completa para criação de apps independentes por terceiros |
+
+## 3. Estrutura de Arquivos Criados
+
+```
+components/os/runtime/
+├── include/tab5_sdk.h            # Header C oficial com funções da Host ABI
+├── tab5_host_abi.h/.cpp          # Tabela de símbolos nativos e gerenciamento de contexto
+├── tab5_lifecycle_host.h/.cpp    # Ciclo de vida de processos da app ativa
+├── tab5_manifest.h/.cpp          # Parser e modulo de validacao do manifest.json
+├── tab5_package_mgr.h/.cpp       # Gerenciador de instalação, desinstalação e execução
+├── tab5_storage_sandbox.h/.cpp   # Resolução segura de caminhos e sandboxing
+├── tab5_sys_host.cpp             # Bindings de bateria, Wi-Fi, BLE, áudio e logs
+├── tab5_ui_host.cpp              # Bindings de tela, app bar, teclado e toasts
+└── tab5_wasm_runtime.h/.cpp      # Motor de execução WAMR integrado
+components/os/core/
+└── storage_mgr.h/.cpp            # Varredura de partições, cálculo de tamanhos e estatísticas
+components/os/shell/
+├── ui_installer.h/.cpp           # Modal de instalação e auditoria de permissões
+└── ui_storage_view.h/.cpp        # Aplicativo de Gerenciamento de Armazenamento e Memória
+sdk/tab5-app-sdk/
+├── cmake/                        # Toolchain e macros CMake
+├── include/                      # Headers públicos tab5_sdk.h e tab5_manifest.h
+├── templates/hello_app/          # Template base para novas aplicações
+├── examples/                     # Exemplos hello_wasm e notes_wasm
+└── tools/pack.py                 # Ferramenta CLI de validação e empacotamento
+```
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Core Host ABI**: Bindings nativos para LVGL, I/O em sandbox, hardware, ciclo de vida e gerenciamento de permissões.
+- [x] **Etapa 2 — WAMR Runtime**: Integração do WebAssembly Micro Runtime para ESP32-P4 e host mocks.
+- [x] **Etapa 3 — Package Manager**: Parser de manifesto, associação `.tab5pkg` e registro dinâmico no boot.
+- [x] **Etapa 4 — Embedded Bundle**: Precedência de execução (SD sobre firmware embutido) e varredura de pacotes.
+- [x] **Etapa 5 — Installer UI**: Modal de instalação com confirmação de permissões e associação no app Arquivos.
+- [x] **Etapa 6 — Storage Manager**: Aplicativo de 3 abas para visualização de ocupação de disco, desinstalação e pacotes pendentes.
+- [x] **Etapa 7 — Tab5 App SDK**: Headers, ferramenta de empacotamento `pack.py`, template inicial e exemplos práticos.
+- [x] **Etapa 8 — Validação & Qualidade**: 132 testes de host aprovados (100%), pre-commit 100% limpo e gravação validada no ESP32-P4.
+
+## 5. Critérios de Validação
+
+1. `tests/host`: 132/132 testes unitários aprovados com 100% de sucesso. ✓
+2. `tests/test_pack_tool.py`: Testes unitários do empacotador CLI aprovados. ✓
+3. `pre-commit run --all-files`: 100% em conformidade com as regras de qualidade do projeto. ✓
+4. `idf.py build` e gravação no hardware (`/dev/ttyACM0`): Sistema operacional inicializa perfeitamente com todos os subsistemas. ✓
+
+## 6. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+
+---
+
 ## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)
 
 > [!NOTE]
