@@ -131,13 +131,14 @@ tab5_ui_obj_t tab5_ui_app_bar_add_action_button(const char *symbol_or_text, void
         struct action_cb_data_t {
             void (*cb)(void *);
             void *data;
+            bool is_wasm;
         };
-        auto *cb_data = new action_cb_data_t{on_click, user_data};
+        auto *cb_data = new action_cb_data_t{on_click, user_data, s_active_app_ctx->is_wasm};
         lv_obj_add_event_cb(
             btn,
             [](lv_event_t *e) {
                 auto *d = (action_cb_data_t *)lv_event_get_user_data(e);
-                if (d && d->cb) {
+                if (d && !d->is_wasm && d->cb) {
                     d->cb(d->data);
                 }
             },

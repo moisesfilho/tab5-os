@@ -618,15 +618,14 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
     if (wasm_err != TAB5_OK) {
         LOG_W("Bytecode Wasm nao carregado (%s), rodando em modo container nativo", entry->manifest.entry);
     } else {
+        entry->host_ctx.is_wasm = true;
+        entry->host_ctx.wasm_instance = &entry->wasm_inst;
+
         // Tenta app_main, depois main, depois _start
         if (tab5_wasm_call_function(&entry->wasm_inst, "app_main", 0, nullptr) != TAB5_OK) {
             if (tab5_wasm_call_function(&entry->wasm_inst, "main", 0, nullptr) != TAB5_OK) {
                 tab5_wasm_call_function(&entry->wasm_inst, "_start", 0, nullptr);
             }
-        }
-        // Dispara o callback on_init registrado pelo aplicativo
-        if (entry->host_ctx.lifecycle.on_init != nullptr) {
-            entry->host_ctx.lifecycle.on_init();
         }
     }
 

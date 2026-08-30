@@ -52,6 +52,8 @@ typedef struct {
     tab5_ui_obj_t app_bar;                /**< Handle da barra de título padrão */
     tab5_ui_obj_t content_area;           /**< Handle do widget de edição/conteúdo principal (textarea) */
     tab5_lifecycle_callbacks_t lifecycle; /**< Callbacks registrados pela app */
+    bool is_wasm;                         /**< Indica se o contexto e de app WebAssembly */
+    void *wasm_instance;                  /**< Ponteiro para tab5_wasm_app_instance_t */
     void *user_data;                      /**< Ponteiro genérico do runtime/instância */
 } tab5_app_context_t;
 

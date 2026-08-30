@@ -37,7 +37,7 @@ tab5_err_t tab5_lifecycle_host_init_app(tab5_app_context_t *ctx)
 
     ctx->state = TAB5_APP_STATE_INITIALIZED;
 
-    if (ctx->lifecycle.on_init) {
+    if (!ctx->is_wasm && ctx->lifecycle.on_init) {
         ctx->lifecycle.on_init();
     }
 
@@ -57,7 +57,7 @@ tab5_err_t tab5_lifecycle_host_resume_app(tab5_app_context_t *ctx)
 
     ctx->state = TAB5_APP_STATE_RESUMED;
 
-    if (ctx->lifecycle.on_resume) {
+    if (!ctx->is_wasm && ctx->lifecycle.on_resume) {
         ctx->lifecycle.on_resume();
     }
 
@@ -76,7 +76,7 @@ tab5_err_t tab5_lifecycle_host_pause_app(tab5_app_context_t *ctx)
 
     ctx->state = TAB5_APP_STATE_PAUSED;
 
-    if (ctx->lifecycle.on_pause) {
+    if (!ctx->is_wasm && ctx->lifecycle.on_pause) {
         ctx->lifecycle.on_pause();
     }
 
@@ -102,7 +102,7 @@ tab5_err_t tab5_lifecycle_host_open_file(tab5_app_context_t *ctx, const char *fi
         return err;
     }
 
-    if (ctx->lifecycle.on_open_file) {
+    if (!ctx->is_wasm && ctx->lifecycle.on_open_file) {
         ctx->lifecycle.on_open_file(safe_path);
     }
 
@@ -119,7 +119,7 @@ tab5_err_t tab5_lifecycle_host_destroy_app(tab5_app_context_t *ctx)
         return TAB5_OK;
     }
 
-    if (ctx->lifecycle.on_destroy) {
+    if (!ctx->is_wasm && ctx->lifecycle.on_destroy) {
         ctx->lifecycle.on_destroy();
     }
 
