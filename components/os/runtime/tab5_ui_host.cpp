@@ -16,6 +16,7 @@
 #include "ui_bar.h"
 #include "ui_font.h"
 #include "ui_keyboard.h"
+#include "ui_calendar_view.h"
 #define HAVE_LVGL 1
 #else
 #define HAVE_LVGL 0
@@ -79,6 +80,21 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
             }
         },
         LV_EVENT_CLICKED, nullptr);
+
+    if (ctx->app_id[0] && strcmp(ctx->app_id, "com.tab5.calendar") == 0) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+
+        lv_obj_t *cal_holder = lv_obj_create(scr);
+        lv_obj_set_size(cal_holder, lv_pct(100), LV_SIZE_CONTENT);
+        lv_obj_align(cal_holder, LV_ALIGN_TOP_MID, 0, 2 * UI_BAR_HEIGHT + 4);
+        lv_obj_set_style_bg_opa(cal_holder, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(cal_holder, 0, 0);
+        lv_obj_set_style_pad_all(cal_holder, 12, 0);
+        lv_obj_clear_flag(cal_holder, LV_OBJ_FLAG_SCROLLABLE);
+
+        static ui_calendar_view_t s_app_cal;
+        s_app_cal = ui_calendar_view_create(cal_holder, false);
+    }
 
     ctx->root_screen = (tab5_ui_obj_t)scr;
     ctx->app_bar = (tab5_ui_obj_t)bar.bar;
