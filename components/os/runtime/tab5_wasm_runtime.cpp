@@ -9,20 +9,24 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
+#include <pthread.h>
+
+#include "wasm_export.h"
+static const char *TAG = "tab5_wasm";
 
 #ifdef ESP_PLATFORM
 #include "esp_log.h"
 #include "esp_heap_caps.h"
-#include "wasm_export.h"
-static const char *TAG = "tab5_wasm";
+#include "esp_pthread.h"
 #define LOG_I(fmt, ...) ESP_LOGI(TAG, fmt, ##__VA_ARGS__)
 #define LOG_W(fmt, ...) ESP_LOGW(TAG, fmt, ##__VA_ARGS__)
 #define LOG_E(fmt, ...) ESP_LOGE(TAG, fmt, ##__VA_ARGS__)
 #define HAVE_WAMR 1
 #else
-#define LOG_I(fmt, ...)
-#define LOG_W(fmt, ...)
-#define LOG_E(fmt, ...)
+#define LOG_E(fmt, ...) printf("[ERROR] " fmt "\n", ##__VA_ARGS__)
+#define LOG_W(fmt, ...) printf("[WARN] " fmt "\n", ##__VA_ARGS__)
+#define LOG_I(fmt, ...) printf("[INFO] " fmt "\n", ##__VA_ARGS__)
 #define HAVE_WAMR 0
 #endif
 
@@ -38,13 +42,36 @@ tab5_err_t tab5_wasm_runtime_init(void)
     RuntimeInitArgs init_args;
     memset(&init_args, 0, sizeof(RuntimeInitArgs));
 
-    init_args.mem_alloc_type = Alloc_With_System_Allocator;
+    const uint32_t pool_size = 4 * 1024 * 1024;
+#ifdef ESP_PLATFORM
+    static uint8_t *s_wamr_pool_buf = (uint8_t *)heap_caps_malloc(pool_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    uint32_t real_pool_size = pool_size;
+    if (s_wamr_pool_buf == nullptr) {
+        real_pool_size = 512 * 1024;
+        s_wamr_pool_buf = (uint8_t *)malloc(real_pool_size);
+    }
+#else
+    static uint8_t *s_wamr_pool_buf = (uint8_t *)malloc(pool_size);
+    uint32_t real_pool_size = pool_size;
+#endif
+
+    if (s_wamr_pool_buf != nullptr) {
+        init_args.mem_alloc_type = Alloc_With_Pool;
+        init_args.mem_alloc_option.pool.heap_buf = s_wamr_pool_buf;
+        init_args.mem_alloc_option.pool.heap_size = real_pool_size;
+    } else {
+        init_args.mem_alloc_type = Alloc_With_System_Allocator;
+    }
 
     uint32_t symbol_count = 0;
     const tab5_native_symbol_t *symbols = tab5_host_abi_get_symbols(&symbol_count);
 
+    static std::vector<NativeSymbol> s_ram_symbols;
+    s_ram_symbols.resize(symbol_count);
+    memcpy(s_ram_symbols.data(), symbols, sizeof(NativeSymbol) * symbol_count);
+
     init_args.native_module_name = "env";
-    init_args.native_symbols = (NativeSymbol *)symbols;
+    init_args.native_symbols = s_ram_symbols.data();
     init_args.n_native_symbols = symbol_count;
 
     if (!wasm_runtime_full_init(&init_args)) {
@@ -52,15 +79,17 @@ tab5_err_t tab5_wasm_runtime_init(void)
         return TAB5_ERR_FAIL;
     }
 
-    LOG_I("WAMR runtime inicializado com sucesso (%u simbolos nativos registrados)", symbol_count);
+    LOG_I("WAMR runtime inicializado com sucesso (%u simbolos nativos registrados)", (unsigned)symbol_count);
 #endif
 
     s_runtime_initialized = true;
     return TAB5_OK;
 }
 
-tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t stack_size, uint32_t heap_size,
-                                     tab5_app_context_t *ctx, tab5_wasm_app_instance_t *out_inst)
+#if HAVE_WAMR
+static tab5_err_t tab5_wasm_load_from_bytes_direct(const uint8_t *bytes, size_t size, uint32_t stack_size,
+                                                   uint32_t heap_size, tab5_app_context_t *ctx,
+                                                   tab5_wasm_app_instance_t *out_inst)
 {
     if (bytes == nullptr || size == 0 || out_inst == nullptr) {
         return TAB5_ERR_INVALID_ARG;
@@ -79,10 +108,8 @@ tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t
         out_inst->host_ctx = ctx;
     }
 
-#if HAVE_WAMR
     char error_buf[128] = {0};
 
-    // Aloca cópia do buffer em PSRAM se disponível
 #ifdef ESP_PLATFORM
     uint8_t *wasm_buf = (uint8_t *)heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (wasm_buf == nullptr) {
@@ -134,12 +161,73 @@ tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t
     out_inst->is_running = true;
 
     LOG_I("App Wasm %s instanciada com sucesso (Stack=%u, Heap=%u)", out_inst->app_id[0] ? out_inst->app_id : "unnamed",
-          real_stack, real_heap);
+          (unsigned)real_stack, (unsigned)real_heap);
     return TAB5_OK;
+}
+
+struct WasmLoadInternalArgs {
+    const uint8_t *bytes;
+    size_t size;
+    uint32_t stack_size;
+    uint32_t heap_size;
+    tab5_app_context_t *ctx;
+    tab5_wasm_app_instance_t *out_inst;
+    tab5_err_t result;
+};
+
+static void *wasm_load_pthread_worker(void *arg)
+{
+    auto *a = (WasmLoadInternalArgs *)arg;
+    a->result = tab5_wasm_load_from_bytes_direct(a->bytes, a->size, a->stack_size, a->heap_size, a->ctx, a->out_inst);
+    return nullptr;
+}
+#endif
+
+tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t stack_size, uint32_t heap_size,
+                                     tab5_app_context_t *ctx, tab5_wasm_app_instance_t *out_inst)
+{
+#if HAVE_WAMR
+#ifdef ESP_PLATFORM
+    esp_pthread_cfg_t pcfg = esp_pthread_get_default_config();
+    pcfg.stack_size = 64 * 1024;
+    pcfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    pcfg.inherit_cfg = false;
+    esp_pthread_set_cfg(&pcfg);
+#endif
+
+    pthread_t thread;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 64 * 1024);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+    WasmLoadInternalArgs args = {
+        .bytes = bytes,
+        .size = size,
+        .stack_size = stack_size,
+        .heap_size = heap_size,
+        .ctx = ctx,
+        .out_inst = out_inst,
+        .result = TAB5_ERR_FAIL,
+    };
+
+    int rc = pthread_create(&thread, &attr, wasm_load_pthread_worker, &args);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) {
+        LOG_E("pthread_create failed for wasm load: %d", rc);
+        return TAB5_ERR_FAIL;
+    }
+
+    pthread_join(thread, nullptr);
+    return args.result;
 #else
     (void)stack_size;
     (void)heap_size;
-    // Mock / Host test mode
+    memset(out_inst, 0, sizeof(*out_inst));
+    if (ctx != nullptr) {
+        strncpy(out_inst->app_id, ctx->app_id, sizeof(out_inst->app_id) - 1);
+        out_inst->host_ctx = ctx;
+    }
     out_inst->module = (void *)(uintptr_t)0x1;
     out_inst->module_inst = (void *)(uintptr_t)0x2;
     out_inst->exec_env = (void *)(uintptr_t)0x3;
@@ -196,13 +284,14 @@ tab5_err_t tab5_wasm_load_from_file(const char *wasm_path, uint32_t stack_size, 
     return err;
 }
 
-tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *func_name, uint32_t argc, uint32_t *argv)
+#if HAVE_WAMR
+static tab5_err_t tab5_wasm_call_function_direct(tab5_wasm_app_instance_t *inst, const char *func_name, uint32_t argc,
+                                                 uint32_t *argv)
 {
     if (inst == nullptr || func_name == nullptr || !inst->is_running) {
         return TAB5_ERR_INVALID_ARG;
     }
 
-#if HAVE_WAMR
     wasm_module_inst_t module_inst = (wasm_module_inst_t)inst->module_inst;
     wasm_exec_env_t exec_env = (wasm_exec_env_t)inst->exec_env;
 
@@ -212,13 +301,80 @@ tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *f
         return TAB5_ERR_NOT_FOUND;
     }
 
-    if (!wasm_runtime_call_wasm(exec_env, func, argc, argv)) {
+    uint32_t local_argv[4] = {0};
+    if (argv != nullptr && argc > 0) {
+        for (uint32_t i = 0; i < argc && i < 4; i++) {
+            local_argv[i] = argv[i];
+        }
+    }
+
+    if (!wasm_runtime_call_wasm(exec_env, func, argc, local_argv)) {
         const char *exception = wasm_runtime_get_exception(module_inst);
         LOG_E("Excecao na execucao Wasm [%s]: %s", func_name, exception != nullptr ? exception : "desconhecida");
         return TAB5_ERR_FAIL;
     }
 
+    if (argv != nullptr && argc > 0) {
+        argv[0] = local_argv[0];
+    }
+
     return TAB5_OK;
+}
+
+struct WasmCallInternalArgs {
+    tab5_wasm_app_instance_t *inst;
+    const char *func_name;
+    uint32_t argc;
+    uint32_t *argv;
+    tab5_err_t result;
+};
+
+static void *wasm_call_pthread_worker(void *arg)
+{
+    auto *a = (WasmCallInternalArgs *)arg;
+    a->result = tab5_wasm_call_function_direct(a->inst, a->func_name, a->argc, a->argv);
+    return nullptr;
+}
+#endif
+
+tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *func_name, uint32_t argc, uint32_t *argv)
+{
+    if (inst == nullptr || func_name == nullptr || !inst->is_running) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+
+#if HAVE_WAMR
+#ifdef ESP_PLATFORM
+    esp_pthread_cfg_t pcfg = esp_pthread_get_default_config();
+    pcfg.stack_size = 64 * 1024;
+    pcfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    pcfg.inherit_cfg = false;
+    esp_pthread_set_cfg(&pcfg);
+#endif
+
+    pthread_t thread;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 64 * 1024);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+    WasmCallInternalArgs args = {
+        .inst = inst,
+        .func_name = func_name,
+        .argc = argc,
+        .argv = argv,
+        .result = TAB5_ERR_FAIL,
+    };
+
+    int rc = pthread_create(&thread, &attr, wasm_call_pthread_worker, &args);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) {
+        LOG_E("pthread_create failed for wasm call: %d", rc);
+        return TAB5_ERR_FAIL;
+    }
+
+    pthread_join(thread, nullptr);
+    return args.result;
 #else
     (void)argc;
     (void)argv;

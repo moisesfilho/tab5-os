@@ -24,6 +24,7 @@
 #ifdef ESP_PLATFORM
 #include "esp_log.h"
 #include "esp_spiffs.h"
+#include "esp_rom_sys.h"
 static const char *TAG = "tab5_pkg_mgr";
 #define LOG_I(fmt, ...) ESP_LOGI(TAG, fmt, ##__VA_ARGS__)
 #define LOG_W(fmt, ...) ESP_LOGW(TAG, fmt, ##__VA_ARGS__)
@@ -276,19 +277,20 @@ static void on_dynamic_app_open_file(const char *app_id, const char *filepath)
     tab5_package_mgr_launch(app_id, filepath);
 }
 
-static std::vector<std::string> s_registered_app_ids;
+static char s_slot_app_ids[32][64];
+static size_t s_slot_count = 0;
 
 template <size_t Index> struct AppSlot {
     static void launch()
     {
-        if (Index < s_registered_app_ids.size()) {
-            on_dynamic_app_launch(s_registered_app_ids[Index].c_str());
+        if (Index < s_slot_count && s_slot_app_ids[Index][0] != '\0') {
+            on_dynamic_app_launch(s_slot_app_ids[Index]);
         }
     }
     static void open_file(const char *filepath)
     {
-        if (Index < s_registered_app_ids.size()) {
-            on_dynamic_app_open_file(s_registered_app_ids[Index].c_str(), filepath);
+        if (Index < s_slot_count && s_slot_app_ids[Index][0] != '\0') {
+            on_dynamic_app_open_file(s_slot_app_ids[Index], filepath);
         }
     }
 };
@@ -326,7 +328,8 @@ tab5_err_t tab5_package_mgr_init(void)
     mkdir(TAB5_APPS_INSTALLED_DIR, 0755);
     mkdir(TAB5_APPS_DATA_DIR, 0755);
     s_dynamic_apps.clear();
-    s_registered_app_ids.clear();
+    memset(s_slot_app_ids, 0, sizeof(s_slot_app_ids));
+    s_slot_count = 0;
     s_running_dynamic_app = nullptr;
     return TAB5_OK;
 }
@@ -357,13 +360,14 @@ static tab5_err_t register_dynamic_app_entry(const tab5_manifest_t &manifest, co
         return TAB5_OK; // Já registrado
     }
 
-    size_t slot = s_registered_app_ids.size();
+    size_t slot = s_slot_count;
     if (slot >= sizeof(s_trampolines) / sizeof(s_trampolines[0])) {
         LOG_E("Limite maximo de apps dinamicas atingido");
         return TAB5_ERR_NO_MEM;
     }
 
-    s_registered_app_ids.push_back(id);
+    strncpy(s_slot_app_ids[slot], manifest.id, sizeof(s_slot_app_ids[slot]) - 1);
+    s_slot_count++;
 
     auto entry = std::make_unique<DynamicAppEntry>();
     entry->manifest = manifest;
@@ -582,6 +586,8 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
 
     DynamicAppEntry *entry = it->second.get();
 
+    LOG_I("Lançando aplicativo dinâmico: %s (dir=%s)", app_id, entry->install_dir.c_str());
+
     // Fecha app anterior se houver
     if (s_running_dynamic_app != nullptr) {
         tab5_package_mgr_close_active();
@@ -596,6 +602,7 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
 
     tab5_err_t err = tab5_lifecycle_host_init_app(&entry->host_ctx);
     if (err != TAB5_OK) {
+        LOG_E("Falha no lifecycle_host_init_app para %s (err=%d)", app_id, (int)err);
         return err;
     }
 
@@ -604,6 +611,8 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
     if (entry->install_dir.length() > 8 && entry->install_dir.substr(entry->install_dir.length() - 8) == ".tab5pkg") {
         std::vector<uint8_t> wasm_bytes;
         if (tab5_package_read_file_from_tar(entry->install_dir.c_str(), entry->manifest.entry, &wasm_bytes)) {
+            LOG_I("Lidos %zu bytes de %s do TAR %s", wasm_bytes.size(), entry->manifest.entry,
+                  entry->install_dir.c_str());
             wasm_err = tab5_wasm_load_from_bytes(wasm_bytes.data(), wasm_bytes.size(), entry->manifest.stack_size,
                                                  entry->manifest.heap_size, &entry->host_ctx, &entry->wasm_inst);
         } else {
@@ -616,8 +625,10 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
     }
 
     if (wasm_err != TAB5_OK) {
-        LOG_W("Bytecode Wasm nao carregado (%s), rodando em modo container nativo", entry->manifest.entry);
+        LOG_W("Bytecode Wasm nao carregado (%s, err=%d), rodando em modo container nativo", entry->manifest.entry,
+              (int)wasm_err);
     } else {
+        LOG_I("Bytecode Wasm carregado com sucesso para %s, iniciando execucao...", app_id);
         entry->host_ctx.is_wasm = true;
         entry->host_ctx.wasm_instance = &entry->wasm_inst;
 
@@ -627,6 +638,7 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
                 tab5_wasm_call_function(&entry->wasm_inst, "_start", 0, nullptr);
             }
         }
+        LOG_I("Execucao do ponto de entrada Wasm concluida para %s", app_id);
     }
 
     tab5_lifecycle_host_resume_app(&entry->host_ctx);
@@ -636,6 +648,7 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
     }
 
     s_running_dynamic_app = entry;
+    LOG_I("App %s em execucao ativa", app_id);
     return TAB5_OK;
 }
 

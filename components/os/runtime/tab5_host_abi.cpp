@@ -8,6 +8,7 @@
 #include "tab5_ui_host.h"
 #include "tab5_sys_host.h"
 #include "tab5_lifecycle_host.h"
+#include <cstdio>
 #include <cstring>
 
 #if defined(ESP_PLATFORM) || defined(LV_LVGL_H_INCLUDE_SIMPLE) || defined(LV_CONF_INCLUDE_SIMPLE) ||                   \
@@ -268,6 +269,7 @@ void tab5_system_log(int level, const char *tag, const char *message)
 
 #ifdef ESP_PLATFORM
 #include "wasm_export.h"
+#include "esp_rom_sys.h"
 #define HAVE_WAMR_ENV 1
 #else
 #define HAVE_WAMR_ENV 0
@@ -279,26 +281,9 @@ typedef void *wasm_module_inst_t;
 
 namespace {
 
-static inline void *wasm_to_native_ptr(wasm_exec_env_t exec_env, uint32_t wasm_offset)
+static tab5_err_t wasm_tab5_lifecycle_register(wasm_exec_env_t exec_env, const tab5_lifecycle_callbacks_t *cbs)
 {
-    if (wasm_offset == 0) {
-        return nullptr;
-    }
-#if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
-    if (module_inst == nullptr) {
-        return nullptr;
-    }
-    return wasm_runtime_addr_app_to_native(module_inst, wasm_offset);
-#else
     (void)exec_env;
-    return (void *)(uintptr_t)wasm_offset;
-#endif
-}
-
-static tab5_err_t wasm_tab5_lifecycle_register(wasm_exec_env_t exec_env, uint32_t cbs_offset)
-{
-    const auto *cbs = (const tab5_lifecycle_callbacks_t *)wasm_to_native_ptr(exec_env, cbs_offset);
     return tab5_lifecycle_register(cbs);
 }
 
@@ -308,74 +293,71 @@ static tab5_err_t wasm_tab5_sound_play_beep(wasm_exec_env_t exec_env, uint32_t f
     return tab5_sound_play_beep(freq_hz, duration_ms);
 }
 
-static tab5_err_t wasm_tab5_storage_get_app_dir(wasm_exec_env_t exec_env, uint32_t out_buf_offset, size_t buf_size)
+static tab5_err_t wasm_tab5_storage_get_app_dir(wasm_exec_env_t exec_env, char *out_buf, size_t buf_size)
 {
-    char *out_buf = (char *)wasm_to_native_ptr(exec_env, out_buf_offset);
+    (void)exec_env;
     return tab5_storage_get_app_dir(out_buf, buf_size);
 }
 
-static tab5_err_t wasm_tab5_storage_mkdir(wasm_exec_env_t exec_env, uint32_t path_offset)
+static tab5_err_t wasm_tab5_storage_mkdir(wasm_exec_env_t exec_env, const char *path)
 {
-    const char *path = (const char *)wasm_to_native_ptr(exec_env, path_offset);
+    (void)exec_env;
     return tab5_storage_mkdir(path);
 }
 
-static tab5_err_t wasm_tab5_storage_path_resolve(wasm_exec_env_t exec_env, uint32_t in_offset, uint32_t out_offset,
+static tab5_err_t wasm_tab5_storage_path_resolve(wasm_exec_env_t exec_env, const char *in_path, char *out_path,
                                                  size_t out_size, bool write_access)
 {
-    const char *in_path = (const char *)wasm_to_native_ptr(exec_env, in_offset);
-    char *out_path = (char *)wasm_to_native_ptr(exec_env, out_offset);
+    (void)exec_env;
     return tab5_storage_path_resolve(in_path, out_path, out_size, write_access);
 }
 
-static tab5_err_t wasm_tab5_storage_remove(wasm_exec_env_t exec_env, uint32_t path_offset)
+static tab5_err_t wasm_tab5_storage_remove(wasm_exec_env_t exec_env, const char *path)
 {
-    const char *path = (const char *)wasm_to_native_ptr(exec_env, path_offset);
+    (void)exec_env;
     return tab5_storage_remove(path);
 }
 
-static tab5_err_t wasm_tab5_system_get_battery(wasm_exec_env_t exec_env, uint32_t out_offset)
+static tab5_err_t wasm_tab5_system_get_battery(wasm_exec_env_t exec_env, tab5_battery_info_t *out_info)
 {
-    auto *out_info = (tab5_battery_info_t *)wasm_to_native_ptr(exec_env, out_offset);
+    (void)exec_env;
     return tab5_system_get_battery(out_info);
 }
 
-static tab5_err_t wasm_tab5_system_get_bt_status(wasm_exec_env_t exec_env, uint32_t out_offset)
+static tab5_err_t wasm_tab5_system_get_bt_status(wasm_exec_env_t exec_env, tab5_bt_info_t *out_info)
 {
-    auto *out_info = (tab5_bt_info_t *)wasm_to_native_ptr(exec_env, out_offset);
+    (void)exec_env;
     return tab5_system_get_bt_status(out_info);
 }
 
-static tab5_err_t wasm_tab5_system_get_time(wasm_exec_env_t exec_env, uint32_t epoch_offset, uint32_t tm_offset)
+static tab5_err_t wasm_tab5_system_get_time(wasm_exec_env_t exec_env, int64_t *out_epoch, struct tm *out_time)
 {
-    auto *out_epoch = (int64_t *)wasm_to_native_ptr(exec_env, epoch_offset);
-    auto *out_time = (struct tm *)wasm_to_native_ptr(exec_env, tm_offset);
+    (void)exec_env;
     return tab5_system_get_time(out_epoch, out_time);
 }
 
-static tab5_err_t wasm_tab5_system_get_wifi_status(wasm_exec_env_t exec_env, uint32_t out_offset)
+static tab5_err_t wasm_tab5_system_get_wifi_status(wasm_exec_env_t exec_env, tab5_wifi_info_t *out_info)
 {
-    auto *out_info = (tab5_wifi_info_t *)wasm_to_native_ptr(exec_env, out_offset);
+    (void)exec_env;
     return tab5_system_get_wifi_status(out_info);
 }
 
-static void wasm_tab5_system_log(wasm_exec_env_t exec_env, int level, uint32_t tag_offset, uint32_t msg_offset)
+static void wasm_tab5_system_log(wasm_exec_env_t exec_env, int level, const char *tag, const char *message)
 {
-    const char *tag = (const char *)wasm_to_native_ptr(exec_env, tag_offset);
-    const char *message = (const char *)wasm_to_native_ptr(exec_env, msg_offset);
+    (void)exec_env;
     tab5_system_log(level, tag != nullptr ? tag : "wasm", message != nullptr ? message : "");
 }
 
-static tab5_ui_obj_t wasm_tab5_ui_app_bar_add_action_button(wasm_exec_env_t exec_env, uint32_t sym_offset,
+static tab5_ui_obj_t wasm_tab5_ui_app_bar_add_action_button(wasm_exec_env_t exec_env, const char *sym,
                                                             void (*on_click)(void *user_data), void *user_data)
 {
-    const char *sym = (const char *)wasm_to_native_ptr(exec_env, sym_offset);
+    (void)exec_env;
     return tab5_ui_app_bar_add_action_button(sym, on_click, user_data);
 }
 
-static tab5_err_t wasm_tab5_ui_app_bar_set_title(wasm_exec_env_t exec_env, uint32_t title_offset)
+static tab5_err_t wasm_tab5_ui_app_bar_set_title(wasm_exec_env_t exec_env, const char *title)
 {
-    const char *title = (const char *)wasm_to_native_ptr(exec_env, title_offset);
+    (void)exec_env;
     return tab5_ui_app_bar_set_title(title);
 }
 
@@ -409,38 +391,59 @@ static tab5_err_t wasm_tab5_ui_keyboard_show(wasm_exec_env_t exec_env, tab5_ui_o
     return tab5_ui_keyboard_show(target_textarea);
 }
 
-static tab5_err_t wasm_tab5_ui_show_toast(wasm_exec_env_t exec_env, uint32_t msg_offset, uint32_t duration_ms)
+static tab5_err_t wasm_tab5_ui_show_toast(wasm_exec_env_t exec_env, const char *message, uint32_t duration_ms)
 {
-    const char *message = (const char *)wasm_to_native_ptr(exec_env, msg_offset);
+    (void)exec_env;
     return tab5_ui_show_toast(message, duration_ms);
 }
 
-static const char *wasm_tab5_ui_textarea_get_text(wasm_exec_env_t exec_env, tab5_ui_obj_t ta)
+static uint32_t wasm_tab5_ui_textarea_get_text(wasm_exec_env_t exec_env, tab5_ui_obj_t ta)
 {
+    const char *text = tab5_ui_textarea_get_text(ta);
+    if (text == nullptr) {
+        return 0;
+    }
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst == nullptr) {
+        return 0;
+    }
+    size_t len = strlen(text) + 1;
+    uint32_t offset = wasm_runtime_module_malloc(module_inst, len, nullptr);
+    if (offset != 0) {
+        char *dest = (char *)wasm_runtime_addr_app_to_native(module_inst, offset);
+        if (dest != nullptr) {
+            memcpy(dest, text, len);
+        }
+    }
+    return offset;
+#else
     (void)exec_env;
-    return tab5_ui_textarea_get_text(ta);
+    uintptr_t addr = (uintptr_t)text;
+    return (uint32_t)addr;
+#endif
 }
 
 static tab5_err_t wasm_tab5_ui_textarea_set_placeholder(wasm_exec_env_t exec_env, tab5_ui_obj_t ta,
-                                                        uint32_t placeholder_offset)
+                                                        const char *placeholder)
 {
-    const char *placeholder = (const char *)wasm_to_native_ptr(exec_env, placeholder_offset);
+    (void)exec_env;
     return tab5_ui_textarea_set_placeholder(ta, placeholder);
 }
 
-static tab5_err_t wasm_tab5_ui_textarea_set_text(wasm_exec_env_t exec_env, tab5_ui_obj_t ta, uint32_t text_offset)
+static tab5_err_t wasm_tab5_ui_textarea_set_text(wasm_exec_env_t exec_env, tab5_ui_obj_t ta, const char *text)
 {
-    const char *text = (const char *)wasm_to_native_ptr(exec_env, text_offset);
+    (void)exec_env;
     return tab5_ui_textarea_set_text(ta, text);
 }
 
 } // namespace
 
 /* ========================================================================= */
-/* Tabela de Exportação de Símbolos Nativos para WAMR (ordenada alfabeticamente) */
+/* Tabela de Exportação de Símbolos para WAMR                                */
 /* ========================================================================= */
 
-static const tab5_native_symbol_t s_native_symbols[] = {
+static tab5_native_symbol_t s_native_symbols[] = {
     {"tab5_lifecycle_register", (void *)wasm_tab5_lifecycle_register, "(*)i", nullptr},
     {"tab5_sound_play_beep", (void *)wasm_tab5_sound_play_beep, "(ii)i", nullptr},
     {"tab5_storage_get_app_dir", (void *)wasm_tab5_storage_get_app_dir, "(*i)i", nullptr},
@@ -451,18 +454,18 @@ static const tab5_native_symbol_t s_native_symbols[] = {
     {"tab5_system_get_bt_status", (void *)wasm_tab5_system_get_bt_status, "(*)i", nullptr},
     {"tab5_system_get_time", (void *)wasm_tab5_system_get_time, "(**)i", nullptr},
     {"tab5_system_get_wifi_status", (void *)wasm_tab5_system_get_wifi_status, "(*)i", nullptr},
-    {"tab5_system_log", (void *)wasm_tab5_system_log, "(i$$)v", nullptr},
-    {"tab5_ui_app_bar_add_action_button", (void *)wasm_tab5_ui_app_bar_add_action_button, "($*r)r", nullptr},
+    {"tab5_system_log", (void *)wasm_tab5_system_log, "(i$$)", nullptr},
+    {"tab5_ui_app_bar_add_action_button", (void *)wasm_tab5_ui_app_bar_add_action_button, "($ii)i", nullptr},
     {"tab5_ui_app_bar_set_title", (void *)wasm_tab5_ui_app_bar_set_title, "($)i", nullptr},
-    {"tab5_ui_get_main_textarea", (void *)wasm_tab5_ui_get_main_textarea, "()r", nullptr},
-    {"tab5_ui_get_screen", (void *)wasm_tab5_ui_get_screen, "()r", nullptr},
+    {"tab5_ui_get_main_textarea", (void *)wasm_tab5_ui_get_main_textarea, "()i", nullptr},
+    {"tab5_ui_get_screen", (void *)wasm_tab5_ui_get_screen, "()i", nullptr},
     {"tab5_ui_keyboard_hide", (void *)wasm_tab5_ui_keyboard_hide, "()i", nullptr},
     {"tab5_ui_keyboard_is_visible", (void *)wasm_tab5_ui_keyboard_is_visible, "()i", nullptr},
-    {"tab5_ui_keyboard_show", (void *)wasm_tab5_ui_keyboard_show, "(r)i", nullptr},
+    {"tab5_ui_keyboard_show", (void *)wasm_tab5_ui_keyboard_show, "(i)i", nullptr},
     {"tab5_ui_show_toast", (void *)wasm_tab5_ui_show_toast, "($i)i", nullptr},
-    {"tab5_ui_textarea_get_text", (void *)wasm_tab5_ui_textarea_get_text, "(r)$", nullptr},
-    {"tab5_ui_textarea_set_placeholder", (void *)wasm_tab5_ui_textarea_set_placeholder, "(r$)i", nullptr},
-    {"tab5_ui_textarea_set_text", (void *)wasm_tab5_ui_textarea_set_text, "(r$)i", nullptr}};
+    {"tab5_ui_textarea_get_text", (void *)wasm_tab5_ui_textarea_get_text, "(i)i", nullptr},
+    {"tab5_ui_textarea_set_placeholder", (void *)wasm_tab5_ui_textarea_set_placeholder, "(i$)i", nullptr},
+    {"tab5_ui_textarea_set_text", (void *)wasm_tab5_ui_textarea_set_text, "(i$)i", nullptr}};
 
 const tab5_native_symbol_t *tab5_host_abi_get_symbols(uint32_t *out_count)
 {
