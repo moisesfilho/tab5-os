@@ -82,6 +82,51 @@ extern "C" bool tab5_package_read_manifest_from_tar(const char *tar_path, tab5_m
     return found;
 }
 
+extern "C" bool tab5_package_read_file_from_tar(const char *tar_path, const char *filename,
+                                                std::vector<uint8_t> *out_bytes)
+{
+    if (tar_path == nullptr || filename == nullptr || out_bytes == nullptr) {
+        return false;
+    }
+    FILE *tar = fopen(tar_path, "rb");
+    if (!tar) {
+        return false;
+    }
+
+    char header[512];
+    bool found = false;
+    while (fread(header, 1, 512, tar) == 512) {
+        if (header[0] == '\0') {
+            break;
+        }
+        size_t file_size = parse_octal(&header[124], 12);
+        size_t blocks = (file_size + 511) / 512;
+        std::string name(header, 100);
+        size_t nul_pos = name.find('\0');
+        if (nul_pos != std::string::npos) {
+            name.resize(nul_pos);
+        }
+        if (name.rfind("./", 0) == 0) {
+            name = name.substr(2);
+        }
+        if (name.rfind('/', 0) == 0) {
+            name = name.substr(1);
+        }
+
+        if (name == filename && file_size > 0) {
+            out_bytes->resize(file_size);
+            size_t read_bytes = fread(out_bytes->data(), 1, file_size, tar);
+            if (read_bytes == file_size) {
+                found = true;
+            }
+            break;
+        }
+        fseek(tar, static_cast<long>(blocks) * 512, SEEK_CUR);
+    }
+    fclose(tar);
+    return found;
+}
+
 extern "C" bool tab5_package_extract_tar(const char *tar_path, const char *dest_dir)
 {
     if (tar_path == nullptr || dest_dir == nullptr) {
@@ -555,17 +600,33 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
     }
 
     // Carrega WASM
-    std::string wasm_file = entry->install_dir + "/" + entry->manifest.entry;
-    err = tab5_wasm_load_from_file(wasm_file.c_str(), entry->manifest.stack_size, entry->manifest.heap_size,
-                                   &entry->host_ctx, &entry->wasm_inst);
-    if (err != TAB5_OK) {
-        LOG_W("Bytecode Wasm nao encontrado (%s), rodando em modo container nativo", wasm_file.c_str());
+    tab5_err_t wasm_err = TAB5_ERR_NOT_FOUND;
+    if (entry->install_dir.length() > 8 && entry->install_dir.substr(entry->install_dir.length() - 8) == ".tab5pkg") {
+        std::vector<uint8_t> wasm_bytes;
+        if (tab5_package_read_file_from_tar(entry->install_dir.c_str(), entry->manifest.entry, &wasm_bytes)) {
+            wasm_err = tab5_wasm_load_from_bytes(wasm_bytes.data(), wasm_bytes.size(), entry->manifest.stack_size,
+                                                 entry->manifest.heap_size, &entry->host_ctx, &entry->wasm_inst);
+        } else {
+            LOG_W("Arquivo %s nao encontrado dentro do pacote %s", entry->manifest.entry, entry->install_dir.c_str());
+        }
+    } else {
+        std::string wasm_file = entry->install_dir + "/" + entry->manifest.entry;
+        wasm_err = tab5_wasm_load_from_file(wasm_file.c_str(), entry->manifest.stack_size, entry->manifest.heap_size,
+                                            &entry->host_ctx, &entry->wasm_inst);
+    }
+
+    if (wasm_err != TAB5_OK) {
+        LOG_W("Bytecode Wasm nao carregado (%s), rodando em modo container nativo", entry->manifest.entry);
     } else {
         // Tenta app_main, depois main, depois _start
         if (tab5_wasm_call_function(&entry->wasm_inst, "app_main", 0, nullptr) != TAB5_OK) {
             if (tab5_wasm_call_function(&entry->wasm_inst, "main", 0, nullptr) != TAB5_OK) {
                 tab5_wasm_call_function(&entry->wasm_inst, "_start", 0, nullptr);
             }
+        }
+        // Dispara o callback on_init registrado pelo aplicativo
+        if (entry->host_ctx.lifecycle.on_init != nullptr) {
+            entry->host_ctx.lifecycle.on_init();
         }
     }
 
