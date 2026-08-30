@@ -54,7 +54,7 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
     lv_obj_t *ta = lv_textarea_create(scr);
     lv_obj_set_width(ta, lv_pct(100));
     lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 2 * UI_BAR_HEIGHT);
-    lv_textarea_set_placeholder_text(ta, "Escreva sua nota...");
+    lv_textarea_set_placeholder_text(ta, "");
     lv_textarea_set_cursor_click_pos(ta, true);
     lv_obj_set_style_anim_duration(ta, 0, LV_PART_CURSOR);
     lv_obj_set_style_text_font(ta, &lv_font_montserrat_18_latin1, LV_PART_MAIN);

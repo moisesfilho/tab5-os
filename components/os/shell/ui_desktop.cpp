@@ -160,7 +160,11 @@ void apply_desktop_theme(void)
                     for (uint32_t j = 0; j < inner_count; j++) {
                         lv_obj_t *inner = lv_obj_get_child(icon_box, j);
                         if (inner != nullptr && lv_obj_check_type(inner, &lv_label_class)) {
-                            lv_obj_set_style_text_color(inner, lv_color_hex(pal->accent), 0);
+                            if (app.icon_bg_color != nullptr && app.icon_bg_color[0] != '\0') {
+                                lv_obj_set_style_text_color(inner, lv_color_hex(0xFFFFFF), 0);
+                            } else {
+                                lv_obj_set_style_text_color(inner, lv_color_hex(pal->accent), 0);
+                            }
                         }
                     }
                 }
