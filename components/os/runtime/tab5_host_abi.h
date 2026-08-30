@@ -23,6 +23,7 @@ typedef struct {
     const char *symbol_name; /**< Nome da função exportada para o ambiente Wasm */
     void *func_ptr;          /**< Ponteiro de função nativa C no Host */
     const char *signature;   /**< Assinatura de tipos WAMR (ex: "($)i", "(*)i") */
+    void *attachment;        /**< Ponteiro opcional de attachment (compatível com NativeSymbol) */
 } tab5_native_symbol_t;
 
 /**
