@@ -32,7 +32,7 @@ TEST(ManifestTest, ParseValidJson)
     EXPECT_STREQ(manifest.version, "1.2.0");
     EXPECT_STREQ(manifest.author, "Moisés Filho");
     EXPECT_STREQ(manifest.entry, "app.wasm");
-    EXPECT_STREQ(manifest.icon_symbol, "LV_SYMBOL_EDIT");
+    EXPECT_STREQ(manifest.icon_symbol, "\xEF\x8C\x84");
     EXPECT_STREQ(manifest.icon_bg_color, "#2196F3");
     EXPECT_EQ(manifest.file_assoc_count, 3);
     EXPECT_STREQ(manifest.file_associations[0], ".txt");
@@ -84,6 +84,32 @@ TEST(ManifestTest, InvalidJsonAndMissingFields)
     // Invalid characters in ID
     EXPECT_EQ(tab5_manifest_parse_json("{\"id\": \"com/tab5/bad\", \"name\": \"Bad\"}", &manifest),
               TAB5_ERR_INVALID_ARG);
+}
+
+TEST(ManifestTest, IconSymbolTopLevelAndRawPassthrough)
+{
+    // Campo "icon_symbol" de topo nível (formato usado pelo manifesto real da
+    // Notas) e resolução de nome de macro LV_SYMBOL_*.
+    const char *json = R"({
+        "id": "com.tab5.notas",
+        "name": "Notas",
+        "icon_symbol": "LV_SYMBOL_EDIT"
+    })";
+
+    tab5_manifest_t manifest = {};
+    EXPECT_EQ(tab5_manifest_parse_json(json, &manifest), TAB5_OK);
+    EXPECT_STREQ(manifest.icon_symbol, "\xEF\x8C\x84");
+
+    // Texto/glicase fallback cru sem correspondência de macro é mantido como-esta.
+    const char *json_raw = R"({
+        "id": "com.tab5.foo",
+        "name": "Foo",
+        "icon": ">_"
+    })";
+
+    tab5_manifest_t manifest_raw = {};
+    EXPECT_EQ(tab5_manifest_parse_json(json_raw, &manifest_raw), TAB5_OK);
+    EXPECT_STREQ(manifest_raw.icon_symbol, ">_");
 }
 
 TEST(ManifestTest, VersionCompare)

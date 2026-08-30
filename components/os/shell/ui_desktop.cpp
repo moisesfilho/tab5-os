@@ -6,6 +6,8 @@
 #include "ui_font.h"
 
 #include <climits>
+#include <cstring>
+#include <cstdlib>
 
 namespace {
 
@@ -54,6 +56,30 @@ static void center_icon_label_optically(lv_obj_t *icon_label)
     int32_t glyph_center = (min_top + max_bottom) / 2;
     int32_t y_comp = font->line_height / 2 - glyph_center;
     lv_obj_align(icon_label, LV_ALIGN_CENTER, 0, y_comp);
+}
+
+/* Converte "#RRGGBB" (ou "RRGGBB") para lv_color_t; retorna true se válido. */
+static bool parse_hex_color(const char *str, lv_color_t *out)
+{
+    if (str == nullptr || out == nullptr) {
+        return false;
+    }
+    const char *p = str;
+    if (p[0] == '#') {
+        p++;
+    }
+    if (strlen(p) != 6) {
+        return false;
+    }
+    char buf[7] = {0};
+    memcpy(buf, p, 6);
+    char *end = nullptr;
+    unsigned long val = strtoul(buf, &end, 16);
+    if (end != buf + 6) {
+        return false;
+    }
+    *out = lv_color_hex(val);
+    return true;
 }
 
 static void update_grid_padding(lv_obj_t *cont)
@@ -121,7 +147,11 @@ void apply_desktop_theme(void)
             lv_obj_t *app_label = lv_obj_get_child(tile, 1);
 
             if (icon_box != nullptr) {
-                lv_obj_set_style_bg_color(icon_box, lv_color_hex(pal->accent_soft), 0);
+                lv_color_t bg = lv_color_hex(pal->accent_soft);
+                if (app.icon_bg_color != nullptr && app.icon_bg_color[0] != '\0') {
+                    parse_hex_color(app.icon_bg_color, &bg);
+                }
+                lv_obj_set_style_bg_color(icon_box, bg, 0);
 
                 if (app.icon_theme_refresh != nullptr) {
                     app.icon_theme_refresh(icon_box);

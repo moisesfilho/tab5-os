@@ -19,6 +19,60 @@ static const char *TAG = "tab5_manifest";
 #define LOG_E(fmt, ...)
 #endif
 
+/* Resolve nomes de macros LV_SYMBOL_* (ex.: "LV_SYMBOL_EDIT") escritos nos
+ * manifestos para o glifo UTF-8 real. Autores de apps podem usar tanto o nome
+ * da macro quanto o glifo cru; se não bater com nenhum nome conhecido, o valor
+ * original é mantido (emoji/texto cru continuam funcionando). */
+static const char *resolve_lv_symbol_name(const char *name)
+{
+    struct {
+        const char *name;
+        const char *glyph;
+    } table[] = {
+        {"LV_SYMBOL_BULLET", "\xE2\x80\xA2"},     {"LV_SYMBOL_AUDIO", "\xEF\x80\x81"},
+        {"LV_SYMBOL_VIDEO", "\xEF\x80\x88"},      {"LV_SYMBOL_LIST", "\xEF\x80\x8B"},
+        {"LV_SYMBOL_OK", "\xEF\x80\x8C"},         {"LV_SYMBOL_CLOSE", "\xEF\x80\x8D"},
+        {"LV_SYMBOL_POWER", "\xEF\x80\x91"},      {"LV_SYMBOL_SETTINGS", "\xEF\x80\x93"},
+        {"LV_SYMBOL_HOME", "\xEF\x80\x95"},       {"LV_SYMBOL_DOWNLOAD", "\xEF\x80\x99"},
+        {"LV_SYMBOL_DRIVE", "\xEF\x80\x9C"},      {"LV_SYMBOL_REFRESH", "\xEF\x80\xA1"},
+        {"LV_SYMBOL_MUTE", "\xEF\x80\xA6"},       {"LV_SYMBOL_VOLUME_MID", "\xEF\x80\xA7"},
+        {"LV_SYMBOL_VOLUME_MAX", "\xEF\x80\xA8"}, {"LV_SYMBOL_IMAGE", "\xEF\x80\xBE"},
+        {"LV_SYMBOL_TINT", "\xEF\x81\x83"},       {"LV_SYMBOL_PREV", "\xEF\x81\x88"},
+        {"LV_SYMBOL_PLAY", "\xEF\x81\x8B"},       {"LV_SYMBOL_PAUSE", "\xEF\x81\x8C"},
+        {"LV_SYMBOL_STOP", "\xEF\x81\x8D"},       {"LV_SYMBOL_NEXT", "\xEF\x81\x91"},
+        {"LV_SYMBOL_EJECT", "\xEF\x81\x92"},      {"LV_SYMBOL_LEFT", "\xEF\x81\x93"},
+        {"LV_SYMBOL_RIGHT", "\xEF\x81\x94"},      {"LV_SYMBOL_PLUS", "\xEF\x81\xA7"},
+        {"LV_SYMBOL_MINUS", "\xEF\x81\xA8"},      {"LV_SYMBOL_EYE_OPEN", "\xEF\x81\xAE"},
+        {"LV_SYMBOL_EYE_CLOSE", "\xEF\x81\xB0"},  {"LV_SYMBOL_WARNING", "\xEF\x81\xB1"},
+        {"LV_SYMBOL_SHUFFLE", "\xEF\x81\xB4"},    {"LV_SYMBOL_UP", "\xEF\x81\xB7"},
+        {"LV_SYMBOL_DOWN", "\xEF\x81\xB8"},       {"LV_SYMBOL_LOOP", "\xEF\x81\xB9"},
+        {"LV_SYMBOL_DIRECTORY", "\xEF\x81\xBB"},  {"LV_SYMBOL_UPLOAD", "\xEF\x82\x93"},
+        {"LV_SYMBOL_CALL", "\xEF\x82\x95"},       {"LV_SYMBOL_CUT", "\xEF\x83\x84"},
+        {"LV_SYMBOL_COPY", "\xEF\x83\x85"},       {"LV_SYMBOL_SAVE", "\xEF\x83\x87"},
+        {"LV_SYMBOL_BARS", "\xEF\x83\x89"},       {"LV_SYMBOL_ENVELOPE", "\xEF\x83\xA0"},
+        {"LV_SYMBOL_CHARGE", "\xEF\x83\xA7"},     {"LV_SYMBOL_PASTE", "\xEF\x83\xAA"},
+        {"LV_SYMBOL_BELL", "\xEF\x83\xB3"},       {"LV_SYMBOL_KEYBOARD", "\xEF\x84\x9C"},
+        {"LV_SYMBOL_GPS", "\xEF\x84\xA4"},        {"LV_SYMBOL_FILE", "\xEF\x85\x9B"},
+        {"LV_SYMBOL_WIFI", "\xEF\x87\xAB"},       {"LV_SYMBOL_BATTERY_FULL", "\xEF\x89\x80"},
+        {"LV_SYMBOL_BATTERY_3", "\xEF\x89\x81"},  {"LV_SYMBOL_BATTERY_2", "\xEF\x89\x82"},
+        {"LV_SYMBOL_BATTERY_1", "\xEF\x89\x83"},  {"LV_SYMBOL_BATTERY_EMPTY", "\xEF\x89\x84"},
+        {"LV_SYMBOL_USB", "\xEF\x8a\x87"},        {"LV_SYMBOL_BLUETOOTH", "\xEF\x8a\x93"},
+        {"LV_SYMBOL_TRASH", "\xEF\x8B\xAD"},      {"LV_SYMBOL_EDIT", "\xEF\x8C\x84"},
+        {"LV_SYMBOL_BACKSPACE", "\xEF\x95\x9A"},  {"LV_SYMBOL_SD_CARD", "\xEF\x9F\x82"},
+        {"LV_SYMBOL_NEW_LINE", "\xEF\xA2\xA2"},   {nullptr, nullptr},
+    };
+
+    if (name == nullptr) {
+        return nullptr;
+    }
+    for (size_t i = 0; table[i].name != nullptr; i++) {
+        if (strcmp(name, table[i].name) == 0) {
+            return table[i].glyph;
+        }
+    }
+    return nullptr;
+}
+
 static bool is_valid_char(char c)
 {
     if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
@@ -98,21 +152,40 @@ tab5_err_t tab5_manifest_parse_json(const char *json_str, tab5_manifest_t *out_m
         strncpy(out_manifest->entry, item_entry->valuestring, sizeof(out_manifest->entry) - 1);
     }
 
-    // Icon parsing
+    // Icon parsing (aceita tanto "icon": {"symbol": ...} quanto "icon_symbol":
+    // no topo nível, e resolve nomes de macros LV_SYMBOL_* para o glifo real)
+    auto set_icon_symbol = [&](const char *val) {
+        if (val == nullptr) {
+            return;
+        }
+        const char *resolved = resolve_lv_symbol_name(val);
+        strncpy(out_manifest->icon_symbol, resolved != nullptr ? resolved : val, sizeof(out_manifest->icon_symbol) - 1);
+    };
+
     cJSON *item_icon = cJSON_GetObjectItem(root, "icon");
     if (item_icon != nullptr) {
         if (cJSON_IsObject(item_icon)) {
             cJSON *sym = cJSON_GetObjectItem(item_icon, "symbol");
             if (sym != nullptr && cJSON_IsString(sym)) {
-                strncpy(out_manifest->icon_symbol, sym->valuestring, sizeof(out_manifest->icon_symbol) - 1);
+                set_icon_symbol(sym->valuestring);
             }
             cJSON *bg = cJSON_GetObjectItem(item_icon, "bg_color");
             if (bg != nullptr && cJSON_IsString(bg)) {
                 strncpy(out_manifest->icon_bg_color, bg->valuestring, sizeof(out_manifest->icon_bg_color) - 1);
             }
         } else if (cJSON_IsString(item_icon)) {
-            strncpy(out_manifest->icon_symbol, item_icon->valuestring, sizeof(out_manifest->icon_symbol) - 1);
+            set_icon_symbol(item_icon->valuestring);
         }
+    }
+
+    cJSON *item_icon_symbol = cJSON_GetObjectItem(root, "icon_symbol");
+    if (item_icon_symbol != nullptr && cJSON_IsString(item_icon_symbol)) {
+        set_icon_symbol(item_icon_symbol->valuestring);
+    }
+
+    cJSON *item_icon_bg = cJSON_GetObjectItem(root, "icon_bg_color");
+    if (item_icon_bg != nullptr && cJSON_IsString(item_icon_bg)) {
+        strncpy(out_manifest->icon_bg_color, item_icon_bg->valuestring, sizeof(out_manifest->icon_bg_color) - 1);
     }
 
     // File associations

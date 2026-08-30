@@ -151,6 +151,7 @@ struct DynamicAppEntry {
     std::string id_str;
     std::string name_str;
     std::string icon_symbol_str;
+    std::string icon_bg_color_str;
     std::vector<std::string> file_extensions_storage;
     std::vector<const char *> file_extensions_ptrs;
     app_desc_t desc;
@@ -326,6 +327,7 @@ static tab5_err_t register_dynamic_app_entry(const tab5_manifest_t &manifest, co
     entry->id_str = manifest.id;
     entry->name_str = manifest.name;
     entry->icon_symbol_str = manifest.icon_symbol[0] ? manifest.icon_symbol : "#";
+    entry->icon_bg_color_str = manifest.icon_bg_color[0] ? manifest.icon_bg_color : "";
 
     for (int i = 0; i < manifest.file_assoc_count; i++) {
         entry->file_extensions_storage.push_back(manifest.file_associations[i]);
@@ -339,6 +341,7 @@ static tab5_err_t register_dynamic_app_entry(const tab5_manifest_t &manifest, co
     entry->desc.id = entry->id_str.c_str();
     entry->desc.name = entry->name_str.c_str();
     entry->desc.icon_symbol = entry->icon_symbol_str.c_str();
+    entry->desc.icon_bg_color = entry->icon_bg_color_str.c_str();
     entry->desc.file_extensions = entry->file_extensions_ptrs.data();
     entry->desc.on_launch = s_trampolines[slot].launch;
     entry->desc.on_open_file = s_trampolines[slot].open_file;

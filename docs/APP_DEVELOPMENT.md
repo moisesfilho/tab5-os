@@ -65,6 +65,26 @@ typedef struct {
 } app_desc_t;
 ```
 
+> [!NOTE]
+> **Ícone em Aplicações Isoladas (`.tab5pkg` / `manifest.json`):**
+> Para apps distribuídas como pacote (modelo isolado WASM), o ícone é definido no `manifest.json` e **não** no `app_desc_t`. O parser (`tab5_manifest.cpp`) aceita os campos abaixo, tanto no formato de topo nível quanto aninhados em `"icon"`:
+>
+> | Campo | Exemplo | Descrição |
+> | :--- | :--- | :--- |
+> | `icon_symbol` / `icon.symbol` | `"LV_SYMBOL_EDIT"` ou `">_"` | Glifo exibido no desktop. Aceita **nomes de macro LVGL** (`LV_SYMBOL_*`) — resolvidos automaticamente para o glifo real — ou um texto/glifo cru. |
+> | `icon_bg_color` / `icon.bg_color` | `"#F59E0B"` | Cor de fundo da caixa do ícone em hex RGB. Se omitido, usa a cor de destaque suave do tema. |
+>
+> ```json
+> {
+>   "id": "com.tab5.notas",
+>   "name": "Notas",
+>   "icon_symbol": "LV_SYMBOL_EDIT",
+>   "icon_bg_color": "#F59E0B"
+> }
+> ```
+>
+> O nome da macro (ex.: `LV_SYMBOL_EDIT`) é o formato recomendado no manifesto, pois é legível e resolvido em tempo de registro; escrever o glifo UTF-8 cru também funciona. Textos curtos sem correspondência (ex.: `">_"` ou emoji) são mantidos como-estão.
+
 ---
 
 ## 4. Componentes Compartilhados do Sistema

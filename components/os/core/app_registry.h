@@ -19,6 +19,7 @@ typedef struct {
     const char *id;                         /**< ID único da aplicação (ex: "notas", "gallery") */
     const char *name;                       /**< Nome exibido na área de trabalho (ex: "Notas", "Galeria") */
     const char *icon_symbol;                /**< Símbolo LVGL ou texto curto (ex: LV_SYMBOL_EDIT, ">_") */
+    const char *icon_bg_color;              /**< Cor de fundo do ícone em hex (ex: "#2196F3"); NULL = paleta do tema */
     app_icon_builder_cb_t icon_builder;     /**< Callback opcional para desenhar ícones customizados */
     app_icon_theme_cb_t icon_theme_refresh; /**< Callback opcional para atualizar tema de ícone customizado */
     app_launch_cb_t on_launch;              /**< Callback para abrir a aplicação a partir da área de trabalho */
