@@ -116,9 +116,16 @@ static void update_grid_padding(lv_obj_t *cont)
 
 static void app_tile_click_cb(lv_event_t *event)
 {
-    const app_desc_t *app = static_cast<const app_desc_t *>(lv_event_get_user_data(event));
-    if (app != nullptr && app->on_launch != nullptr) {
-        app->on_launch();
+    lv_event_code_t code = lv_event_get_code(event);
+    if (code != LV_EVENT_CLICKED) {
+        return;
+    }
+    const char *app_id = static_cast<const char *>(lv_event_get_user_data(event));
+    if (app_id != nullptr) {
+        const app_desc_t *app = app_registry_find_by_id(app_id);
+        if (app != nullptr && app->on_launch != nullptr) {
+            app->on_launch();
+        }
     }
 }
 
@@ -219,9 +226,10 @@ void ui_desktop_create(lv_obj_t *scr)
         lv_obj_set_style_shadow_width(tile, 0, 0);
         lv_obj_set_style_pad_all(tile, 8, 0);
         lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(tile, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_add_event_cb(tile, app_tile_click_cb, LV_EVENT_CLICKED, (void *)&app);
+        lv_obj_add_event_cb(tile, app_tile_click_cb, LV_EVENT_ALL, (void *)app.id);
 
         lv_obj_t *icon_box = lv_obj_create(tile);
         lv_obj_set_size(icon_box, 84, 84);
