@@ -365,6 +365,7 @@ void ui_fileserver_register(void)
         .id = "fileserver",
         .name = "Servidor",
         .icon_symbol = LV_SYMBOL_DRIVE,
+        .icon_bg_color = nullptr,
         .icon_builder = nullptr,
         .icon_theme_refresh = nullptr,
         .on_launch = ui_shell_open_fileserver,

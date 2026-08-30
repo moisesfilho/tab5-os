@@ -450,6 +450,7 @@ void ui_terminal_register(void)
         .id = "terminal",
         .name = "Terminal",
         .icon_symbol = ">_",
+        .icon_bg_color = nullptr,
         .icon_builder = nullptr,
         .icon_theme_refresh = nullptr,
         .on_launch = ui_shell_open_terminal,

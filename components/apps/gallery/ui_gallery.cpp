@@ -768,6 +768,7 @@ void ui_gallery_register(void)
         .id = "gallery",
         .name = "Galeria",
         .icon_symbol = LV_SYMBOL_IMAGE,
+        .icon_bg_color = nullptr,
         .icon_builder = nullptr,
         .icon_theme_refresh = nullptr,
         .on_launch = ui_shell_open_gallery,

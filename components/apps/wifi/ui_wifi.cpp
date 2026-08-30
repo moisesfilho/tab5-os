@@ -700,6 +700,7 @@ void ui_wifi_register(void)
         .id = "wifi",
         .name = "WiFi",
         .icon_symbol = LV_SYMBOL_WIFI,
+        .icon_bg_color = nullptr,
         .icon_builder = nullptr,
         .icon_theme_refresh = nullptr,
         .on_launch = ui_shell_open_wifi,

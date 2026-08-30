@@ -795,6 +795,7 @@ void ui_music_register(void)
         .id = "music",
         .name = "Música",
         .icon_symbol = LV_SYMBOL_AUDIO,
+        .icon_bg_color = nullptr,
         .icon_builder = nullptr,
         .icon_theme_refresh = nullptr,
         .on_launch = ui_shell_open_music,

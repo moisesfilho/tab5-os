@@ -458,6 +458,7 @@ void ui_files_register(void)
         .id = "files",
         .name = "Arquivos",
         .icon_symbol = LV_SYMBOL_DIRECTORY,
+        .icon_bg_color = nullptr,
         .icon_builder = nullptr,
         .icon_theme_refresh = nullptr,
         .on_launch = ui_shell_open_files,

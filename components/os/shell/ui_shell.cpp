@@ -12,7 +12,6 @@
 #include "ui_recorder.h"
 #include "ui_chat.h"
 #include "ui_music.h"
-#include "ui_calendar.h"
 #include "ui_screensaver.h"
 #include "ui_screen_off.h"
 #include "ui_theme.h"
@@ -41,7 +40,6 @@ lv_obj_t *chat_scr = nullptr;
 lv_obj_t *chat_caller_scr = nullptr;
 lv_obj_t *music_scr = nullptr;
 lv_obj_t *music_caller_scr = nullptr;
-lv_obj_t *calendar_scr = nullptr;
 lv_obj_t *storage_scr = nullptr;
 lv_obj_t *storage_caller_scr = nullptr;
 lv_obj_t *splash = nullptr;
@@ -149,7 +147,6 @@ void ui_shell_init(void)
     ui_recorder_register();
     ui_chat_register();
     ui_music_register();
-    ui_calendar_register();
     ui_storage_view_register();
 
     /* Varre pacotes embutidos e instalados no SD */
@@ -167,7 +164,6 @@ void ui_shell_init(void)
     recorder_scr = ui_recorder_create();
     chat_scr = ui_chat_create();
     music_scr = ui_music_create();
-    calendar_scr = ui_calendar_create();
     storage_scr = ui_storage_view_create();
     ui_screensaver_init();
     ui_screen_off_init();
@@ -345,19 +341,6 @@ void ui_shell_close_music(void)
     shell_load_scr(target);
 }
 
-void ui_shell_open_calendar(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(calendar_scr);
-    ui_calendar_on_open();
-}
-
-void ui_shell_close_calendar(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(desktop_scr);
-}
-
 void ui_shell_open_storage(void)
 {
     ui_keyboard_hide();
@@ -387,7 +370,6 @@ void ui_shell_refresh_theme(void)
     ui_recorder_refresh_theme();
     ui_chat_refresh_theme();
     ui_music_refresh_theme();
-    ui_calendar_refresh_theme();
     ui_storage_view_refresh_theme();
 
     if (splash != nullptr) {
@@ -419,8 +401,6 @@ void ui_shell_notify_keyboard_layout(void)
         ui_chat_apply_layout();
     } else if (act == music_scr) {
         ui_music_apply_layout();
-    } else if (act == calendar_scr) {
-        ui_calendar_apply_layout();
     } else if (act == storage_scr) {
         ui_storage_view_apply_layout();
     } else {

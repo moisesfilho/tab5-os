@@ -775,6 +775,7 @@ void ui_chat_register(void)
         .id = "chat",
         .name = "Chat",
         .icon_symbol = "IA",
+        .icon_bg_color = nullptr,
         .icon_builder = nullptr,
         .icon_theme_refresh = nullptr,
         .on_launch = ui_shell_open_chat,

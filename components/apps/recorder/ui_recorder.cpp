@@ -857,6 +857,7 @@ void ui_recorder_register(void)
         .id = "recorder",
         .name = "Gravador",
         .icon_symbol = nullptr,
+        .icon_bg_color = nullptr,
         .icon_builder = ui_recorder_build_icon,
         .icon_theme_refresh = ui_recorder_theme_icon,
         .on_launch = ui_shell_open_recorder,

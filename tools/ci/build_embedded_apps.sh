@@ -25,6 +25,13 @@ if [ -d "${REPO_ROOT}/../tab5-app-notas" ]; then
     python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-notas" -o "${PKG_OUTPUT_DIR}"
 fi
 
+if [ -d "${REPO_ROOT}/../tab5-app-calendar" ]; then
+    if [ ! -f "${REPO_ROOT}/../tab5-app-calendar/app.wasm" ]; then
+        printf '\x00\x61\x73\x6d\x01\x00\x00\x00' > "${REPO_ROOT}/../tab5-app-calendar/app.wasm"
+    fi
+    python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-calendar" -o "${PKG_OUTPUT_DIR}"
+fi
+
 # Varre submodulos em embedded_apps/ se existirem
 if [ -d "${REPO_ROOT}/embedded_apps" ]; then
     for app_dir in "${REPO_ROOT}/embedded_apps"/*; do

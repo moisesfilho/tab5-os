@@ -14,6 +14,7 @@
 #include "ui_shell.h"
 #include "ui_keyboard.h"
 #include "ui_bar.h"
+#include "app_registry.h"
 
 /* ------------------------------------------------------------------ */
 /* Injecao de eventos SDL (mesmo caminho do touch real no device)      */
@@ -199,7 +200,7 @@ void act_open_fileserver(void)
 
 void act_open_calendar(void)
 {
-    ui_shell_open_calendar();
+    app_registry_launch("com.tab5.calendar");
 }
 
 void act_click_power(void)

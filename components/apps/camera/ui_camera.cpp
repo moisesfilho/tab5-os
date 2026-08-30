@@ -485,6 +485,7 @@ void ui_camera_register(void)
         .id = "camera",
         .name = "Câmera",
         .icon_symbol = nullptr,
+        .icon_bg_color = nullptr,
         .icon_builder = ui_camera_build_icon,
         .icon_theme_refresh = ui_camera_theme_icon,
         .on_launch = ui_shell_open_camera,
