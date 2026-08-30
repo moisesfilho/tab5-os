@@ -5,8 +5,6 @@
 void ui_shell_init(void);
 void ui_shell_open_wifi(void);
 void ui_shell_close_wifi(void);
-void ui_shell_open_files(void);
-void ui_shell_close_files(void);
 void ui_shell_open_bluetooth(void);
 void ui_shell_close_bluetooth(void);
 void ui_shell_open_terminal(void);

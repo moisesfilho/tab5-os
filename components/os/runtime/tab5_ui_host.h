@@ -62,6 +62,11 @@ tab5_err_t tab5_ui_host_textarea_set_placeholder(tab5_ui_obj_t ta, const char *p
  */
 void tab5_ui_host_apply_layout(void);
 
+/**
+ * @brief Atualiza o tema da interface ativa das aplicações isoladas.
+ */
+void tab5_ui_host_refresh_theme(void);
+
 #ifdef __cplusplus
 }
 #endif

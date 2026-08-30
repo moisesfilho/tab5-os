@@ -3,7 +3,6 @@
 #include "ui_keyboard.h"
 #include "ui_desktop.h"
 #include "ui_wifi.h"
-#include "ui_files.h"
 #include "ui_bluetooth.h"
 #include "ui_terminal.h"
 #include "ui_camera.h"
@@ -27,7 +26,6 @@ namespace {
 
 lv_obj_t *desktop_scr = nullptr;
 lv_obj_t *wifi_scr = nullptr;
-lv_obj_t *files_scr = nullptr;
 lv_obj_t *bt_scr = nullptr;
 lv_obj_t *terminal_scr = nullptr;
 lv_obj_t *camera_scr = nullptr;
@@ -138,7 +136,6 @@ void ui_shell_init(void)
 
     /* Cada aplicacao registra seu manifesto (icone, launch, extensoes) no SO */
     ui_wifi_register();
-    ui_files_register();
     ui_bluetooth_register();
     ui_terminal_register();
     ui_camera_register();
@@ -155,7 +152,6 @@ void ui_shell_init(void)
     /* Cria a area de trabalho dinamicamente a partir dos apps registrados */
     ui_desktop_create(desktop_scr);
     wifi_scr = ui_wifi_create();
-    files_scr = ui_files_create();
     bt_scr = ui_bluetooth_create();
     terminal_scr = ui_terminal_create();
     camera_scr = ui_camera_create();
@@ -180,19 +176,6 @@ void ui_shell_open_wifi(void)
 }
 
 void ui_shell_close_wifi(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(desktop_scr);
-}
-
-void ui_shell_open_files(void)
-{
-    ui_keyboard_hide();
-    ui_files_open_path("/sdcard");
-    shell_load_scr(files_scr);
-}
-
-void ui_shell_close_files(void)
 {
     ui_keyboard_hide();
     shell_load_scr(desktop_scr);
@@ -361,7 +344,6 @@ void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
     ui_wifi_refresh_theme();
-    ui_files_refresh_theme();
     ui_bluetooth_refresh_theme();
     ui_terminal_refresh_theme();
     ui_camera_refresh_theme();
@@ -371,6 +353,7 @@ void ui_shell_refresh_theme(void)
     ui_chat_refresh_theme();
     ui_music_refresh_theme();
     ui_storage_view_refresh_theme();
+    tab5_ui_host_refresh_theme();
 
     if (splash != nullptr) {
         lv_obj_set_style_bg_color(splash, lv_color_hex(ui_theme_get()->background), 0);
@@ -383,8 +366,6 @@ void ui_shell_notify_keyboard_layout(void)
     lv_obj_t *act = lv_disp_get_scr_act(NULL);
     if (act == wifi_scr) {
         ui_wifi_apply_layout();
-    } else if (act == files_scr) {
-        ui_files_apply_layout();
     } else if (act == bt_scr) {
         ui_bluetooth_apply_layout();
     } else if (act == terminal_scr) {

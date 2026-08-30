@@ -16,6 +16,7 @@
 #include <vector>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #include "lvgl.h"
 #include "SDL.h"
@@ -30,6 +31,8 @@
 #include "ui_shell.h"
 #include "ui_keyboard.h"
 #include "ui_font.h"
+#include "app_registry.h"
+#include "tab5_package_mgr.h"
 
 namespace {
 
@@ -97,10 +100,10 @@ int watch_interactive_keys(void *userdata, SDL_Event *event)
         ui_shell_open_wifi();
         break;
     case SDLK_2:
-        ui_shell_open_files();
+        tab5_package_mgr_launch("com.tab5.files", nullptr);
         break;
     case SDLK_3:
-        app_registry_launch("com.tab5.notas");
+        tab5_package_mgr_launch("com.tab5.notas", nullptr);
         break;
     case SDLK_4:
         ui_shell_open_terminal();
@@ -127,9 +130,7 @@ int watch_interactive_keys(void *userdata, SDL_Event *event)
         ui_shell_open_music();
         break;
     case SDLK_d:
-        ui_shell_close_notas();
         ui_shell_close_wifi();
-        ui_shell_close_files();
         ui_shell_close_bluetooth();
         ui_shell_close_terminal();
         ui_shell_close_camera();
@@ -245,6 +246,33 @@ void boot_ui()
     }
     lv_sdl_mouse_create();
     lv_sdl_keyboard_create();
+
+    /* Popula /apps a partir de embedded_apps_pkg para o simulador */
+    DIR *d_pkg = opendir("embedded_apps_pkg");
+    if (d_pkg != nullptr) {
+        struct dirent *entry;
+        while ((entry = readdir(d_pkg)) != nullptr) {
+            if (entry->d_name[0] == '.') {
+                continue;
+            }
+            std::string src = std::string("embedded_apps_pkg/") + entry->d_name;
+            std::string dst = std::string("/apps/") + entry->d_name;
+            FILE *fsrc = fopen(src.c_str(), "rb");
+            if (fsrc != nullptr) {
+                FILE *fdst = fopen(dst.c_str(), "wb");
+                if (fdst != nullptr) {
+                    char buf[4096];
+                    size_t n;
+                    while ((n = fread(buf, 1, sizeof(buf), fsrc)) > 0) {
+                        fwrite(buf, 1, n, fdst);
+                    }
+                    fclose(fdst);
+                }
+                fclose(fsrc);
+            }
+        }
+        closedir(d_pkg);
+    }
 
     /* Define fonte Latin-1 como padrão global */
     lv_theme_t *th = lv_theme_default_init(disp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED),

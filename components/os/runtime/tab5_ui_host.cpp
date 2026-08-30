@@ -17,6 +17,7 @@
 #include "ui_font.h"
 #include "ui_keyboard.h"
 #include "ui_calendar_view.h"
+#include "ui_files_view.h"
 #define HAVE_LVGL 1
 #else
 #define HAVE_LVGL 0
@@ -24,6 +25,7 @@
 
 #if HAVE_LVGL
 static lv_obj_t *s_previous_screen = nullptr;
+static ui_files_view_t *s_active_files_view = nullptr;
 
 static void on_app_bar_close_clicked(lv_event_t *e)
 {
@@ -81,7 +83,7 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
         },
         LV_EVENT_CLICKED, nullptr);
 
-    if (ctx->app_id[0] && strcmp(ctx->app_id, "com.tab5.calendar") == 0) {
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.calendar") == 0 || strcmp(ctx->app_id, "calendar") == 0)) {
         lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
 
         lv_obj_t *cal_holder = lv_obj_create(scr);
@@ -94,6 +96,13 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
 
         static ui_calendar_view_t s_app_cal;
         s_app_cal = ui_calendar_view_create(cal_holder, false);
+    } else if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.files") == 0 || strcmp(ctx->app_id, "files") == 0)) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+        if (s_active_files_view != nullptr) {
+            ui_files_view_destroy(s_active_files_view);
+            s_active_files_view = nullptr;
+        }
+        s_active_files_view = ui_files_view_create(scr, bar);
     }
 
     ctx->root_screen = (tab5_ui_obj_t)scr;
@@ -120,6 +129,11 @@ tab5_err_t tab5_ui_host_destroy_app_screen(tab5_app_context_t *ctx)
     }
 
 #if HAVE_LVGL
+    if (s_active_files_view != nullptr) {
+        ui_files_view_destroy(s_active_files_view);
+        s_active_files_view = nullptr;
+    }
+
     if (ctx->root_screen != nullptr) {
         lv_obj_t *scr = (lv_obj_t *)ctx->root_screen;
         ctx->root_screen = nullptr;
@@ -263,17 +277,24 @@ void tab5_ui_host_apply_layout(void)
         return;
     }
 
-    lv_obj_t *ta = (lv_obj_t *)ctx->content_area;
-    if (ta == nullptr) {
-        return;
-    }
-
     int32_t w = lv_display_get_horizontal_resolution(NULL);
     int32_t h = lv_display_get_vertical_resolution(NULL);
     int32_t kb_h = ui_keyboard_is_visible() ? ui_keyboard_get_height() : 0;
 
     if (ctx->app_bar != nullptr) {
         lv_obj_set_width((lv_obj_t *)ctx->app_bar, w);
+    }
+
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.files") == 0 || strcmp(ctx->app_id, "files") == 0)) {
+        if (s_active_files_view != nullptr) {
+            ui_files_view_apply_layout(s_active_files_view);
+        }
+        return;
+    }
+
+    lv_obj_t *ta = (lv_obj_t *)ctx->content_area;
+    if (ta == nullptr) {
+        return;
     }
 
     lv_obj_set_width(ta, w);
@@ -284,6 +305,15 @@ void tab5_ui_host_apply_layout(void)
     lv_obj_set_height(ta, available_h);
     if (ui_keyboard_is_visible()) {
         lv_obj_scroll_to_view(ta, LV_ANIM_OFF);
+    }
+#endif
+}
+
+void tab5_ui_host_refresh_theme(void)
+{
+#if HAVE_LVGL
+    if (s_active_files_view != nullptr) {
+        ui_files_view_refresh_theme(s_active_files_view);
     }
 #endif
 }

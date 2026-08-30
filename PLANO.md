@@ -2566,7 +2566,30 @@ sdk/tab5-app-sdk/
 3. `pre-commit run --all-files`: 100% em conformidade com as regras de qualidade do projeto. ✓
 4. `idf.py build` e gravação no hardware (`/dev/ttyACM0`): Sistema operacional inicializa perfeitamente com todos os subsistemas. ✓
 
-## 6. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+## 6. Padrão Arquitetural para Migração de Aplicações com Interface Rica (Rich UI)
+
+> [!IMPORTANT]
+> **Diretriz Obrigatória para Migrações de Aplicações**:
+> Ao migrar aplicativos do firmware monolítico para repositórios isolados (`tab5-app-*`), deve-se atentar ao tipo de interface do aplicativo para garantir fidelidade visual e usabilidade:
+>
+> 1. **Aplicações de Texto / Terminal / Editor (ex: Notas)**:
+>    - Utilizam o canvas padrão `ctx->content_area` (`lv_textarea`) gerenciado pelo runtime WAMR (`tab5_ui_host.cpp`).
+>    - A aplicação WASM controla o texto através da Host ABI (`tab5_ui_textarea_set_text`).
+>
+> 2. **Aplicações com Interface Gráfica Especializada (ex: Calendário, Arquivos, Galeria, Música)**:
+>    - **Não devem** ter sua interface rica substituída por texto puro em fallback no `textarea`.
+>    - **Arquitetura de Host View (`ui_*_view`)**:
+>      - Criar um componente de visualização modular em `components/os/shell/` (ex: `ui_calendar_view.h/.cpp`, `ui_files_view.h/.cpp`).
+>      - No runtime do host (`components/os/runtime/tab5_ui_host.cpp`), dentro de `tab5_ui_host_create_app_screen`, interceptar o `ctx->app_id` da aplicação:
+>        - Ocultar o textarea padrão: `lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN)`.
+>        - Instanciar a Host View nativa passando a tela pai e a `ui_app_bar_t` (ex: `ui_files_view_create(scr, bar)`).
+>      - Integrar os hooks de ciclo de vida nos eventos correspondentes:
+>        - Destruição: liberar a instância em `tab5_ui_host_cleanup_app_screen`.
+>        - Layout / Rotação: chamar `ui_*_view_apply_layout` em `tab5_ui_host_apply_layout`.
+>        - Tema (Claro/Escuro): chamar `ui_*_view_refresh_theme` em `tab5_ui_host_refresh_theme`.
+>      - No repositório isolado da aplicação (`tab5-app-*/src/main.c`), registrar os callbacks de ciclo de vida (`tab5_lifecycle_register`) para manter sincronização sem sobrescrever a barra de ações ou injetar texto redundante.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 
 ---
 

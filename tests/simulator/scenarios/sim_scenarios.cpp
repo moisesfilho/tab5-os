@@ -15,6 +15,7 @@
 #include "ui_keyboard.h"
 #include "ui_bar.h"
 #include "app_registry.h"
+#include "tab5_package_mgr.h"
 
 /* ------------------------------------------------------------------ */
 /* Injecao de eventos SDL (mesmo caminho do touch real no device)      */
@@ -149,12 +150,12 @@ void act_close_wifi(void)
 void act_open_files(void)
 {
     simact::seed_files_fixtures();
-    ui_shell_open_files();
+    tab5_package_mgr_launch("com.tab5.files", nullptr);
 }
 
 void act_open_notas(void)
 {
-    app_registry_launch("com.tab5.notas");
+    tab5_package_mgr_launch("com.tab5.notas", nullptr);
 }
 
 void act_open_terminal(void)
@@ -200,7 +201,7 @@ void act_open_fileserver(void)
 
 void act_open_calendar(void)
 {
-    app_registry_launch("com.tab5.calendar");
+    tab5_package_mgr_launch("com.tab5.calendar", nullptr);
 }
 
 void act_click_power(void)
@@ -232,7 +233,6 @@ void act_show_keyboard(void)
         lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, UI_BAR_HEIGHT + 20);
     }
 
-    ui_shell_close_notas();
     lv_scr_load(scr);
     ui_keyboard_attach(ta);
     simact::type_text("Teste teclado 123");

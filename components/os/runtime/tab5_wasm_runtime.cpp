@@ -12,10 +12,10 @@
 #include <vector>
 #include <pthread.h>
 
-#include "wasm_export.h"
 static const char *TAG = "tab5_wasm";
 
 #ifdef ESP_PLATFORM
+#include "wasm_export.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_pthread.h"
@@ -186,6 +186,10 @@ static void *wasm_load_pthread_worker(void *arg)
 tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t stack_size, uint32_t heap_size,
                                      tab5_app_context_t *ctx, tab5_wasm_app_instance_t *out_inst)
 {
+    if (bytes == nullptr || size == 0 || out_inst == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+
 #if HAVE_WAMR
 #ifdef ESP_PLATFORM
     esp_pthread_cfg_t pcfg = esp_pthread_get_default_config();

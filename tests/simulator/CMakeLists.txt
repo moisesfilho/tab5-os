@@ -67,19 +67,29 @@ add_executable(tab5_sim
     ${OS}/shell/ui_status.cpp
     ${OS}/shell/ui_theme.cpp
     ${OS}/shell/ui_calendar_view.cpp
+    ${OS}/shell/ui_files_view.cpp
+    ${OS}/shell/ui_installer.cpp
+    ${OS}/shell/ui_storage_view.cpp
+    ${OS}/core/storage_mgr.cpp
+    ${OS}/runtime/tab5_package_mgr.cpp
+    ${OS}/runtime/tab5_manifest.cpp
+    ${OS}/runtime/tab5_ui_host.cpp
+    ${OS}/runtime/tab5_sys_host.cpp
+    ${OS}/runtime/tab5_lifecycle_host.cpp
+    ${OS}/runtime/tab5_host_abi.cpp
+    ${OS}/runtime/tab5_storage_sandbox.cpp
+    ${OS}/runtime/tab5_wasm_runtime.cpp
+    shims/cJSON/cJSON.c
 
     # Apps reais (ui_*) + backends portaveis
     ${APPS}/bluetooth/ui_bluetooth.cpp
-    ${APPS}/calendar/ui_calendar.cpp
     ${APPS}/camera/ui_camera.cpp
     ${APPS}/chat/ui_chat.cpp
     ${APPS}/chat/ai_storage.cpp
     ${APPS}/fileserver/ui_fileserver.cpp
-    ${APPS}/files/ui_files.cpp
     ${APPS}/gallery/tjpgd.c
     ${APPS}/gallery/ui_gallery.cpp
     ${APPS}/music/ui_music.cpp
-    ${APPS}/notas/ui_notas.cpp
     ${APPS}/recorder/ui_recorder.cpp
     ${APPS}/terminal/terminal_cmd.cpp
     ${APPS}/terminal/ui_terminal.cpp
@@ -88,18 +98,18 @@ add_executable(tab5_sim
 
 target_include_directories(tab5_sim PRIVATE
     shims
+    shims/cJSON
     scenarios
     ${OS}/core
     ${OS}/shell
+    ${OS}/runtime
+    ${OS}/runtime/include
     ${APPS}/bluetooth
-    ${APPS}/calendar
     ${APPS}/camera
     ${APPS}/chat
     ${APPS}/fileserver
-    ${APPS}/files
     ${APPS}/gallery
     ${APPS}/music
-    ${APPS}/notas
     ${APPS}/recorder
     ${APPS}/terminal
     ${APPS}/wifi

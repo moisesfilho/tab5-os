@@ -35,6 +35,7 @@ idf_component_register(
         "shell/ui_theme.cpp"
         "shell/ui_app_bar.cpp"
         "shell/ui_calendar_view.cpp"
+        "shell/ui_files_view.cpp"
         "shell/ui_installer.cpp"
         "shell/ui_storage_view.cpp"
         "fonts/lv_font_montserrat_14_latin1.c"

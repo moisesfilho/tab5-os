@@ -40,6 +40,11 @@ if [ -d "${REPO_ROOT}/../tab5-app-calendar" ]; then
     python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-calendar" -o "${PKG_OUTPUT_DIR}"
 fi
 
+if [ -d "${REPO_ROOT}/../tab5-app-files" ]; then
+    compile_app "${REPO_ROOT}/../tab5-app-files"
+    python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-files" -o "${PKG_OUTPUT_DIR}"
+fi
+
 # Varre submodulos em embedded_apps/ se existirem
 if [ -d "${REPO_ROOT}/embedded_apps" ]; then
     for app_dir in "${REPO_ROOT}/embedded_apps"/*; do
