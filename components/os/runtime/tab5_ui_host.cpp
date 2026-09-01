@@ -18,6 +18,8 @@
 #include "ui_keyboard.h"
 #include "ui_calendar_view.h"
 #include "ui_files_view.h"
+#include "ui_camera_view.h"
+#include "ui_gallery_view.h"
 #define HAVE_LVGL 1
 #else
 #define HAVE_LVGL 0
@@ -26,6 +28,8 @@
 #if HAVE_LVGL
 static lv_obj_t *s_previous_screen = nullptr;
 static ui_files_view_t *s_active_files_view = nullptr;
+static ui_camera_view_t *s_active_camera_view = nullptr;
+static ui_gallery_view_t *s_active_gallery_view = nullptr;
 
 static void on_app_bar_close_clicked(lv_event_t *e)
 {
@@ -103,6 +107,21 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
             s_active_files_view = nullptr;
         }
         s_active_files_view = ui_files_view_create(scr, bar);
+    } else if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.camera") == 0 || strcmp(ctx->app_id, "camera") == 0)) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+        if (s_active_camera_view != nullptr) {
+            ui_camera_view_destroy(s_active_camera_view);
+            s_active_camera_view = nullptr;
+        }
+        s_active_camera_view = ui_camera_view_create(scr, bar);
+    } else if (ctx->app_id[0] &&
+               (strcmp(ctx->app_id, "com.tab5.gallery") == 0 || strcmp(ctx->app_id, "gallery") == 0)) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+        if (s_active_gallery_view != nullptr) {
+            ui_gallery_view_destroy(s_active_gallery_view);
+            s_active_gallery_view = nullptr;
+        }
+        s_active_gallery_view = ui_gallery_view_create(scr, bar);
     }
 
     ctx->root_screen = (tab5_ui_obj_t)scr;
@@ -132,6 +151,14 @@ tab5_err_t tab5_ui_host_destroy_app_screen(tab5_app_context_t *ctx)
     if (s_active_files_view != nullptr) {
         ui_files_view_destroy(s_active_files_view);
         s_active_files_view = nullptr;
+    }
+    if (s_active_camera_view != nullptr) {
+        ui_camera_view_destroy(s_active_camera_view);
+        s_active_camera_view = nullptr;
+    }
+    if (s_active_gallery_view != nullptr) {
+        ui_gallery_view_destroy(s_active_gallery_view);
+        s_active_gallery_view = nullptr;
     }
 
     if (ctx->root_screen != nullptr) {
@@ -292,6 +319,20 @@ void tab5_ui_host_apply_layout(void)
         return;
     }
 
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.camera") == 0 || strcmp(ctx->app_id, "camera") == 0)) {
+        if (s_active_camera_view != nullptr) {
+            ui_camera_view_apply_layout(s_active_camera_view);
+        }
+        return;
+    }
+
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.gallery") == 0 || strcmp(ctx->app_id, "gallery") == 0)) {
+        if (s_active_gallery_view != nullptr) {
+            ui_gallery_view_apply_layout(s_active_gallery_view);
+        }
+        return;
+    }
+
     lv_obj_t *ta = (lv_obj_t *)ctx->content_area;
     if (ta == nullptr) {
         return;
@@ -315,5 +356,49 @@ void tab5_ui_host_refresh_theme(void)
     if (s_active_files_view != nullptr) {
         ui_files_view_refresh_theme(s_active_files_view);
     }
+    if (s_active_camera_view != nullptr) {
+        ui_camera_view_refresh_theme(s_active_camera_view);
+    }
+    if (s_active_gallery_view != nullptr) {
+        ui_gallery_view_refresh_theme(s_active_gallery_view);
+    }
+#endif
+}
+
+void tab5_ui_host_resume_app(tab5_app_context_t *ctx)
+{
+#if HAVE_LVGL
+    if (ctx == nullptr) {
+        return;
+    }
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.camera") == 0 || strcmp(ctx->app_id, "camera") == 0)) {
+        if (s_active_camera_view != nullptr) {
+            ui_camera_view_start(s_active_camera_view);
+        }
+    } else if (ctx->app_id[0] &&
+               (strcmp(ctx->app_id, "com.tab5.gallery") == 0 || strcmp(ctx->app_id, "gallery") == 0)) {
+        if (s_active_gallery_view != nullptr) {
+            ui_gallery_view_start(s_active_gallery_view);
+        }
+    }
+#else
+    (void)ctx;
+#endif
+}
+
+void tab5_ui_host_open_file(tab5_app_context_t *ctx, const char *path)
+{
+#if HAVE_LVGL
+    if (ctx == nullptr || path == nullptr) {
+        return;
+    }
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.gallery") == 0 || strcmp(ctx->app_id, "gallery") == 0)) {
+        if (s_active_gallery_view != nullptr) {
+            ui_gallery_view_open_file(s_active_gallery_view, path);
+        }
+    }
+#else
+    (void)ctx;
+    (void)path;
 #endif
 }

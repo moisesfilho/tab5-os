@@ -1,9 +1,5 @@
 idf_component_register(
     SRCS
-        "camera/camera_mgr.cpp"
-        "camera/ui_camera.cpp"
-        "gallery/tjpgd.c"
-        "gallery/ui_gallery.cpp"
         "recorder/audio_recorder.cpp"
         "recorder/ui_recorder.cpp"
         "chat/ai_storage.cpp"
@@ -19,8 +15,6 @@ idf_component_register(
         "music/music_player.cpp"
         "music/ui_music.cpp"
     INCLUDE_DIRS
-        "camera"
-        "gallery"
         "recorder"
         "chat"
         "terminal"

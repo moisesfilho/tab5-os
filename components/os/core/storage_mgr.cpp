@@ -211,7 +211,7 @@ std::vector<tab5_app_storage_item_t> tab5_storage_mgr_list_installed_apps(void)
             size_t slash_pos = name.find('/');
             std::string pkg_name = (slash_pos != std::string::npos) ? name.substr(0, slash_pos) : name;
 
-            if (inspected_dirs.contains(pkg_name)) {
+            if (inspected_dirs.count(pkg_name) > 0) {
                 continue;
             }
             inspected_dirs.insert(pkg_name);

@@ -5,8 +5,6 @@
 #include "ui_wifi.h"
 #include "ui_bluetooth.h"
 #include "ui_terminal.h"
-#include "ui_camera.h"
-#include "ui_gallery.h"
 #include "ui_fileserver.h"
 #include "ui_recorder.h"
 #include "ui_chat.h"
@@ -28,9 +26,6 @@ lv_obj_t *desktop_scr = nullptr;
 lv_obj_t *wifi_scr = nullptr;
 lv_obj_t *bt_scr = nullptr;
 lv_obj_t *terminal_scr = nullptr;
-lv_obj_t *camera_scr = nullptr;
-lv_obj_t *gallery_scr = nullptr;
-lv_obj_t *gallery_caller_scr = nullptr;
 lv_obj_t *fileserver_scr = nullptr;
 lv_obj_t *recorder_scr = nullptr;
 lv_obj_t *recorder_caller_scr = nullptr;
@@ -88,10 +83,6 @@ void notify_app_closed(lv_obj_t *scr)
 {
     if (scr == terminal_scr) {
         ui_terminal_on_close();
-    } else if (scr == camera_scr) {
-        ui_camera_on_close();
-    } else if (scr == gallery_scr) {
-        ui_gallery_on_close();
     } else if (scr == fileserver_scr) {
         ui_fileserver_on_close();
     } else if (scr == recorder_scr) {
@@ -138,8 +129,6 @@ void ui_shell_init(void)
     ui_wifi_register();
     ui_bluetooth_register();
     ui_terminal_register();
-    ui_camera_register();
-    ui_gallery_register();
     ui_fileserver_register();
     ui_recorder_register();
     ui_chat_register();
@@ -154,8 +143,6 @@ void ui_shell_init(void)
     wifi_scr = ui_wifi_create();
     bt_scr = ui_bluetooth_create();
     terminal_scr = ui_terminal_create();
-    camera_scr = ui_camera_create();
-    gallery_scr = ui_gallery_create();
     fileserver_scr = ui_fileserver_create();
     recorder_scr = ui_recorder_create();
     chat_scr = ui_chat_create();
@@ -204,44 +191,6 @@ void ui_shell_close_terminal(void)
 {
     ui_keyboard_hide();
     shell_load_scr(desktop_scr);
-}
-
-void ui_shell_open_camera(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(camera_scr);
-    ui_camera_on_open();
-}
-
-void ui_shell_close_camera(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(desktop_scr);
-}
-
-void ui_shell_open_gallery(void)
-{
-    ui_keyboard_hide();
-    gallery_caller_scr = desktop_scr;
-    shell_load_scr(gallery_scr);
-    ui_gallery_on_open();
-}
-
-void ui_shell_open_gallery_with_file(const char *filepath)
-{
-    ui_keyboard_hide();
-    lv_obj_t *act = lv_disp_get_scr_act(NULL);
-    gallery_caller_scr = (act != nullptr && act != gallery_scr) ? act : desktop_scr;
-    ui_gallery_open_file(filepath);
-    shell_load_scr(gallery_scr);
-}
-
-void ui_shell_close_gallery(void)
-{
-    ui_keyboard_hide();
-    lv_obj_t *target = (gallery_caller_scr != nullptr) ? gallery_caller_scr : desktop_scr;
-    gallery_caller_scr = nullptr;
-    shell_load_scr(target);
 }
 
 void ui_shell_open_fileserver(void)
@@ -346,8 +295,6 @@ void ui_shell_refresh_theme(void)
     ui_wifi_refresh_theme();
     ui_bluetooth_refresh_theme();
     ui_terminal_refresh_theme();
-    ui_camera_refresh_theme();
-    ui_gallery_refresh_theme();
     ui_fileserver_refresh_theme();
     ui_recorder_refresh_theme();
     ui_chat_refresh_theme();
@@ -370,10 +317,6 @@ void ui_shell_notify_keyboard_layout(void)
         ui_bluetooth_apply_layout();
     } else if (act == terminal_scr) {
         ui_terminal_apply_layout();
-    } else if (act == camera_scr) {
-        ui_camera_apply_layout();
-    } else if (act == gallery_scr) {
-        ui_gallery_apply_layout();
     } else if (act == fileserver_scr) {
         ui_fileserver_apply_layout();
     } else if (act == recorder_scr) {

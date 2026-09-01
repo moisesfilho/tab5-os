@@ -67,6 +67,17 @@ void tab5_ui_host_apply_layout(void);
  */
 void tab5_ui_host_refresh_theme(void);
 
+/**
+ * @brief Notifica a aplicação isolada de que ela foi retomada (dump de start
+ * de preview / varredura de diretório).
+ */
+void tab5_ui_host_resume_app(tab5_app_context_t *ctx);
+
+/**
+ * @brief Notifica a aplicação isolada da abertura de um arquivo compatível.
+ */
+void tab5_ui_host_open_file(tab5_app_context_t *ctx, const char *path);
+
 #ifdef __cplusplus
 }
 #endif

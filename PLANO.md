@@ -2591,6 +2591,29 @@ sdk/tab5-app-sdk/
 
 ## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
 
+### Migração de Câmera e Galeria para Apps Isoladas (complemento da Fase 46)
+
+> **Estado:** `[x] CONCLUÍDO` — mesmas telas do monolítico, agora servidas por Host Views nativas.
+
+| Aplicação | Repositório | Pacote embutido | Host View nativa | Ações de barra |
+|---|---|---|---|---|
+| Câmera | `tab5-app-camera` | `com.tab5.camera.tab5pkg` | `ui_camera_view` | Preview ao vivo (`camera_mgr`), disparo com flash/toast, atalho → Galeria |
+| Galeria | `tab5-app-gallery` | `com.tab5.gallery.tab5pkg` | `ui_gallery_view` | Navegação, exclusão com modal, atalho → Câmera, abertura por `.jpg/.jpeg/.png/.bmp` |
+
+**Mudanças estruturais:**
+
+- `ui_camera.cpp/.h` e `ui_gallery.cpp/.h` (monolíticos) foram convertidos em **Host Views reutilizáveis** em `components/os/shell/` (`ui_camera_view`, `ui_gallery_view`), seguindo o padrão de `ui_files_view`/`ui_calendar_view`.
+- `camera_mgr` (driver de câmera) e `tjpgd` (decoder JPEG) foram movidos de `components/apps/` para `components/os/core/`, pois agora são dependências do núcleo (não da aplicação).
+- `components/os/runtime/tab5_ui_host.cpp` passou a despachar `com.tab5.camera`/`com.tab5.gallery` para as Host Views nativas (ocultando o textarea padrão), com hooks de `resume` (inicia preview / varre diretório) e `open_file` (galeria abre a foto).
+- Navegação cruzada Câmera ↔ Galeria agora usa `tab5_package_mgr_launch("com.tab5.camera|gallery")`, respeitando o ciclo de vida do runtime.
+- Apps nativas removidas do registro monolítico (`ui_shell`), tiles do Desktop agora vêm dos manifestos isolados (ícone por símbolo + cor de fundo).
+
+**Validação:**
+
+1. `tools/ci/run_sim_tests.sh`: cenários `app_camera` e `app_gallery` **PASS** contra goldens do monolítico (fidelidade visual idêntica); goldens de desktop (`shell_desktop`, `shell_power`, `shell_settings`, `shell_calendar_popup`) regenerados por causa dos tiles isolados.
+2. `tools/ci/run_host_tests.sh`: 134/134 testes aprovados, cobertura 90% ≥ 80%.
+3. `idf.py build`: firmware compila; `apps.bin` contém os pacotes `com.tab5.camera` e `com.tab5.gallery`.
+
 ---
 
 ## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)

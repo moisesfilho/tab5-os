@@ -16,6 +16,8 @@ idf_component_register(
         "core/orientation.cpp"
         "core/calendar_logic.cpp"
         "core/storage_mgr.cpp"
+        "core/camera_mgr.cpp"
+        "core/tjpgd.c"
         "runtime/tab5_storage_sandbox.cpp"
         "runtime/tab5_ui_host.cpp"
         "runtime/tab5_sys_host.cpp"
@@ -36,6 +38,8 @@ idf_component_register(
         "shell/ui_app_bar.cpp"
         "shell/ui_calendar_view.cpp"
         "shell/ui_files_view.cpp"
+        "shell/ui_camera_view.cpp"
+        "shell/ui_gallery_view.cpp"
         "shell/ui_installer.cpp"
         "shell/ui_storage_view.cpp"
         "fonts/lv_font_montserrat_14_latin1.c"
@@ -48,4 +52,5 @@ idf_component_register(
     REQUIRES lvgl m5stack_tab5 sensor_hub nvs_flash esp_wifi esp_netif esp_event
             fatfs sdmmc bt apps json spiffs espressif__esp_hosted
             espressif__wasm-micro-runtime
+            esp_video espressif__esp_cam_sensor
 )

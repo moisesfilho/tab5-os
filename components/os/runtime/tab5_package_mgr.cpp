@@ -516,7 +516,7 @@ static int scan_directory_and_register(const char *base_dir, bool is_embedded)
         size_t slash_pos = name.find('/');
         std::string pkg_name = (slash_pos != std::string::npos) ? name.substr(0, slash_pos) : name;
 
-        if (inspected_dirs.contains(pkg_name)) {
+        if (inspected_dirs.count(pkg_name) > 0) {
             continue;
         }
         inspected_dirs.insert(pkg_name);

@@ -57,6 +57,8 @@ tab5_err_t tab5_lifecycle_host_resume_app(tab5_app_context_t *ctx)
 
     ctx->state = TAB5_APP_STATE_RESUMED;
 
+    tab5_ui_host_resume_app(ctx);
+
     if (!ctx->is_wasm && ctx->lifecycle.on_resume) {
         ctx->lifecycle.on_resume();
     }
@@ -101,6 +103,8 @@ tab5_err_t tab5_lifecycle_host_open_file(tab5_app_context_t *ctx, const char *fi
         LOG_W("Acesso negado para abrir arquivo: %s", filepath);
         return err;
     }
+
+    tab5_ui_host_open_file(ctx, safe_path);
 
     if (!ctx->is_wasm && ctx->lifecycle.on_open_file) {
         ctx->lifecycle.on_open_file(safe_path);

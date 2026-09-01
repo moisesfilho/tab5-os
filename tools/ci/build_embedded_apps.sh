@@ -45,6 +45,16 @@ if [ -d "${REPO_ROOT}/../tab5-app-files" ]; then
     python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-files" -o "${PKG_OUTPUT_DIR}"
 fi
 
+if [ -d "${REPO_ROOT}/../tab5-app-camera" ]; then
+    compile_app "${REPO_ROOT}/../tab5-app-camera"
+    python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-camera" -o "${PKG_OUTPUT_DIR}"
+fi
+
+if [ -d "${REPO_ROOT}/../tab5-app-gallery" ]; then
+    compile_app "${REPO_ROOT}/../tab5-app-gallery"
+    python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-gallery" -o "${PKG_OUTPUT_DIR}"
+fi
+
 # Varre submodulos em embedded_apps/ se existirem
 if [ -d "${REPO_ROOT}/embedded_apps" ]; then
     for app_dir in "${REPO_ROOT}/embedded_apps"/*; do

@@ -171,7 +171,7 @@ void act_open_bluetooth(void)
 void act_open_gallery(void)
 {
     simact::seed_files_fixtures();
-    ui_shell_open_gallery_with_file("/sdcard/imagens/paisagem.bmp");
+    tab5_package_mgr_launch("com.tab5.gallery", "/sdcard/imagens/paisagem.bmp");
 }
 
 void act_open_music(void)
@@ -191,7 +191,7 @@ void act_open_recorder(void)
 
 void act_open_camera(void)
 {
-    ui_shell_open_camera();
+    tab5_package_mgr_launch("com.tab5.camera", nullptr);
 }
 
 void act_open_fileserver(void)

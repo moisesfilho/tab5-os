@@ -112,10 +112,10 @@ int watch_interactive_keys(void *userdata, SDL_Event *event)
         ui_shell_open_bluetooth();
         break;
     case SDLK_6:
-        ui_shell_open_camera();
+        tab5_package_mgr_launch("com.tab5.camera", nullptr);
         break;
     case SDLK_7:
-        ui_shell_open_gallery();
+        tab5_package_mgr_launch("com.tab5.gallery", nullptr);
         break;
     case SDLK_8:
         ui_shell_open_fileserver();
@@ -133,8 +133,6 @@ int watch_interactive_keys(void *userdata, SDL_Event *event)
         ui_shell_close_wifi();
         ui_shell_close_bluetooth();
         ui_shell_close_terminal();
-        ui_shell_close_camera();
-        ui_shell_close_gallery();
         ui_shell_close_fileserver();
         ui_shell_close_recorder();
         ui_shell_close_chat();
