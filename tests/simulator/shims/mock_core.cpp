@@ -164,6 +164,14 @@ bool bt_mgr_is_keyboard_connected(void)
     return false;
 }
 
+/* Teclado fisico I2C (Ext.Port1): nao presente no simulador (sem hardware).
+ * A referencia a tab5_keyboard_is_connected() em ui_keyboard.cpp e resolvida
+ * por este mock, mantendo o mesmo comportamento de "sem teclado fisico". */
+bool tab5_keyboard_is_connected(void)
+{
+    return false;
+}
+
 bool bt_mgr_is_mouse_connected(void)
 {
     return false;

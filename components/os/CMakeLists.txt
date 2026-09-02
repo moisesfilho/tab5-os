@@ -12,6 +12,8 @@ idf_component_register(
         "core/hid_report_map.cpp"
         "core/imu_reader.cpp"
         "core/battery_reader.cpp"
+        "core/tab5_keyboard.cpp"
+        "core/tab5_keyboard_keys.cpp"
         "core/screenshot.cpp"
         "core/orientation.cpp"
         "core/calendar_logic.cpp"
