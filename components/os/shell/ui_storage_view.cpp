@@ -388,8 +388,8 @@ void ui_storage_view_register(void)
 {
     static const app_desc_t s_storage_desc = {
         .id = "storage",
-        .name = "Armazenamento",
-        .icon_symbol = LV_SYMBOL_DRIVE,
+        .name = "Sistema",
+        .icon_symbol = LV_SYMBOL_SETTINGS,
         .icon_builder = nullptr,
         .icon_theme_refresh = nullptr,
         .on_launch = ui_shell_open_storage,
