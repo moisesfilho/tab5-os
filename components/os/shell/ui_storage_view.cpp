@@ -390,6 +390,7 @@ void ui_storage_view_register(void)
         .id = "storage",
         .name = "Sistema",
         .icon_symbol = LV_SYMBOL_SETTINGS,
+        .icon_bg_color = nullptr,
         .icon_builder = nullptr,
         .icon_theme_refresh = nullptr,
         .on_launch = ui_shell_open_storage,
