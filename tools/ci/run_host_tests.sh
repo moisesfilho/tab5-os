@@ -40,7 +40,7 @@ lcov --config-file "$ROOT/tools/ci/lcovrc" \
 # A metrica cobre apenas os modulos sob teste; stubs/, mocks/ e tests/
 # ficam fora do calculo por construcao.
 lcov --config-file "$ROOT/tools/ci/lcovrc" --extract "$RAW" \
-    "$ROOT/components/os/core/*.cpp" "$ROOT/components/apps/*/*.cpp" \
+    "$ROOT/components/os/core/*.cpp" "$ROOT/components/os/runtime/*.cpp" \
     --output-file "$TRACE" --quiet
 rm -f "$RAW"
 

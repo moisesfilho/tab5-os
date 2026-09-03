@@ -1,4 +1,4 @@
-#include "ui_recorder.h"
+#include "ui_recorder_view.h"
 #include "app_registry.h"
 #include "audio_recorder.h"
 #include "ui_bar.h"
@@ -556,6 +556,191 @@ void apply_recorder_theme(void)
 }
 
 } // namespace
+
+struct ui_recorder_view_s {
+    lv_obj_t *parent = nullptr;
+    ui_app_bar_t app_bar = {};
+};
+
+ui_recorder_view_t *ui_recorder_view_create(lv_obj_t *parent, ui_app_bar_t app_bar)
+{
+    recorder_scr = parent;
+    recorder_app_bar = app_bar;
+    const ui_palette_t *pal = ui_theme_get();
+
+    /* 2. Container Principal Rolavel */
+    main_container = lv_obj_create(recorder_scr);
+    lv_obj_set_style_bg_opa(main_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(main_container, 0, 0);
+    lv_obj_set_style_pad_all(main_container, 12, 0);
+    lv_obj_set_scroll_dir(main_container, LV_DIR_VER);
+    lv_obj_set_flex_flow(main_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(main_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    /* Card 1: Gravador */
+    rec_card = lv_obj_create(main_container);
+    lv_obj_set_size(rec_card, lv_pct(100), 160);
+    lv_obj_set_style_bg_color(rec_card, lv_color_hex(pal->surface), 0);
+    lv_obj_set_style_border_color(rec_card, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_border_width(rec_card, 1, 0);
+    lv_obj_set_style_radius(rec_card, 12, 0);
+    lv_obj_set_style_pad_all(rec_card, 10, 0);
+    lv_obj_clear_flag(rec_card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(rec_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(rec_card, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    rec_title_label = lv_label_create(rec_card);
+    lv_label_set_text(rec_title_label, "GRAVAÇÃO DE VOZ (MICROFONE)");
+    lv_obj_set_style_text_font(rec_title_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(rec_title_label, lv_color_hex(pal->text_muted), 0);
+
+    rec_time_label = lv_label_create(rec_card);
+    lv_label_set_text(rec_time_label, "00:00 / 05:00");
+    lv_obj_set_style_text_font(rec_time_label, &lv_font_montserrat_28_latin1, 0);
+    lv_obj_set_style_text_color(rec_time_label, lv_color_hex(pal->text), 0);
+
+    rec_action_btn = lv_button_create(rec_card);
+    lv_obj_set_size(rec_action_btn, 220, 42);
+    lv_obj_set_style_bg_color(rec_action_btn, lv_color_hex(pal->accent), 0);
+    lv_obj_set_style_radius(rec_action_btn, 21, 0);
+    lv_obj_add_event_cb(rec_action_btn, rec_action_btn_cb, LV_EVENT_CLICKED, nullptr);
+    rec_action_label = lv_label_create(rec_action_btn);
+    lv_label_set_text(rec_action_label, LV_SYMBOL_AUDIO "  Gravar");
+    lv_obj_set_style_text_font(rec_action_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(rec_action_label, lv_color_white(), 0);
+    lv_obj_center(rec_action_label);
+
+    rec_info_label = lv_label_create(rec_card);
+    lv_label_set_text(rec_info_label, "16 kHz / 16-bit Mono WAV — Salvo em /sdcard/gravacoes");
+    lv_obj_set_style_text_font(rec_info_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_color(rec_info_label, lv_color_hex(pal->text_muted), 0);
+
+    /* Card 2: Tocando Agora (Player) */
+    play_card = lv_obj_create(main_container);
+    lv_obj_set_size(play_card, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(play_card, lv_color_hex(pal->surface), 0);
+    lv_obj_set_style_border_color(play_card, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_border_width(play_card, 1, 0);
+    lv_obj_set_style_radius(play_card, 12, 0);
+    lv_obj_set_style_pad_all(play_card, 10, 0);
+    lv_obj_clear_flag(play_card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(play_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(play_card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    play_file_label = lv_label_create(play_card);
+    lv_label_set_text(play_file_label, "Nenhum arquivo em reprodução");
+    lv_obj_set_style_text_font(play_file_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_file_label, lv_color_hex(pal->text), 0);
+
+    play_bar = lv_bar_create(play_card);
+    lv_obj_set_size(play_bar, lv_pct(95), 10);
+    lv_bar_set_range(play_bar, 0, 100);
+    lv_bar_set_value(play_bar, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(play_bar, lv_color_hex(pal->surface_alt), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(play_bar, lv_color_hex(pal->accent), LV_PART_INDICATOR);
+    lv_obj_set_style_radius(play_bar, 5, LV_PART_MAIN);
+    lv_obj_set_style_radius(play_bar, 5, LV_PART_INDICATOR);
+
+    play_time_label = lv_label_create(play_card);
+    lv_label_set_text(play_time_label, "00:00 / 00:00");
+    lv_obj_set_style_text_font(play_time_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_color(play_time_label, lv_color_hex(pal->text_muted), 0);
+
+    play_ctrl_row = lv_obj_create(play_card);
+    lv_obj_set_size(play_ctrl_row, lv_pct(100), 50);
+    lv_obj_set_style_bg_opa(play_ctrl_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(play_ctrl_row, 0, 0);
+    lv_obj_set_style_pad_all(play_ctrl_row, 0, 0);
+    lv_obj_clear_flag(play_ctrl_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(play_ctrl_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(play_ctrl_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    play_toggle_btn = lv_button_create(play_ctrl_row);
+    lv_obj_set_size(play_toggle_btn, 110, 38);
+    lv_obj_set_style_bg_color(play_toggle_btn, lv_color_hex(pal->accent), 0);
+    lv_obj_set_style_radius(play_toggle_btn, 19, 0);
+    lv_obj_add_event_cb(play_toggle_btn, play_toggle_btn_cb, LV_EVENT_CLICKED, nullptr);
+    play_toggle_label = lv_label_create(play_toggle_btn);
+    lv_label_set_text(play_toggle_label, LV_SYMBOL_PLAY "  Play");
+    lv_obj_set_style_text_font(play_toggle_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_toggle_label, lv_color_white(), 0);
+    lv_obj_center(play_toggle_label);
+
+    play_stop_btn = lv_button_create(play_ctrl_row);
+    lv_obj_set_size(play_stop_btn, 110, 38);
+    lv_obj_set_style_bg_color(play_stop_btn, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_radius(play_stop_btn, 19, 0);
+    lv_obj_add_event_cb(play_stop_btn, play_stop_btn_cb, LV_EVENT_CLICKED, nullptr);
+    play_stop_label = lv_label_create(play_stop_btn);
+    lv_label_set_text(play_stop_label, LV_SYMBOL_STOP "  Parar");
+    lv_obj_set_style_text_font(play_stop_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_stop_label, lv_color_hex(pal->text), 0);
+    lv_obj_center(play_stop_label);
+
+    /* Card 3: Lista de Gravacoes Salvas */
+    list_card = lv_obj_create(main_container);
+    lv_obj_set_size(list_card, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(list_card, lv_color_hex(pal->surface), 0);
+    lv_obj_set_style_border_color(list_card, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_border_width(list_card, 1, 0);
+    lv_obj_set_style_radius(list_card, 12, 0);
+    lv_obj_set_style_pad_all(list_card, 10, 0);
+    lv_obj_clear_flag(list_card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(list_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(list_card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    list_title_label = lv_label_create(list_card);
+    lv_label_set_text(list_title_label, "GRAVAÇÕES SALVAS NO SD");
+    lv_obj_set_style_text_font(list_title_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(list_title_label, lv_color_hex(pal->text_muted), 0);
+
+    list_container = lv_obj_create(list_card);
+    lv_obj_set_size(list_container, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(list_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list_container, 0, 0);
+    lv_obj_set_style_pad_all(list_container, 0, 0);
+    lv_obj_clear_flag(list_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(list_container, LV_FLEX_FLOW_COLUMN);
+
+    empty_label = lv_label_create(list_card);
+    lv_label_set_text(empty_label, "Nenhuma gravação encontrada em /sdcard/gravacoes");
+    lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_set_style_text_color(empty_label, lv_color_hex(pal->text_muted), 0);
+
+    apply_recorder_layout();
+    apply_recorder_theme();
+    ui_recorder_on_open();
+
+    ui_recorder_view_t *view = new ui_recorder_view_t();
+    view->parent = parent;
+    view->app_bar = app_bar;
+    return view;
+}
+
+void ui_recorder_view_open_file(ui_recorder_view_t *view, const char *filepath)
+{
+    (void)view;
+    ui_recorder_open_file(filepath);
+}
+
+void ui_recorder_view_refresh_theme(ui_recorder_view_t *view)
+{
+    (void)view;
+    ui_recorder_refresh_theme();
+}
+
+void ui_recorder_view_apply_layout(ui_recorder_view_t *view)
+{
+    (void)view;
+    ui_recorder_apply_layout();
+}
+
+void ui_recorder_view_destroy(ui_recorder_view_t *view)
+{
+    ui_recorder_on_close();
+    recorder_scr = nullptr;
+    delete view;
+}
 
 lv_obj_t *ui_recorder_create(void)
 {

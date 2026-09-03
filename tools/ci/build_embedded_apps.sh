@@ -24,38 +24,39 @@ compile_app() {
     fi
 }
 
-echo "[INFO] Empacotando aplicacoes de exemplo do SDK para o bundle..."
+echo "[INFO] Empacotando aplicacoes do sistema Tab5 OS para o bundle do firmware..."
+
+# Lista de todos os apps embutidos (desacoplados em repositórios independentes)
+EMBEDDED_APPS=(
+    "tab5-app-wifi"
+    "tab5-app-bluetooth"
+    "tab5-app-terminal"
+    "tab5-app-fileserver"
+    "tab5-app-recorder"
+    "tab5-app-music"
+    "tab5-app-chat"
+    "tab5-app-notas"
+    "tab5-app-calendar"
+    "tab5-app-files"
+    "tab5-app-camera"
+    "tab5-app-gallery"
+)
+
+for app_name in "${EMBEDDED_APPS[@]}"; do
+    app_path="${REPO_ROOT}/../${app_name}"
+    if [ -d "${app_path}" ]; then
+        compile_app "${app_path}"
+        python3 "${PACK_TOOL}" "${app_path}" -o "${PKG_OUTPUT_DIR}"
+    fi
+done
+
+# Empacota apps de exemplo se presentes
 if [ -d "${REPO_ROOT}/sdk/tab5-app-sdk/examples/hello_wasm" ]; then
     compile_app "${REPO_ROOT}/sdk/tab5-app-sdk/examples/hello_wasm"
     python3 "${PACK_TOOL}" "${REPO_ROOT}/sdk/tab5-app-sdk/examples/hello_wasm" -o "${PKG_OUTPUT_DIR}"
 fi
 
-if [ -d "${REPO_ROOT}/../tab5-app-notas" ]; then
-    compile_app "${REPO_ROOT}/../tab5-app-notas"
-    python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-notas" -o "${PKG_OUTPUT_DIR}"
-fi
-
-if [ -d "${REPO_ROOT}/../tab5-app-calendar" ]; then
-    compile_app "${REPO_ROOT}/../tab5-app-calendar"
-    python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-calendar" -o "${PKG_OUTPUT_DIR}"
-fi
-
-if [ -d "${REPO_ROOT}/../tab5-app-files" ]; then
-    compile_app "${REPO_ROOT}/../tab5-app-files"
-    python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-files" -o "${PKG_OUTPUT_DIR}"
-fi
-
-if [ -d "${REPO_ROOT}/../tab5-app-camera" ]; then
-    compile_app "${REPO_ROOT}/../tab5-app-camera"
-    python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-camera" -o "${PKG_OUTPUT_DIR}"
-fi
-
-if [ -d "${REPO_ROOT}/../tab5-app-gallery" ]; then
-    compile_app "${REPO_ROOT}/../tab5-app-gallery"
-    python3 "${PACK_TOOL}" "${REPO_ROOT}/../tab5-app-gallery" -o "${PKG_OUTPUT_DIR}"
-fi
-
-# Varre submodulos em embedded_apps/ se existirem
+# Varre submodulos em embedded_apps/ se existirem (suporte a CI/produção)
 if [ -d "${REPO_ROOT}/embedded_apps" ]; then
     for app_dir in "${REPO_ROOT}/embedded_apps"/*; do
         if [ -d "${app_dir}" ] && [ -f "${app_dir}/manifest.json" ]; then

@@ -1,4 +1,4 @@
-#include "ui_music.h"
+#include "ui_music_view.h"
 #include "app_registry.h"
 #include "music_player.h"
 #include "ui_app_bar.h"
@@ -805,6 +805,273 @@ void ui_music_register(void)
     app_registry_register(&s_music_app);
 }
 
+struct ui_music_view_s {
+    lv_obj_t *parent = nullptr;
+    ui_app_bar_t app_bar = {};
+};
+
+ui_music_view_t *ui_music_view_create(lv_obj_t *parent, ui_app_bar_t app_bar)
+{
+    music_scr = parent;
+    music_app_bar = app_bar;
+    const ui_palette_t *pal = ui_theme_get();
+
+    /* Container Principal */
+    main_container = lv_obj_create(music_scr);
+    lv_obj_set_style_bg_opa(main_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(main_container, 0, 0);
+    lv_obj_set_style_pad_all(main_container, 8, 0);
+    lv_obj_set_style_pad_gap(main_container, 8, 0);
+    lv_obj_clear_flag(main_container, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* --- Card do Player (Tocando Agora) --- */
+    play_card = lv_obj_create(main_container);
+    lv_obj_set_style_bg_color(play_card, lv_color_hex(pal->surface), 0);
+    lv_obj_set_style_border_color(play_card, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_border_width(play_card, 1, 0);
+    lv_obj_set_style_radius(play_card, 10, 0);
+    lv_obj_set_style_pad_all(play_card, 12, 0);
+    lv_obj_set_flex_flow(play_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(play_card, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    play_card_title = lv_label_create(play_card);
+    lv_label_set_text(play_card_title, "Tocando Agora");
+    lv_obj_set_style_text_font(play_card_title, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_card_title, lv_color_hex(pal->accent), 0);
+
+    play_file_label = lv_label_create(play_card);
+    lv_label_set_text(play_file_label, "Nenhuma música em reprodução");
+    lv_label_set_long_mode(play_file_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(play_file_label, lv_pct(95));
+    lv_obj_set_style_text_font(play_file_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_file_label, lv_color_hex(pal->text), 0);
+    lv_obj_set_style_text_align(play_file_label, LV_TEXT_ALIGN_CENTER, 0);
+
+    play_info_label = lv_label_create(play_card);
+    lv_label_set_text(play_info_label, "");
+    lv_obj_set_style_text_font(play_info_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_info_label, lv_color_hex(pal->text_muted), 0);
+
+    /* Barra de Progresso com trilha visivel e borda delimitadora */
+    play_bar = lv_bar_create(play_card);
+    lv_obj_set_size(play_bar, lv_pct(95), 10);
+    lv_bar_set_range(play_bar, 0, 100);
+    lv_bar_set_value(play_bar, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(play_bar, lv_color_hex(pal->surface_alt), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(play_bar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(play_bar, lv_color_hex(pal->border), LV_PART_MAIN);
+    lv_obj_set_style_border_width(play_bar, 1, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(play_bar, lv_color_hex(pal->accent), LV_PART_INDICATOR);
+    lv_obj_set_style_radius(play_bar, 5, LV_PART_MAIN);
+    lv_obj_set_style_radius(play_bar, 5, LV_PART_INDICATOR);
+
+    play_time_label = lv_label_create(play_card);
+    lv_label_set_text(play_time_label, "00:00 / 00:00");
+    lv_obj_set_style_text_font(play_time_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_time_label, lv_color_hex(pal->text_muted), 0);
+
+    /* Linha de Controles de Reproducao */
+    play_ctrl_row = lv_obj_create(play_card);
+    lv_obj_set_size(play_ctrl_row, lv_pct(100), 50);
+    lv_obj_set_style_bg_opa(play_ctrl_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(play_ctrl_row, 0, 0);
+    lv_obj_set_style_pad_all(play_ctrl_row, 0, 0);
+    lv_obj_set_style_pad_gap(play_ctrl_row, 6, 0);
+    lv_obj_clear_flag(play_ctrl_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(play_ctrl_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(play_ctrl_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    play_repeat_btn = lv_button_create(play_ctrl_row);
+    lv_obj_set_size(play_repeat_btn, 42, 38);
+    lv_obj_set_style_bg_color(play_repeat_btn, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_radius(play_repeat_btn, 8, 0);
+    lv_obj_add_event_cb(play_repeat_btn, play_repeat_btn_cb, LV_EVENT_CLICKED, nullptr);
+    play_repeat_label = lv_label_create(play_repeat_btn);
+    lv_label_set_text(play_repeat_label, "1");
+    lv_obj_set_style_text_font(play_repeat_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_repeat_label, lv_color_hex(pal->text_muted), 0);
+    lv_obj_center(play_repeat_label);
+
+    play_prev_btn = lv_button_create(play_ctrl_row);
+    lv_obj_set_size(play_prev_btn, 46, 38);
+    lv_obj_set_style_bg_color(play_prev_btn, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_radius(play_prev_btn, 8, 0);
+    lv_obj_add_event_cb(play_prev_btn, play_prev_btn_cb, LV_EVENT_CLICKED, nullptr);
+    play_prev_label = lv_label_create(play_prev_btn);
+    lv_label_set_text(play_prev_label, LV_SYMBOL_PREV);
+    lv_obj_set_style_text_font(play_prev_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_prev_label, lv_color_hex(pal->text), 0);
+    lv_obj_center(play_prev_label);
+
+    play_toggle_btn = lv_button_create(play_ctrl_row);
+    lv_obj_set_size(play_toggle_btn, 90, 42);
+    lv_obj_set_style_bg_color(play_toggle_btn, lv_color_hex(pal->accent), 0);
+    lv_obj_set_style_radius(play_toggle_btn, 10, 0);
+    lv_obj_add_event_cb(play_toggle_btn, play_toggle_btn_cb, LV_EVENT_CLICKED, nullptr);
+    play_toggle_label = lv_label_create(play_toggle_btn);
+    lv_label_set_text(play_toggle_label, LV_SYMBOL_PLAY " Play");
+    lv_obj_set_style_text_font(play_toggle_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_toggle_label, lv_color_white(), 0);
+    lv_obj_center(play_toggle_label);
+
+    play_stop_btn = lv_button_create(play_ctrl_row);
+    lv_obj_set_size(play_stop_btn, 46, 38);
+    lv_obj_set_style_bg_color(play_stop_btn, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_radius(play_stop_btn, 8, 0);
+    lv_obj_add_event_cb(play_stop_btn, play_stop_btn_cb, LV_EVENT_CLICKED, nullptr);
+    play_stop_label = lv_label_create(play_stop_btn);
+    lv_label_set_text(play_stop_label, LV_SYMBOL_STOP);
+    lv_obj_set_style_text_font(play_stop_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_stop_label, lv_color_hex(pal->text), 0);
+    lv_obj_center(play_stop_label);
+
+    play_next_btn = lv_button_create(play_ctrl_row);
+    lv_obj_set_size(play_next_btn, 46, 38);
+    lv_obj_set_style_bg_color(play_next_btn, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_radius(play_next_btn, 8, 0);
+    lv_obj_add_event_cb(play_next_btn, play_next_btn_cb, LV_EVENT_CLICKED, nullptr);
+    play_next_label = lv_label_create(play_next_btn);
+    lv_label_set_text(play_next_label, LV_SYMBOL_NEXT);
+    lv_obj_set_style_text_font(play_next_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_next_label, lv_color_hex(pal->text), 0);
+    lv_obj_center(play_next_label);
+
+    play_loop_btn = lv_button_create(play_ctrl_row);
+    lv_obj_set_size(play_loop_btn, 42, 38);
+    lv_obj_set_style_bg_color(play_loop_btn, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_radius(play_loop_btn, 8, 0);
+    lv_obj_add_event_cb(play_loop_btn, play_loop_btn_cb, LV_EVENT_CLICKED, nullptr);
+    play_loop_label = lv_label_create(play_loop_btn);
+    lv_label_set_text(play_loop_label, LV_SYMBOL_LOOP);
+    lv_obj_set_style_text_font(play_loop_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(play_loop_label, lv_color_hex(pal->text_muted), 0);
+    lv_obj_center(play_loop_label);
+
+    /* Linha de Volume */
+    vol_row = lv_obj_create(play_card);
+    lv_obj_set_size(vol_row, lv_pct(100), 36);
+    lv_obj_set_style_bg_opa(vol_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(vol_row, 0, 0);
+    lv_obj_set_style_pad_all(vol_row, 0, 0);
+    lv_obj_set_style_pad_gap(vol_row, 8, 0);
+    lv_obj_clear_flag(vol_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(vol_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(vol_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    vol_icon_label = lv_label_create(vol_row);
+    lv_label_set_text(vol_icon_label, LV_SYMBOL_VOLUME_MAX);
+    lv_obj_set_style_text_font(vol_icon_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(vol_icon_label, lv_color_hex(pal->text_muted), 0);
+
+    vol_slider = lv_slider_create(vol_row);
+    lv_obj_set_size(vol_slider, 180, 8);
+    lv_slider_set_range(vol_slider, 0, 100);
+    int cur_vol = 70;
+    audio_storage_load_volume(&cur_vol);
+    lv_slider_set_value(vol_slider, cur_vol, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->surface_alt), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(vol_slider, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(vol_slider, lv_color_hex(pal->border), LV_PART_MAIN);
+    lv_obj_set_style_border_width(vol_slider, 1, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->accent), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(vol_slider, lv_color_hex(pal->accent), LV_PART_KNOB);
+    lv_obj_add_event_cb(vol_slider, vol_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(vol_slider, vol_slider_cb, LV_EVENT_RELEASED, nullptr);
+
+    vol_value_label = lv_label_create(vol_row);
+    char vol_buf[16];
+    snprintf(vol_buf, sizeof(vol_buf), "%d%%", cur_vol);
+    lv_label_set_text(vol_value_label, vol_buf);
+    lv_obj_set_style_text_font(vol_value_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(vol_value_label, lv_color_hex(pal->text_muted), 0);
+
+    /* --- Card da Lista de Músicas --- */
+    list_card = lv_obj_create(main_container);
+    lv_obj_set_style_bg_color(list_card, lv_color_hex(pal->surface), 0);
+    lv_obj_set_style_border_color(list_card, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_border_width(list_card, 1, 0);
+    lv_obj_set_style_radius(list_card, 10, 0);
+    lv_obj_set_style_pad_all(list_card, 8, 0);
+    lv_obj_set_flex_flow(list_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(list_card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    list_header_row = lv_obj_create(list_card);
+    lv_obj_set_size(list_header_row, lv_pct(100), 36);
+    lv_obj_set_style_bg_opa(list_header_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list_header_row, 0, 0);
+    lv_obj_set_style_pad_all(list_header_row, 0, 0);
+    lv_obj_clear_flag(list_header_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(list_header_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(list_header_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    folder_up_btn = lv_button_create(list_header_row);
+    lv_obj_set_size(folder_up_btn, 36, 30);
+    lv_obj_set_style_bg_color(folder_up_btn, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_radius(folder_up_btn, 6, 0);
+    lv_obj_add_event_cb(folder_up_btn, folder_up_btn_cb, LV_EVENT_CLICKED, nullptr);
+    folder_up_label = lv_label_create(folder_up_btn);
+    lv_label_set_text(folder_up_label, LV_SYMBOL_UP);
+    lv_obj_set_style_text_font(folder_up_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(folder_up_label, lv_color_hex(pal->text), 0);
+    lv_obj_center(folder_up_label);
+
+    list_title_label = lv_label_create(list_header_row);
+    lv_label_set_text(list_title_label, " /sdcard/musica");
+    lv_label_set_long_mode(list_title_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_flex_grow(list_title_label, 1);
+    lv_obj_set_style_text_font(list_title_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(list_title_label, lv_color_hex(pal->text_muted), 0);
+
+    list_container = lv_obj_create(list_card);
+    lv_obj_set_width(list_container, lv_pct(100));
+    lv_obj_set_flex_grow(list_container, 1);
+    lv_obj_set_style_bg_opa(list_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list_container, 0, 0);
+    lv_obj_set_style_pad_all(list_container, 0, 0);
+    lv_obj_set_style_pad_gap(list_container, 4, 0);
+    lv_obj_set_scroll_dir(list_container, LV_DIR_VER);
+    lv_obj_set_flex_flow(list_container, LV_FLEX_FLOW_COLUMN);
+
+    empty_label = lv_label_create(list_card);
+    lv_label_set_text(empty_label, "Nenhuma música (.mp3 / .wav) encontrada");
+    lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(empty_label, lv_color_hex(pal->text_muted), 0);
+
+    ui_music_apply_layout();
+    ui_music_refresh_theme();
+    ui_music_on_open();
+
+    ui_music_view_t *view = new ui_music_view_t();
+    view->parent = parent;
+    view->app_bar = app_bar;
+    return view;
+}
+
+void ui_music_view_open_file(ui_music_view_t *view, const char *filepath)
+{
+    (void)view;
+    ui_music_open_file(filepath);
+}
+
+void ui_music_view_refresh_theme(ui_music_view_t *view)
+{
+    (void)view;
+    ui_music_refresh_theme();
+}
+
+void ui_music_view_apply_layout(ui_music_view_t *view)
+{
+    (void)view;
+    ui_music_apply_layout();
+}
+
+void ui_music_view_destroy(ui_music_view_t *view)
+{
+    ui_music_on_close();
+    music_scr = nullptr;
+    delete view;
+}
+
 lv_obj_t *ui_music_create(void)
 {
     music_scr = lv_obj_create(NULL);
@@ -1050,7 +1317,13 @@ void ui_music_on_open(void)
 void ui_music_on_close(void)
 {
     hide_delete_modal();
-    /* O s_update_timer permanece ativo para gerenciar a transição de faixas em segundo plano */
+    /* Pausa o timer de atualizacao da UI (LVGL): quando a native view e
+     * destruida a tela e liberada e o callback nao deve tocar em objetos
+     * liberados (use-after-free). A reproducao de audio continua em segundo
+     * plano via music_play_task. */
+    if (s_update_timer) {
+        lv_timer_pause(s_update_timer);
+    }
 }
 
 void ui_music_open_file(const char *filepath)

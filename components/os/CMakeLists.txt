@@ -20,6 +20,13 @@ idf_component_register(
         "core/storage_mgr.cpp"
         "core/camera_mgr.cpp"
         "core/tjpgd.c"
+        "core/audio_recorder.cpp"
+        "core/music_player.cpp"
+        "core/http_file_server.cpp"
+        "core/ai_client.cpp"
+        "core/ai_storage.cpp"
+        "core/ssh_client.cpp"
+        "core/terminal_cmd.cpp"
         "runtime/tab5_storage_sandbox.cpp"
         "runtime/tab5_ui_host.cpp"
         "runtime/tab5_sys_host.cpp"
@@ -42,6 +49,13 @@ idf_component_register(
         "shell/ui_files_view.cpp"
         "shell/ui_camera_view.cpp"
         "shell/ui_gallery_view.cpp"
+        "shell/ui_wifi_view.cpp"
+        "shell/ui_bluetooth_view.cpp"
+        "shell/ui_terminal_view.cpp"
+        "shell/ui_fileserver_view.cpp"
+        "shell/ui_recorder_view.cpp"
+        "shell/ui_music_view.cpp"
+        "shell/ui_chat_view.cpp"
         "shell/ui_installer.cpp"
         "shell/ui_storage_view.cpp"
         "fonts/lv_font_montserrat_14_latin1.c"
@@ -52,7 +66,9 @@ idf_component_register(
         "fonts/lv_font_montserrat_56_latin1.c"
     INCLUDE_DIRS "core" "shell" "fonts" "runtime" "runtime/include" "."
     REQUIRES lvgl m5stack_tab5 sensor_hub nvs_flash esp_wifi esp_netif esp_event
-            fatfs sdmmc bt apps json spiffs espressif__esp_hosted
+            fatfs sdmmc bt json spiffs espressif__esp_hosted
             espressif__wasm-micro-runtime
             esp_video espressif__esp_cam_sensor
+            esp_http_server esp_codec_dev esp_http_client esp-tls
+            mbedtls esp_audio_codec libssh
 )

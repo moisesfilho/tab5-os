@@ -65,8 +65,8 @@ add_executable(tab5_host_tests
     ${REPO_ROOT}/components/os/runtime/tab5_wasm_runtime.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_manifest.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_package_mgr.cpp
-    ${REPO_ROOT}/components/apps/chat/ai_storage.cpp
-    ${REPO_ROOT}/components/apps/terminal/terminal_cmd.cpp
+    ${REPO_ROOT}/components/os/core/ai_storage.cpp
+    ${REPO_ROOT}/components/os/core/terminal_cmd.cpp
 )
 
 target_include_directories(tab5_host_tests PRIVATE
@@ -75,8 +75,7 @@ target_include_directories(tab5_host_tests PRIVATE
     ${REPO_ROOT}/components/os/core
     ${REPO_ROOT}/components/os/runtime
     ${REPO_ROOT}/components/os/runtime/include
-    ${REPO_ROOT}/components/apps/chat
-    ${REPO_ROOT}/components/apps/terminal
+    ${REPO_ROOT}/components/os/shell
 )
 
 target_compile_options(tab5_host_tests PRIVATE -Wall -Wextra)

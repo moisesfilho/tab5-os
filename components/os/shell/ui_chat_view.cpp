@@ -1,4 +1,4 @@
-#include "ui_chat.h"
+#include "ui_chat_view.h"
 #include "app_registry.h"
 #include "ui_shell.h"
 #include "ui_keyboard.h"
@@ -583,6 +583,121 @@ void config_btn_cb(lv_event_t *event)
 }
 
 } // namespace
+
+struct ui_chat_view_s {
+    lv_obj_t *parent = nullptr;
+    ui_app_bar_t app_bar = {};
+};
+
+ui_chat_view_t *ui_chat_view_create(lv_obj_t *parent, ui_app_bar_t app_bar)
+{
+    chat_scr = parent;
+    chat_app_bar = app_bar;
+    const ui_palette_t *pal = ui_theme_get();
+
+    model_badge = lv_obj_create(chat_app_bar.actions_cont);
+    lv_obj_set_height(model_badge, 24);
+    lv_obj_set_width(model_badge, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(model_badge, lv_color_hex(pal->accent_soft), 0);
+    lv_obj_set_style_border_width(model_badge, 0, 0);
+    lv_obj_set_style_radius(model_badge, 6, 0);
+    lv_obj_set_style_pad_hor(model_badge, 8, 0);
+    lv_obj_set_style_pad_ver(model_badge, 2, 0);
+    lv_obj_set_style_margin_right(model_badge, 8, 0);
+    lv_obj_clear_flag(model_badge, LV_OBJ_FLAG_SCROLLABLE);
+
+    model_badge_lbl = lv_label_create(model_badge);
+    lv_label_set_text(model_badge_lbl, "deepseek-v4-pro");
+    lv_obj_set_style_text_font(model_badge_lbl, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(model_badge_lbl, lv_color_hex(pal->accent), 0);
+    lv_obj_center(model_badge_lbl);
+
+    clear_btn = ui_app_bar_add_action_button(&chat_app_bar, LV_SYMBOL_TRASH, clear_btn_cb, nullptr, &clear_lbl);
+
+    // Messages Container
+    messages_cont = lv_obj_create(chat_scr);
+    lv_obj_set_width(messages_cont, lv_pct(100));
+    lv_obj_set_style_bg_opa(messages_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(messages_cont, 0, 0);
+    lv_obj_set_style_pad_hor(messages_cont, 16, 0);
+    lv_obj_set_style_pad_ver(messages_cont, 8, 0);
+    lv_obj_set_flex_flow(messages_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(messages_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scrollbar_mode(messages_cont, LV_SCROLLBAR_MODE_AUTO);
+
+    // Input Bar at bottom
+    input_bar = lv_obj_create(chat_scr);
+    lv_obj_set_width(input_bar, lv_pct(100));
+    lv_obj_set_height(input_bar, 60);
+    lv_obj_set_style_bg_color(input_bar, lv_color_hex(pal->surface), 0);
+    lv_obj_set_style_border_color(input_bar, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_border_side(input_bar, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_border_width(input_bar, 1, 0);
+    lv_obj_set_style_radius(input_bar, 0, 0);
+    lv_obj_set_style_pad_hor(input_bar, 12, 0);
+    lv_obj_set_style_pad_ver(input_bar, 6, 0);
+    lv_obj_clear_flag(input_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(input_bar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(input_bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    // Input Text Area
+    input_ta = lv_textarea_create(input_bar);
+    lv_obj_set_flex_grow(input_ta, 1);
+    lv_obj_set_height(input_ta, 44);
+    lv_textarea_set_placeholder_text(input_ta, "Digite sua mensagem...");
+    lv_textarea_set_one_line(input_ta, true);
+    lv_obj_set_style_radius(input_ta, 8, 0);
+    lv_obj_set_style_border_width(input_ta, 1, 0);
+    lv_obj_set_style_border_color(input_ta, lv_color_hex(pal->border), 0);
+    lv_obj_set_style_bg_color(input_ta, lv_color_hex(pal->surface_alt), 0);
+    lv_obj_set_style_text_color(input_ta, lv_color_hex(pal->text), 0);
+    lv_obj_set_style_text_font(input_ta, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_anim_duration(input_ta, 0, LV_PART_CURSOR);
+    lv_obj_set_style_bg_opa(input_ta, LV_OPA_TRANSP, LV_PART_CURSOR);
+    lv_obj_add_event_cb(input_ta, input_ta_cb, LV_EVENT_ALL, nullptr);
+
+    // Send Button
+    send_btn = lv_button_create(input_bar);
+    lv_obj_set_size(send_btn, 48, 44);
+    lv_obj_set_style_radius(send_btn, 8, 0);
+    lv_obj_set_style_bg_color(send_btn, lv_color_hex(pal->accent), 0);
+    lv_obj_set_style_margin_left(send_btn, 8, 0);
+    lv_obj_add_event_cb(send_btn, send_btn_cb, LV_EVENT_CLICKED, nullptr);
+
+    send_lbl = lv_label_create(send_btn);
+    lv_label_set_text(send_lbl, LV_SYMBOL_PLAY);
+    lv_obj_set_style_text_font(send_lbl, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(send_lbl, lv_color_white(), 0);
+    lv_obj_center(send_lbl);
+
+    ui_chat_apply_layout();
+    ui_chat_refresh_theme();
+    ui_chat_on_open();
+
+    ui_chat_view_t *view = new ui_chat_view_t();
+    view->parent = parent;
+    view->app_bar = app_bar;
+    return view;
+}
+
+void ui_chat_view_refresh_theme(ui_chat_view_t *view)
+{
+    (void)view;
+    ui_chat_refresh_theme();
+}
+
+void ui_chat_view_apply_layout(ui_chat_view_t *view)
+{
+    (void)view;
+    ui_chat_apply_layout();
+}
+
+void ui_chat_view_destroy(ui_chat_view_t *view)
+{
+    ui_chat_on_close();
+    chat_scr = nullptr;
+    delete view;
+}
 
 lv_obj_t *ui_chat_create(void)
 {

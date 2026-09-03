@@ -111,14 +111,64 @@ tab5_ui_obj_t tab5_ui_app_bar_add_action_button(const char *symbol_or_text, void
         }
 
         const char *sym = symbol_or_text;
-        if (strcmp(symbol_or_text, "LV_SYMBOL_PLUS") == 0) {
-            sym = LV_SYMBOL_PLUS;
-        } else if (strcmp(symbol_or_text, "LV_SYMBOL_SAVE") == 0) {
-            sym = LV_SYMBOL_SAVE;
-        } else if (strcmp(symbol_or_text, "LV_SYMBOL_EDIT") == 0) {
-            sym = LV_SYMBOL_EDIT;
-        } else if (strcmp(symbol_or_text, "LV_SYMBOL_TRASH") == 0) {
-            sym = LV_SYMBOL_TRASH;
+        static const struct {
+            const char *name;
+            const char *glyph;
+        } sym_map[] = {
+            {"LV_SYMBOL_AUDIO", LV_SYMBOL_AUDIO},
+            {"LV_SYMBOL_VIDEO", LV_SYMBOL_VIDEO},
+            {"LV_SYMBOL_LIST", LV_SYMBOL_LIST},
+            {"LV_SYMBOL_OK", LV_SYMBOL_OK},
+            {"LV_SYMBOL_CLOSE", LV_SYMBOL_CLOSE},
+            {"LV_SYMBOL_POWER", LV_SYMBOL_POWER},
+            {"LV_SYMBOL_SETTINGS", LV_SYMBOL_SETTINGS},
+            {"LV_SYMBOL_HOME", LV_SYMBOL_HOME},
+            {"LV_SYMBOL_DOWNLOAD", LV_SYMBOL_DOWNLOAD},
+            {"LV_SYMBOL_DRIVE", LV_SYMBOL_DRIVE},
+            {"LV_SYMBOL_REFRESH", LV_SYMBOL_REFRESH},
+            {"LV_SYMBOL_MUTE", LV_SYMBOL_MUTE},
+            {"LV_SYMBOL_VOLUME_MID", LV_SYMBOL_VOLUME_MID},
+            {"LV_SYMBOL_VOLUME_MAX", LV_SYMBOL_VOLUME_MAX},
+            {"LV_SYMBOL_IMAGE", LV_SYMBOL_IMAGE},
+            {"LV_SYMBOL_PREV", LV_SYMBOL_PREV},
+            {"LV_SYMBOL_PLAY", LV_SYMBOL_PLAY},
+            {"LV_SYMBOL_PAUSE", LV_SYMBOL_PAUSE},
+            {"LV_SYMBOL_STOP", LV_SYMBOL_STOP},
+            {"LV_SYMBOL_NEXT", LV_SYMBOL_NEXT},
+            {"LV_SYMBOL_LEFT", LV_SYMBOL_LEFT},
+            {"LV_SYMBOL_RIGHT", LV_SYMBOL_RIGHT},
+            {"LV_SYMBOL_PLUS", LV_SYMBOL_PLUS},
+            {"LV_SYMBOL_MINUS", LV_SYMBOL_MINUS},
+            {"LV_SYMBOL_EYE_OPEN", LV_SYMBOL_EYE_OPEN},
+            {"LV_SYMBOL_EYE_CLOSE", LV_SYMBOL_EYE_CLOSE},
+            {"LV_SYMBOL_WARNING", LV_SYMBOL_WARNING},
+            {"LV_SYMBOL_SHUFFLE", LV_SYMBOL_SHUFFLE},
+            {"LV_SYMBOL_UP", LV_SYMBOL_UP},
+            {"LV_SYMBOL_DOWN", LV_SYMBOL_DOWN},
+            {"LV_SYMBOL_LOOP", LV_SYMBOL_LOOP},
+            {"LV_SYMBOL_DIRECTORY", LV_SYMBOL_DIRECTORY},
+            {"LV_SYMBOL_UPLOAD", LV_SYMBOL_UPLOAD},
+            {"LV_SYMBOL_CALL", LV_SYMBOL_CALL},
+            {"LV_SYMBOL_CUT", LV_SYMBOL_CUT},
+            {"LV_SYMBOL_COPY", LV_SYMBOL_COPY},
+            {"LV_SYMBOL_SAVE", LV_SYMBOL_SAVE},
+            {"LV_SYMBOL_BARS", LV_SYMBOL_BARS},
+            {"LV_SYMBOL_ENVELOPE", LV_SYMBOL_ENVELOPE},
+            {"LV_SYMBOL_CHARGE", LV_SYMBOL_CHARGE},
+            {"LV_SYMBOL_BELL", LV_SYMBOL_BELL},
+            {"LV_SYMBOL_KEYBOARD", LV_SYMBOL_KEYBOARD},
+            {"LV_SYMBOL_FILE", LV_SYMBOL_FILE},
+            {"LV_SYMBOL_WIFI", LV_SYMBOL_WIFI},
+            {"LV_SYMBOL_BLUETOOTH", LV_SYMBOL_BLUETOOTH},
+            {"LV_SYMBOL_TRASH", LV_SYMBOL_TRASH},
+            {"LV_SYMBOL_EDIT", LV_SYMBOL_EDIT},
+            {"LV_SYMBOL_BACKSPACE", LV_SYMBOL_BACKSPACE},
+        };
+        for (const auto &entry : sym_map) {
+            if (strcmp(symbol_or_text, entry.name) == 0) {
+                sym = entry.glyph;
+                break;
+            }
         }
 
         lv_obj_t *btn = lv_button_create(actions_cont);

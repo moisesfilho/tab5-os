@@ -1,4 +1,4 @@
-#include "ui_bluetooth.h"
+#include "ui_bluetooth_view.h"
 #include "app_registry.h"
 #include "ui_bar.h"
 #include "ui_app_bar.h"
@@ -713,6 +713,114 @@ void load_saved_devices(void)
 }
 
 } // namespace
+
+struct ui_bluetooth_view_s {
+    lv_obj_t *parent = nullptr;
+    ui_app_bar_t app_bar = {};
+};
+
+ui_bluetooth_view_t *ui_bluetooth_view_create(lv_obj_t *parent, ui_app_bar_t app_bar)
+{
+    (void)app_bar;
+    bt_scr = parent;
+
+    /* Botão Buscar */
+    scan_button = lv_obj_create(bt_scr);
+    lv_obj_set_height(scan_button, 44);
+    lv_obj_set_style_radius(scan_button, 8, 0);
+    lv_obj_set_style_border_width(scan_button, 1, 0);
+    lv_obj_set_style_pad_all(scan_button, 0, 0);
+    lv_obj_clear_flag(scan_button, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(scan_button, scan_button_cb, LV_EVENT_CLICKED, nullptr);
+
+    scan_label = lv_label_create(scan_button);
+    lv_label_set_text(scan_label, LV_SYMBOL_REFRESH "  Buscar Dispositivos");
+    lv_obj_set_style_text_font(scan_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_clear_flag(scan_label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_center(scan_label);
+
+    /* Botões de Ação */
+    connect_button = lv_obj_create(bt_scr);
+    lv_obj_set_style_radius(connect_button, 8, 0);
+    lv_obj_set_style_border_width(connect_button, 0, 0);
+    lv_obj_set_style_pad_all(connect_button, 0, 0);
+    lv_obj_clear_flag(connect_button, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(connect_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(connect_button, connect_button_cb, LV_EVENT_CLICKED, nullptr);
+
+    connect_label = lv_label_create(connect_button);
+    lv_label_set_text(connect_label, LV_SYMBOL_OK " Conectar");
+    lv_obj_set_style_text_font(connect_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_center(connect_label);
+
+    disconnect_button = lv_obj_create(bt_scr);
+    lv_obj_set_style_radius(disconnect_button, 8, 0);
+    lv_obj_set_style_border_width(disconnect_button, 1, 0);
+    lv_obj_set_style_pad_all(disconnect_button, 0, 0);
+    lv_obj_clear_flag(disconnect_button, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(disconnect_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(disconnect_button, disconnect_button_cb, LV_EVENT_CLICKED, nullptr);
+
+    disconnect_label = lv_label_create(disconnect_button);
+    lv_label_set_text(disconnect_label, LV_SYMBOL_CLOSE " Desconectar");
+    lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_center(disconnect_label);
+
+    forget_button = lv_obj_create(bt_scr);
+    lv_obj_set_style_radius(forget_button, 8, 0);
+    lv_obj_set_style_border_width(forget_button, 1, 0);
+    lv_obj_set_style_pad_all(forget_button, 0, 0);
+    lv_obj_clear_flag(forget_button, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(forget_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(forget_button, forget_button_cb, LV_EVENT_CLICKED, nullptr);
+
+    forget_label = lv_label_create(forget_button);
+    lv_label_set_text(forget_label, LV_SYMBOL_TRASH " Esquecer");
+    lv_obj_set_style_text_font(forget_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_center(forget_label);
+
+    status_label = lv_label_create(bt_scr);
+    lv_label_set_text(status_label, "Selecione um dispositivo para conectar");
+    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_18_latin1, 0);
+
+    device_list = lv_obj_create(bt_scr);
+    lv_obj_set_style_radius(device_list, 8, 0);
+    lv_obj_set_style_border_width(device_list, 1, 0);
+    lv_obj_set_style_pad_all(device_list, 4, 0);
+    lv_obj_set_style_pad_row(device_list, 4, 0);
+    lv_obj_set_flex_flow(device_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(device_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scroll_dir(device_list, LV_DIR_VER);
+
+    apply_bt_layout();
+    apply_bt_theme();
+    load_saved_devices();
+    render_devices();
+    update_action_buttons_state();
+
+    ui_bluetooth_view_t *view = new ui_bluetooth_view_t();
+    view->parent = parent;
+    view->app_bar = app_bar;
+    return view;
+}
+
+void ui_bluetooth_view_refresh_theme(ui_bluetooth_view_t *view)
+{
+    (void)view;
+    ui_bluetooth_refresh_theme();
+}
+
+void ui_bluetooth_view_apply_layout(ui_bluetooth_view_t *view)
+{
+    (void)view;
+    ui_bluetooth_apply_layout();
+}
+
+void ui_bluetooth_view_destroy(ui_bluetooth_view_t *view)
+{
+    bt_scr = nullptr;
+    delete view;
+}
 
 lv_obj_t *ui_bluetooth_create(void)
 {

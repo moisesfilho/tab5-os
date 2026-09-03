@@ -1,4 +1,4 @@
-#include "ui_terminal.h"
+#include "ui_terminal_view.h"
 #include "app_registry.h"
 #include "ui_shell.h"
 #include "ui_keyboard.h"
@@ -416,6 +416,58 @@ void ui_terminal_apply_layout(void)
 void ui_terminal_refresh_theme(void)
 {
     apply_terminal_theme();
+}
+
+struct ui_terminal_view_s {
+    lv_obj_t *parent = nullptr;
+    ui_app_bar_t app_bar = {};
+};
+
+ui_terminal_view_t *ui_terminal_view_create(lv_obj_t *parent, ui_app_bar_t app_bar)
+{
+    term_scr = parent;
+    term_app_bar = app_bar;
+
+    /* Console Interativo Único (Textarea Fullscreen) */
+    term_ta = lv_textarea_create(term_scr);
+    lv_obj_set_style_radius(term_ta, 0, 0);
+    lv_obj_set_style_border_width(term_ta, 0, 0);
+    lv_obj_set_style_pad_all(term_ta, 10, 0);
+    lv_obj_set_style_text_font(term_ta, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_anim_duration(term_ta, 500, LV_PART_CURSOR);
+    lv_obj_add_event_cb(term_ta, textarea_event_cb, LV_EVENT_ALL, nullptr);
+
+    init_terminal_banner();
+
+    apply_terminal_theme();
+    ui_terminal_apply_layout();
+
+    ui_keyboard_attach(term_ta);
+
+    ui_terminal_view_t *view = new ui_terminal_view_t();
+    view->parent = parent;
+    view->app_bar = app_bar;
+    return view;
+}
+
+void ui_terminal_view_refresh_theme(ui_terminal_view_t *view)
+{
+    (void)view;
+    ui_terminal_refresh_theme();
+}
+
+void ui_terminal_view_apply_layout(ui_terminal_view_t *view)
+{
+    (void)view;
+    ui_terminal_apply_layout();
+}
+
+void ui_terminal_view_destroy(ui_terminal_view_t *view)
+{
+    ui_terminal_on_close();
+    term_scr = nullptr;
+    term_ta = nullptr;
+    delete view;
 }
 
 lv_obj_t *ui_terminal_create(void)

@@ -2,13 +2,13 @@
 #include "ui_bar.h"
 #include "ui_keyboard.h"
 #include "ui_desktop.h"
-#include "ui_wifi.h"
-#include "ui_bluetooth.h"
-#include "ui_terminal.h"
-#include "ui_fileserver.h"
-#include "ui_recorder.h"
-#include "ui_chat.h"
-#include "ui_music.h"
+#include "ui_wifi_view.h"
+#include "ui_bluetooth_view.h"
+#include "ui_terminal_view.h"
+#include "ui_fileserver_view.h"
+#include "ui_recorder_view.h"
+#include "ui_chat_view.h"
+#include "ui_music_view.h"
 #include "ui_screensaver.h"
 #include "ui_screen_off.h"
 #include "ui_theme.h"
@@ -125,14 +125,9 @@ void ui_shell_init(void)
     tab5_package_mgr_init();
     ui_installer_init();
 
-    /* Cada aplicacao registra seu manifesto (icone, launch, extensoes) no SO */
-    ui_wifi_register();
-    ui_bluetooth_register();
-    ui_terminal_register();
-    ui_fileserver_register();
-    ui_recorder_register();
-    ui_chat_register();
-    ui_music_register();
+    /* Cada aplicacao registra seu manifesto (icone, launch, extensoes) no SO.
+     * Apps migrados para pacotes WASM sao registrados pelo tab5_package_mgr.
+     * Apenas Armazenamento continua nativo (sem pacote equivalente). */
     ui_storage_view_register();
 
     /* Varre pacotes embutidos e instalados no SD */

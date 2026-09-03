@@ -120,6 +120,16 @@ ui_app_bar_refresh_theme(&app_bar);
 >   - Exemplo 2: `"Notas - Sem título"` ou `"Notas - config.txt"`
 >   - Exemplo 3: `"Galeria - foto.jpg (1/10)"`
 
+> [!IMPORTANT]
+> **Botões de ação em apps com Native View (modelo WASM):**
+> Aplicações embutidas como pacote WASM que possuem uma *native view* no firmware (ex. `wifi`, `bluetooth`, `terminal`, `servidor`, `recorder`, `chat`, `music`) **NÃO devem adicionar botões de ação via ABI WASM** (`tab5_ui_app_bar_add_action_button` no `main.c` da app):
+> - Callbacks registrados pelo WASM não disparam (não há *trampoline* WAMR para function pointers) — o botão aparece mas fica morto;
+> - Renderizam fora do padrão visual da barra nativa.
+>
+> A tela real dessas apps é montada pela native view (`ui_<app>_view_create`), que deve adicionar os botões de ação por meio da API **nativa** `ui_app_bar_add_action_button` (estilo já compatível com o botão "Fechar"). Ex.: a lixeira (limpar chat) do Chat é adicionada em `ui_chat_view.cpp` de forma nativa.
+>
+> **Reprodução em segundo plano (Música):** a reprodução roda na task `music_play_task` (FreeRTOS), independente da UI. Ao fechar o app, `ui_music_on_close` pausa apenas o `s_update_timer` (que atualiza widgets LVGL e, se ativo após a destruição da tela, causa *use-after-free* → reboot); a música continua tocando. Ao reabrir, `ui_music_view_create` → `ui_music_on_open` retoma o timer.
+
 ---
 
 ### 4.2. Sistema de Temas (`ui_theme`)

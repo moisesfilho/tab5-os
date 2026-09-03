@@ -20,6 +20,13 @@
 #include "ui_files_view.h"
 #include "ui_camera_view.h"
 #include "ui_gallery_view.h"
+#include "ui_wifi_view.h"
+#include "ui_bluetooth_view.h"
+#include "ui_terminal_view.h"
+#include "ui_fileserver_view.h"
+#include "ui_recorder_view.h"
+#include "ui_music_view.h"
+#include "ui_chat_view.h"
 #define HAVE_LVGL 1
 #else
 #define HAVE_LVGL 0
@@ -30,6 +37,13 @@ static lv_obj_t *s_previous_screen = nullptr;
 static ui_files_view_t *s_active_files_view = nullptr;
 static ui_camera_view_t *s_active_camera_view = nullptr;
 static ui_gallery_view_t *s_active_gallery_view = nullptr;
+static ui_wifi_view_t *s_active_wifi_view = nullptr;
+static ui_bluetooth_view_t *s_active_bluetooth_view = nullptr;
+static ui_terminal_view_t *s_active_terminal_view = nullptr;
+static ui_fileserver_view_t *s_active_fileserver_view = nullptr;
+static ui_recorder_view_t *s_active_recorder_view = nullptr;
+static ui_music_view_t *s_active_music_view = nullptr;
+static ui_chat_view_t *s_active_chat_view = nullptr;
 
 static void on_app_bar_close_clicked(lv_event_t *e)
 {
@@ -122,6 +136,59 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
             s_active_gallery_view = nullptr;
         }
         s_active_gallery_view = ui_gallery_view_create(scr, bar);
+    } else if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.wifi") == 0 || strcmp(ctx->app_id, "wifi") == 0)) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+        if (s_active_wifi_view != nullptr) {
+            ui_wifi_view_destroy(s_active_wifi_view);
+            s_active_wifi_view = nullptr;
+        }
+        s_active_wifi_view = ui_wifi_view_create(scr, bar);
+    } else if (ctx->app_id[0] &&
+               (strcmp(ctx->app_id, "com.tab5.bluetooth") == 0 || strcmp(ctx->app_id, "bluetooth") == 0)) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+        if (s_active_bluetooth_view != nullptr) {
+            ui_bluetooth_view_destroy(s_active_bluetooth_view);
+            s_active_bluetooth_view = nullptr;
+        }
+        s_active_bluetooth_view = ui_bluetooth_view_create(scr, bar);
+    } else if (ctx->app_id[0] &&
+               (strcmp(ctx->app_id, "com.tab5.terminal") == 0 || strcmp(ctx->app_id, "terminal") == 0)) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+        if (s_active_terminal_view != nullptr) {
+            ui_terminal_view_destroy(s_active_terminal_view);
+            s_active_terminal_view = nullptr;
+        }
+        s_active_terminal_view = ui_terminal_view_create(scr, bar);
+    } else if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.fileserver") == 0 ||
+                                  strcmp(ctx->app_id, "fileserver") == 0 || strcmp(ctx->app_id, "fileserver") == 0)) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+        if (s_active_fileserver_view != nullptr) {
+            ui_fileserver_view_destroy(s_active_fileserver_view);
+            s_active_fileserver_view = nullptr;
+        }
+        s_active_fileserver_view = ui_fileserver_view_create(scr, bar);
+    } else if (ctx->app_id[0] &&
+               (strcmp(ctx->app_id, "com.tab5.recorder") == 0 || strcmp(ctx->app_id, "recorder") == 0)) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+        if (s_active_recorder_view != nullptr) {
+            ui_recorder_view_destroy(s_active_recorder_view);
+            s_active_recorder_view = nullptr;
+        }
+        s_active_recorder_view = ui_recorder_view_create(scr, bar);
+    } else if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.music") == 0 || strcmp(ctx->app_id, "music") == 0)) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+        if (s_active_music_view != nullptr) {
+            ui_music_view_destroy(s_active_music_view);
+            s_active_music_view = nullptr;
+        }
+        s_active_music_view = ui_music_view_create(scr, bar);
+    } else if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.chat") == 0 || strcmp(ctx->app_id, "chat") == 0)) {
+        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
+        if (s_active_chat_view != nullptr) {
+            ui_chat_view_destroy(s_active_chat_view);
+            s_active_chat_view = nullptr;
+        }
+        s_active_chat_view = ui_chat_view_create(scr, bar);
     }
 
     ctx->root_screen = (tab5_ui_obj_t)scr;
@@ -159,6 +226,34 @@ tab5_err_t tab5_ui_host_destroy_app_screen(tab5_app_context_t *ctx)
     if (s_active_gallery_view != nullptr) {
         ui_gallery_view_destroy(s_active_gallery_view);
         s_active_gallery_view = nullptr;
+    }
+    if (s_active_wifi_view != nullptr) {
+        ui_wifi_view_destroy(s_active_wifi_view);
+        s_active_wifi_view = nullptr;
+    }
+    if (s_active_bluetooth_view != nullptr) {
+        ui_bluetooth_view_destroy(s_active_bluetooth_view);
+        s_active_bluetooth_view = nullptr;
+    }
+    if (s_active_terminal_view != nullptr) {
+        ui_terminal_view_destroy(s_active_terminal_view);
+        s_active_terminal_view = nullptr;
+    }
+    if (s_active_fileserver_view != nullptr) {
+        ui_fileserver_view_destroy(s_active_fileserver_view);
+        s_active_fileserver_view = nullptr;
+    }
+    if (s_active_recorder_view != nullptr) {
+        ui_recorder_view_destroy(s_active_recorder_view);
+        s_active_recorder_view = nullptr;
+    }
+    if (s_active_music_view != nullptr) {
+        ui_music_view_destroy(s_active_music_view);
+        s_active_music_view = nullptr;
+    }
+    if (s_active_chat_view != nullptr) {
+        ui_chat_view_destroy(s_active_chat_view);
+        s_active_chat_view = nullptr;
     }
 
     if (ctx->root_screen != nullptr) {
@@ -333,6 +428,56 @@ void tab5_ui_host_apply_layout(void)
         return;
     }
 
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.wifi") == 0 || strcmp(ctx->app_id, "wifi") == 0)) {
+        if (s_active_wifi_view != nullptr) {
+            ui_wifi_view_apply_layout(s_active_wifi_view);
+        }
+        return;
+    }
+
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.bluetooth") == 0 || strcmp(ctx->app_id, "bluetooth") == 0)) {
+        if (s_active_bluetooth_view != nullptr) {
+            ui_bluetooth_view_apply_layout(s_active_bluetooth_view);
+        }
+        return;
+    }
+
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.terminal") == 0 || strcmp(ctx->app_id, "terminal") == 0)) {
+        if (s_active_terminal_view != nullptr) {
+            ui_terminal_view_apply_layout(s_active_terminal_view);
+        }
+        return;
+    }
+
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.fileserver") == 0 || strcmp(ctx->app_id, "fileserver") == 0 ||
+                           strcmp(ctx->app_id, "fileserver") == 0)) {
+        if (s_active_fileserver_view != nullptr) {
+            ui_fileserver_view_apply_layout(s_active_fileserver_view);
+        }
+        return;
+    }
+
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.recorder") == 0 || strcmp(ctx->app_id, "recorder") == 0)) {
+        if (s_active_recorder_view != nullptr) {
+            ui_recorder_view_apply_layout(s_active_recorder_view);
+        }
+        return;
+    }
+
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.music") == 0 || strcmp(ctx->app_id, "music") == 0)) {
+        if (s_active_music_view != nullptr) {
+            ui_music_view_apply_layout(s_active_music_view);
+        }
+        return;
+    }
+
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.chat") == 0 || strcmp(ctx->app_id, "chat") == 0)) {
+        if (s_active_chat_view != nullptr) {
+            ui_chat_view_apply_layout(s_active_chat_view);
+        }
+        return;
+    }
+
     lv_obj_t *ta = (lv_obj_t *)ctx->content_area;
     if (ta == nullptr) {
         return;
@@ -361,6 +506,27 @@ void tab5_ui_host_refresh_theme(void)
     }
     if (s_active_gallery_view != nullptr) {
         ui_gallery_view_refresh_theme(s_active_gallery_view);
+    }
+    if (s_active_wifi_view != nullptr) {
+        ui_wifi_view_refresh_theme(s_active_wifi_view);
+    }
+    if (s_active_bluetooth_view != nullptr) {
+        ui_bluetooth_view_refresh_theme(s_active_bluetooth_view);
+    }
+    if (s_active_terminal_view != nullptr) {
+        ui_terminal_view_refresh_theme(s_active_terminal_view);
+    }
+    if (s_active_fileserver_view != nullptr) {
+        ui_fileserver_view_refresh_theme(s_active_fileserver_view);
+    }
+    if (s_active_recorder_view != nullptr) {
+        ui_recorder_view_refresh_theme(s_active_recorder_view);
+    }
+    if (s_active_music_view != nullptr) {
+        ui_music_view_refresh_theme(s_active_music_view);
+    }
+    if (s_active_chat_view != nullptr) {
+        ui_chat_view_refresh_theme(s_active_chat_view);
     }
 #endif
 }
@@ -395,6 +561,15 @@ void tab5_ui_host_open_file(tab5_app_context_t *ctx, const char *path)
     if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.gallery") == 0 || strcmp(ctx->app_id, "gallery") == 0)) {
         if (s_active_gallery_view != nullptr) {
             ui_gallery_view_open_file(s_active_gallery_view, path);
+        }
+    } else if (ctx->app_id[0] &&
+               (strcmp(ctx->app_id, "com.tab5.recorder") == 0 || strcmp(ctx->app_id, "recorder") == 0)) {
+        if (s_active_recorder_view != nullptr) {
+            ui_recorder_view_open_file(s_active_recorder_view, path);
+        }
+    } else if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.music") == 0 || strcmp(ctx->app_id, "music") == 0)) {
+        if (s_active_music_view != nullptr) {
+            ui_music_view_open_file(s_active_music_view, path);
         }
     }
 #else

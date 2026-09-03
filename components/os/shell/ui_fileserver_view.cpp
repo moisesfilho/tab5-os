@@ -1,4 +1,4 @@
-#include "ui_fileserver.h"
+#include "ui_fileserver_view.h"
 #include "app_registry.h"
 #include "http_file_server.h"
 #include "ui_bar.h"
@@ -206,6 +206,147 @@ void apply_fileserver_theme(void)
 }
 
 } // namespace
+
+struct ui_fileserver_view_s {
+    lv_obj_t *parent = nullptr;
+    ui_app_bar_t app_bar = {};
+};
+
+ui_fileserver_view_t *ui_fileserver_view_create(lv_obj_t *parent, ui_app_bar_t app_bar)
+{
+    (void)app_bar;
+    fileserver_scr = parent;
+
+    /* Container de Conteudo com Scroll */
+    content_container = lv_obj_create(fileserver_scr);
+    lv_obj_set_size(content_container, lv_pct(100), LV_PCT(100));
+    lv_obj_set_y(content_container, UI_BAR_HEIGHT * 2);
+    lv_obj_set_style_bg_opa(content_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(content_container, 0, 0);
+    lv_obj_set_style_pad_all(content_container, 16, 0);
+    lv_obj_set_flex_flow(content_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    /* 1. Card Status & Controle */
+    card_status = lv_obj_create(content_container);
+    lv_obj_set_size(card_status, lv_pct(96), LV_SIZE_CONTENT);
+    lv_obj_set_style_radius(card_status, 14, 0);
+    lv_obj_set_style_border_width(card_status, 1, 0);
+    lv_obj_set_style_pad_all(card_status, 14, 0);
+    lv_obj_clear_flag(card_status, LV_OBJ_FLAG_SCROLLABLE);
+
+    status_title = lv_label_create(card_status);
+    lv_label_set_text(status_title, "Estado do Serviço");
+    lv_obj_set_style_text_font(status_title, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_align(status_title, LV_ALIGN_TOP_LEFT, 0, 4);
+
+    status_badge = lv_obj_create(card_status);
+    lv_obj_set_size(status_badge, 120, 36);
+    lv_obj_align(status_badge, LV_ALIGN_TOP_RIGHT, 0, 0);
+    lv_obj_set_style_radius(status_badge, 18, 0);
+    lv_obj_set_style_border_width(status_badge, 0, 0);
+    lv_obj_set_style_pad_all(status_badge, 0, 0);
+    lv_obj_clear_flag(status_badge, LV_OBJ_FLAG_SCROLLABLE);
+
+    status_badge_label = lv_label_create(status_badge);
+    lv_label_set_text(status_badge_label, "ATIVO");
+    lv_obj_set_style_text_font(status_badge_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_set_style_text_color(status_badge_label, lv_color_white(), 0);
+    lv_obj_center(status_badge_label);
+
+    toggle_btn = lv_button_create(card_status);
+    lv_obj_set_size(toggle_btn, lv_pct(100), 46);
+    lv_obj_align(toggle_btn, LV_ALIGN_TOP_MID, 0, 48);
+    lv_obj_set_style_radius(toggle_btn, 10, 0);
+    lv_obj_add_event_cb(toggle_btn, toggle_btn_cb, LV_EVENT_CLICKED, nullptr);
+
+    toggle_btn_label = lv_label_create(toggle_btn);
+    lv_label_set_text(toggle_btn_label, "Iniciar Servidor");
+    lv_obj_set_style_text_font(toggle_btn_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_center(toggle_btn_label);
+
+    /* 2. Card Rede & Acesso */
+    card_network = lv_obj_create(content_container);
+    lv_obj_set_size(card_network, lv_pct(96), LV_SIZE_CONTENT);
+    lv_obj_set_style_radius(card_network, 14, 0);
+    lv_obj_set_style_border_width(card_network, 1, 0);
+    lv_obj_set_style_pad_all(card_network, 14, 0);
+    lv_obj_clear_flag(card_network, LV_OBJ_FLAG_SCROLLABLE);
+
+    net_title = lv_label_create(card_network);
+    lv_label_set_text(net_title, "Acesso Web / WebDAV");
+    lv_obj_set_style_text_font(net_title, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_align(net_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    url_box = lv_obj_create(card_network);
+    lv_obj_set_size(url_box, lv_pct(100), 44);
+    lv_obj_align(url_box, LV_ALIGN_TOP_MID, 0, 30);
+    lv_obj_set_style_radius(url_box, 8, 0);
+    lv_obj_set_style_border_width(url_box, 1, 0);
+    lv_obj_set_style_pad_all(url_box, 0, 0);
+    lv_obj_clear_flag(url_box, LV_OBJ_FLAG_SCROLLABLE);
+
+    url_label = lv_label_create(url_box);
+    lv_label_set_text(url_label, "http://...:80/");
+    lv_obj_set_style_text_font(url_label, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_center(url_label);
+
+    net_info_label = lv_label_create(card_network);
+    lv_label_set_text(net_info_label, "Sub-rede: Wi-Fi Station");
+    lv_obj_set_style_text_font(net_info_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_align(net_info_label, LV_ALIGN_TOP_LEFT, 0, 84);
+
+    net_hint_label = lv_label_create(card_network);
+    lv_label_set_text(net_hint_label, "Digite este endereco no navegador do seu computador/celular.");
+    lv_obj_set_style_text_font(net_hint_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_align(net_hint_label, LV_ALIGN_TOP_LEFT, 0, 106);
+
+    /* 3. Card Estatísticas */
+    card_stats = lv_obj_create(content_container);
+    lv_obj_set_size(card_stats, lv_pct(96), LV_SIZE_CONTENT);
+    lv_obj_set_style_radius(card_stats, 14, 0);
+    lv_obj_set_style_border_width(card_stats, 1, 0);
+    lv_obj_set_style_pad_all(card_stats, 14, 0);
+    lv_obj_clear_flag(card_stats, LV_OBJ_FLAG_SCROLLABLE);
+
+    stats_title = lv_label_create(card_stats);
+    lv_label_set_text(stats_title, "Estatísticas de Transferência");
+    lv_obj_set_style_text_font(stats_title, &lv_font_montserrat_18_latin1, 0);
+    lv_obj_align(stats_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    stats_info_label = lv_label_create(card_stats);
+    lv_label_set_text(stats_info_label, "Upload: 0 B   |   Download: 0 B   |   Conexões: 0");
+    lv_obj_set_style_text_font(stats_info_label, &lv_font_montserrat_14_latin1, 0);
+    lv_obj_align(stats_info_label, LV_ALIGN_TOP_LEFT, 0, 32);
+
+    ui_fileserver_refresh_theme();
+    ui_fileserver_apply_layout();
+    ui_fileserver_on_open();
+
+    ui_fileserver_view_t *view = new ui_fileserver_view_t();
+    view->parent = parent;
+    view->app_bar = app_bar;
+    return view;
+}
+
+void ui_fileserver_view_refresh_theme(ui_fileserver_view_t *view)
+{
+    (void)view;
+    ui_fileserver_refresh_theme();
+}
+
+void ui_fileserver_view_apply_layout(ui_fileserver_view_t *view)
+{
+    (void)view;
+    ui_fileserver_apply_layout();
+}
+
+void ui_fileserver_view_destroy(ui_fileserver_view_t *view)
+{
+    ui_fileserver_on_close();
+    fileserver_scr = nullptr;
+    delete view;
+}
 
 lv_obj_t *ui_fileserver_create(void)
 {

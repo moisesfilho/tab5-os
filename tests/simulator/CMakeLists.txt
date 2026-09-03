@@ -21,7 +21,6 @@ add_subdirectory(${REPO_ROOT}/managed_components/lvgl__lvgl
 target_link_libraries(lvgl PUBLIC SDL2::SDL2)
 
 set(OS ${REPO_ROOT}/components/os)
-set(APPS ${REPO_ROOT}/components/apps)
 
 add_executable(tab5_sim
     main.cpp
@@ -47,6 +46,8 @@ add_executable(tab5_sim
     ${OS}/core/bt_storage.cpp
     ${OS}/core/calendar_logic.cpp
     ${OS}/core/tjpgd.c
+    ${OS}/core/ai_storage.cpp
+    ${OS}/core/terminal_cmd.cpp
 
     # Fontes bitmap (identicas ao firmware)
     ${OS}/fonts/lv_font_montserrat_14_latin1.c
@@ -73,6 +74,13 @@ add_executable(tab5_sim
     ${OS}/shell/ui_gallery_view.cpp
     ${OS}/shell/ui_installer.cpp
     ${OS}/shell/ui_storage_view.cpp
+    ${OS}/shell/ui_bluetooth_view.cpp
+    ${OS}/shell/ui_chat_view.cpp
+    ${OS}/shell/ui_fileserver_view.cpp
+    ${OS}/shell/ui_music_view.cpp
+    ${OS}/shell/ui_recorder_view.cpp
+    ${OS}/shell/ui_terminal_view.cpp
+    ${OS}/shell/ui_wifi_view.cpp
     ${OS}/core/storage_mgr.cpp
     ${OS}/runtime/tab5_package_mgr.cpp
     ${OS}/runtime/tab5_manifest.cpp
@@ -83,17 +91,6 @@ add_executable(tab5_sim
     ${OS}/runtime/tab5_storage_sandbox.cpp
     ${OS}/runtime/tab5_wasm_runtime.cpp
     shims/cJSON/cJSON.c
-
-    # Apps reais (ui_*) + backends portaveis
-    ${APPS}/bluetooth/ui_bluetooth.cpp
-    ${APPS}/chat/ui_chat.cpp
-    ${APPS}/chat/ai_storage.cpp
-    ${APPS}/fileserver/ui_fileserver.cpp
-    ${APPS}/music/ui_music.cpp
-    ${APPS}/recorder/ui_recorder.cpp
-    ${APPS}/terminal/terminal_cmd.cpp
-    ${APPS}/terminal/ui_terminal.cpp
-    ${APPS}/wifi/ui_wifi.cpp
 )
 
 target_include_directories(tab5_sim PRIVATE
@@ -104,13 +101,6 @@ target_include_directories(tab5_sim PRIVATE
     ${OS}/shell
     ${OS}/runtime
     ${OS}/runtime/include
-    ${APPS}/bluetooth
-    ${APPS}/chat
-    ${APPS}/fileserver
-    ${APPS}/music
-    ${APPS}/recorder
-    ${APPS}/terminal
-    ${APPS}/wifi
 )
 
 target_compile_options(tab5_sim PRIVATE -Wall -Wextra -Wno-unused-parameter)

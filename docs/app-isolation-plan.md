@@ -1,7 +1,7 @@
 # Plano de Arquitetura: Tab5 OS Modular & Sistema de Aplicações Desacopladas (WASM + Pacotes SD)
 
 > Branch: `feat/app-isolation`
-> Status: Planejado
+> Status: Em implementação
 > Data: 2026-08-28
 
 Este plano estabelece a separação do **Tab5 OS** em um **Sistema Operacional Base** (Kernel, Drivers, Shell, LVGL, WAMR Runtime e Gerenciador de Pacotes) e **Aplicações Independentes** distribuídas como pacotes individuais (`.tab5pkg`) executadas em sandbox WebAssembly de alta performance.
@@ -254,14 +254,16 @@ tab5-os (firmware)                        Repos externos (tab5-app-*)
 ┌─────────────────────────────┐
 │ embedded_apps/              │  submodules pinados por tag (gitlink)
 │   ├─ wifi/        → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-wifi
-│   ├─ notas/       → v0.1.0  │
-│   ├─ terminal/    → v0.1.0  │  (cada repo compila .tab5pkg com wasi-sdk)
-│   └─ ... (9 apps)           │
+│   ├─ notas/       → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-notas
+│   ├─ terminal/    → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-terminal
+│   ├─ music/       → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-music
+│   ├─ chat/        → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-chat
+│   └─ ... (13 apps)          │  (cada repo compila .tab5pkg com wasi-sdk)
 └─────────────────────────────┘
           │ tools/ci/build_embedded_apps.sh (wasi-sdk → .tab5pkg)
           ▼
-   embedded_apps_pkg/  (9 .tab5pkg)
-          │ littlefs_create_partition_image(apps ... FLASH_IN_PROJECT)
+   embedded_apps_pkg/  (13 .tab5pkg)
+          │ spiffs_create_partition_image(apps ... FLASH_IN_PROJECT)
           ▼
 ┌──────────────────────────────────────────────┐
 │  idf.py flash  (um único comando)            │
@@ -284,17 +286,17 @@ git submodule add <url> embedded_apps/notas
 **T3 — Partição `apps`:** adicionar em `partitions.csv`:
 
 ```
-apps, data, littlefs, , 4M,
+apps, data, spiffs, , 4M,
 ```
 
 (16MB flash; factory 4M + apps 4M + nvs/phy = folgado)
 
-**T4 — Dependência `esp_littlefs`:** adicionar `espressif/esp_littlefs` em `main/idf_component.yml`.
+**T4 — Dependência `esp_spiffs`:** adicionar `esp_spiffs` (componente do ESP-IDF).
 
 **T5 — Imagem da partição no build:** no `CMakeLists.txt` raiz:
 
 ```cmake
-littlefs_create_partition_image(apps ${CMAKE_SOURCE_DIR}/embedded_apps_pkg FLASH_IN_PROJECT)
+spiffs_create_partition_image(apps ${CMAKE_SOURCE_DIR}/embedded_apps_pkg FLASH_IN_PROJECT)
 ```
 
 → `idf.py flash` grava OS + apps num comando; gera `build/apps.bin` para o release.
@@ -375,7 +377,8 @@ O módulo é testável no host (padrão F40: GoogleTest + stubs/mocks).
 - **Mecanismo de instalação:** SD Card Package (`.tab5pkg`) — apps instaladas por cima do SO base, com instalador próprio.
 - **Modelo de execução:** WebAssembly via WAMR (sandbox, máxima segurança, acesso a API LVGL/SO via símbolos nativos).
 - **Branch do SO base:** criado a partir da `develop` atual.
-- **Apps padrão:** embutidas no firmware (partição `apps` LittleFS de 4MB), imunes à remoção do SD.
-- **Integração dos apps embutidos:** Híbrida — submodules pinados por tag + `littlefs_create_partition_image(..., FLASH_IN_PROJECT)` para flash único.
-- **Apps opcionais:** `music` e `chat` — não instaladas por padrão, disponíveis como `.tab5pkg`.
+- **Apps padrão:** embutidas no firmware (partição `apps` SPIFFS de 4MB), imunes à remoção do SD.
+- **Integração dos apps embutidos:** Híbrida — submodules pinados por tag + `spiffs_create_partition_image(..., FLASH_IN_PROJECT)` para flash único.
+- **Apps opcionais:** `music` e `chat` — originalmente opcionais, hoje também embutidas no firmware (13 pacotes no total).
+- **Apps ricas com native view:** apps que exigem UI complexa (wifi, bt, terminal, servidor, recorder, chat, music, files, gallery, camera) possuem *native view* no firmware (`ui_<app>_view_create`); a embalagem WASM é o launcher/manifesto. Apps WASM com native view não adicionam botões de ação via ABI WASM (callbacks não disparam) — botões de ação são adicionados nativamente.
 - **Gerenciamento de memória:** módulo `storage_mgr` no OS core + app `tab5-app-storage` embutida por padrão; exibe instalados, espaço livre (flash/SD/RAM) e pacotes pendentes.
