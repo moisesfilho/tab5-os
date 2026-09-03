@@ -1,0 +1,13 @@
+{
+  "id": "com.tab5.example.hello",
+  "name": "Hello Wasm",
+  "version": "1.0.0",
+  "author": "Tab5 Team",
+  "description": "Exemplo de app WebAssembly isolada rodando sobre o WAMR no Tab5 OS.",
+  "entry": "app.wasm",
+  "icon_symbol": "LV_SYMBOL_OK",
+  "icon_bg_color": "#10B981",
+  "permissions": [],
+  "stack_size": 32768,
+  "heap_size": 65536
+}

@@ -21,7 +21,6 @@ add_subdirectory(${REPO_ROOT}/managed_components/lvgl__lvgl
 target_link_libraries(lvgl PUBLIC SDL2::SDL2)
 
 set(OS ${REPO_ROOT}/components/os)
-set(APPS ${REPO_ROOT}/components/apps)
 
 add_executable(tab5_sim
     main.cpp
@@ -46,6 +45,9 @@ add_executable(tab5_sim
     ${OS}/core/wifi_storage.cpp
     ${OS}/core/bt_storage.cpp
     ${OS}/core/calendar_logic.cpp
+    ${OS}/core/tjpgd.c
+    ${OS}/core/ai_storage.cpp
+    ${OS}/core/terminal_cmd.cpp
 
     # Fontes bitmap (identicas ao firmware)
     ${OS}/fonts/lv_font_montserrat_14_latin1.c
@@ -67,42 +69,38 @@ add_executable(tab5_sim
     ${OS}/shell/ui_status.cpp
     ${OS}/shell/ui_theme.cpp
     ${OS}/shell/ui_calendar_view.cpp
-
-    # Apps reais (ui_*) + backends portaveis
-    ${APPS}/bluetooth/ui_bluetooth.cpp
-    ${APPS}/calendar/ui_calendar.cpp
-    ${APPS}/camera/ui_camera.cpp
-    ${APPS}/chat/ui_chat.cpp
-    ${APPS}/chat/ai_storage.cpp
-    ${APPS}/fileserver/ui_fileserver.cpp
-    ${APPS}/files/ui_files.cpp
-    ${APPS}/gallery/tjpgd.c
-    ${APPS}/gallery/ui_gallery.cpp
-    ${APPS}/music/ui_music.cpp
-    ${APPS}/notas/ui_notas.cpp
-    ${APPS}/recorder/ui_recorder.cpp
-    ${APPS}/terminal/terminal_cmd.cpp
-    ${APPS}/terminal/ui_terminal.cpp
-    ${APPS}/wifi/ui_wifi.cpp
+    ${OS}/shell/ui_files_view.cpp
+    ${OS}/shell/ui_camera_view.cpp
+    ${OS}/shell/ui_gallery_view.cpp
+    ${OS}/shell/ui_installer.cpp
+    ${OS}/shell/ui_storage_view.cpp
+    ${OS}/shell/ui_bluetooth_view.cpp
+    ${OS}/shell/ui_chat_view.cpp
+    ${OS}/shell/ui_fileserver_view.cpp
+    ${OS}/shell/ui_music_view.cpp
+    ${OS}/shell/ui_recorder_view.cpp
+    ${OS}/shell/ui_terminal_view.cpp
+    ${OS}/shell/ui_wifi_view.cpp
+    ${OS}/core/storage_mgr.cpp
+    ${OS}/runtime/tab5_package_mgr.cpp
+    ${OS}/runtime/tab5_manifest.cpp
+    ${OS}/runtime/tab5_ui_host.cpp
+    ${OS}/runtime/tab5_sys_host.cpp
+    ${OS}/runtime/tab5_lifecycle_host.cpp
+    ${OS}/runtime/tab5_host_abi.cpp
+    ${OS}/runtime/tab5_storage_sandbox.cpp
+    ${OS}/runtime/tab5_wasm_runtime.cpp
+    shims/cJSON/cJSON.c
 )
 
 target_include_directories(tab5_sim PRIVATE
     shims
+    shims/cJSON
     scenarios
     ${OS}/core
     ${OS}/shell
-    ${APPS}/bluetooth
-    ${APPS}/calendar
-    ${APPS}/camera
-    ${APPS}/chat
-    ${APPS}/fileserver
-    ${APPS}/files
-    ${APPS}/gallery
-    ${APPS}/music
-    ${APPS}/notas
-    ${APPS}/recorder
-    ${APPS}/terminal
-    ${APPS}/wifi
+    ${OS}/runtime
+    ${OS}/runtime/include
 )
 
 target_compile_options(tab5_sim PRIVATE -Wall -Wextra -Wno-unused-parameter)

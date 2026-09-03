@@ -13,8 +13,8 @@ fi
 
 FILES=()
 for f in "$@"; do
-    # Apenas arquivos de projeto em main/, components/os/ ou components/apps/
-    if [[ "$f" =~ ^(main/|components/os/|components/apps/).*\.(cpp|c)$ ]] && [[ ! "$f" =~ ^components/os/fonts/ ]]; then
+    # Apenas arquivos de projeto em main/ ou components/os/
+    if [[ "$f" =~ ^(main/|components/os/).*\.(cpp|c)$ ]] && [[ ! "$f" =~ ^components/os/fonts/ ]]; then
         FILES+=("$f")
     fi
 done

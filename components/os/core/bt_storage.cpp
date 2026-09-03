@@ -153,8 +153,8 @@ esp_err_t bt_storage_save_all(const bt_saved_list_t *list)
     s_cache = *list;
     s_cache_valid = true;
 
-    /* Assegura que o diretorio exista */
-    mkdir("/sdcard/tab5_os", 0755);
+    /* Assegura que o diretório oculto exista */
+    mkdir(TAB5_CONFIG_DIR, 0755);
 
     int fd = open(BT_CFG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0) {

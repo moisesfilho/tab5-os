@@ -6,15 +6,15 @@
 #   - components/rtc_rx8130     (driver RTC de terceiros)
 #   - components/os/fonts/      (fontes geradas pelo conversor LVGL)
 #   - components/apps/music/minimp3.h (decoder MP3 de cabeçalho único)
-#   - components/apps/gallery/tjpgd.c/h (decoder JPEG TJpgDec de terceiros)
+#   - components/os/core/tjpgd.c/h (decoder JPEG TJpgDec de terceiros)
 #   - managed_components/       (componentes gerenciados)
 exclude: >
   (?x)^(
     components/m5stack_tab5/|
     components/rtc_rx8130/|
     components/os/fonts/|
-    components/apps/music/minimp3\.h|
-    components/apps/gallery/tjpgd\.(c|h)|
+    components/os/core/minimp3\.h|
+    components/os/core/tjpgd\.(c|h)|
     managed_components/
   )
 
@@ -66,7 +66,7 @@ repos:
         entry: tools/ci/run_clang_tidy.sh
         language: script
         types_or: [c, c++]
-        files: ^(main/|components/os/|components/apps/).*\.(cpp|c)$
+        files: ^(main/|components/os/).*\.(cpp|c)$
         exclude: ^components/os/fonts/
 
       - id: cppcheck-local
@@ -74,7 +74,7 @@ repos:
         entry: tools/ci/run_cppcheck.sh
         language: script
         types_or: [c, c++]
-        files: ^(main/|components/os/|components/apps/).*\.(cpp|c)$
+        files: ^(main/|components/os/).*\.(cpp|c)$
         exclude: ^components/os/fonts/
 
       - id: idf-build-check

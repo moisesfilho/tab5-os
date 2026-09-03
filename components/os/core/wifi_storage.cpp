@@ -20,8 +20,8 @@ esp_err_t wifi_storage_mount(void)
     }
 
     ESP_RETURN_ON_ERROR(bsp_sdcard_mount(), TAG, "mount SD falhou");
-    if (mkdir("/sdcard/tab5_os", 0755) != 0 && errno != EEXIST) {
-        ESP_LOGW(TAG, "mkdir tab5_os falhou (errno=%d)", errno);
+    if (mkdir(TAB5_CONFIG_DIR, 0755) != 0 && errno != EEXIST) {
+        ESP_LOGW(TAG, "mkdir %s falhou (errno=%d)", TAB5_CONFIG_DIR, errno);
     }
     s_mounted = true;
     ESP_LOGI(TAG, "SD montado em /sdcard");

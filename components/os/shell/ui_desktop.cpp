@@ -6,6 +6,8 @@
 #include "ui_font.h"
 
 #include <climits>
+#include <cstring>
+#include <cstdlib>
 
 namespace {
 
@@ -56,6 +58,30 @@ static void center_icon_label_optically(lv_obj_t *icon_label)
     lv_obj_align(icon_label, LV_ALIGN_CENTER, 0, y_comp);
 }
 
+/* Converte "#RRGGBB" (ou "RRGGBB") para lv_color_t; retorna true se válido. */
+static bool parse_hex_color(const char *str, lv_color_t *out)
+{
+    if (str == nullptr || out == nullptr) {
+        return false;
+    }
+    const char *p = str;
+    if (p[0] == '#') {
+        p++;
+    }
+    if (strlen(p) != 6) {
+        return false;
+    }
+    char buf[7] = {0};
+    memcpy(buf, p, 6);
+    char *end = nullptr;
+    unsigned long val = strtoul(buf, &end, 16);
+    if (end != buf + 6) {
+        return false;
+    }
+    *out = lv_color_hex(val);
+    return true;
+}
+
 static void update_grid_padding(lv_obj_t *cont)
 {
     if (cont == nullptr) {
@@ -90,9 +116,16 @@ static void update_grid_padding(lv_obj_t *cont)
 
 static void app_tile_click_cb(lv_event_t *event)
 {
-    const app_desc_t *app = static_cast<const app_desc_t *>(lv_event_get_user_data(event));
-    if (app != nullptr && app->on_launch != nullptr) {
-        app->on_launch();
+    lv_event_code_t code = lv_event_get_code(event);
+    if (code != LV_EVENT_CLICKED) {
+        return;
+    }
+    const char *app_id = static_cast<const char *>(lv_event_get_user_data(event));
+    if (app_id != nullptr) {
+        const app_desc_t *app = app_registry_find_by_id(app_id);
+        if (app != nullptr && app->on_launch != nullptr) {
+            app->on_launch();
+        }
     }
 }
 
@@ -121,7 +154,11 @@ void apply_desktop_theme(void)
             lv_obj_t *app_label = lv_obj_get_child(tile, 1);
 
             if (icon_box != nullptr) {
-                lv_obj_set_style_bg_color(icon_box, lv_color_hex(pal->accent_soft), 0);
+                lv_color_t bg = lv_color_hex(pal->accent_soft);
+                if (app.icon_bg_color != nullptr && app.icon_bg_color[0] != '\0') {
+                    parse_hex_color(app.icon_bg_color, &bg);
+                }
+                lv_obj_set_style_bg_color(icon_box, bg, 0);
 
                 if (app.icon_theme_refresh != nullptr) {
                     app.icon_theme_refresh(icon_box);
@@ -130,7 +167,11 @@ void apply_desktop_theme(void)
                     for (uint32_t j = 0; j < inner_count; j++) {
                         lv_obj_t *inner = lv_obj_get_child(icon_box, j);
                         if (inner != nullptr && lv_obj_check_type(inner, &lv_label_class)) {
-                            lv_obj_set_style_text_color(inner, lv_color_hex(pal->accent), 0);
+                            if (app.icon_bg_color != nullptr && app.icon_bg_color[0] != '\0') {
+                                lv_obj_set_style_text_color(inner, lv_color_hex(0xFFFFFF), 0);
+                            } else {
+                                lv_obj_set_style_text_color(inner, lv_color_hex(pal->accent), 0);
+                            }
                         }
                     }
                 }
@@ -185,9 +226,10 @@ void ui_desktop_create(lv_obj_t *scr)
         lv_obj_set_style_shadow_width(tile, 0, 0);
         lv_obj_set_style_pad_all(tile, 8, 0);
         lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(tile, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_add_event_cb(tile, app_tile_click_cb, LV_EVENT_CLICKED, (void *)&app);
+        lv_obj_add_event_cb(tile, app_tile_click_cb, LV_EVENT_ALL, (void *)app.id);
 
         lv_obj_t *icon_box = lv_obj_create(tile);
         lv_obj_set_size(icon_box, 84, 84);

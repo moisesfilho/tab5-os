@@ -5,6 +5,7 @@
 #include "ui_font.h"
 #include "ui_shell.h"
 #include "bt_mgr.h"
+#include "tab5_keyboard.h"
 #include "bsp/esp-bsp.h"
 #include <string.h>
 
@@ -216,6 +217,11 @@ void keyboard_cancel_cb(lv_event_t *event)
 
 } // namespace
 
+bool ui_keyboard_is_hardware_connected(void)
+{
+    return bt_mgr_is_keyboard_connected() || tab5_keyboard_is_connected();
+}
+
 void ui_keyboard_create(lv_obj_t *parent)
 {
     keyboard = lv_keyboard_create(parent);
@@ -245,8 +251,8 @@ void ui_keyboard_attach(lv_obj_t *ta)
     lv_keyboard_set_textarea(keyboard, ta);
     lv_obj_add_state(ta, LV_STATE_FOCUSED);
 
-    /* Se houver teclado fisico Bluetooth conectado, nao exibe o teclado virtual na tela */
-    if (bt_mgr_is_keyboard_connected()) {
+    /* Se houver teclado fisico (Bluetooth ou I2C Ext.Port1) conectado, nao exibe o teclado virtual na tela */
+    if (ui_keyboard_is_hardware_connected()) {
         lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
@@ -258,7 +264,7 @@ void ui_keyboard_attach(lv_obj_t *ta)
 void ui_keyboard_notify_hardware_change(void)
 {
     if (kb_target != nullptr) {
-        if (bt_mgr_is_keyboard_connected()) {
+        if (ui_keyboard_is_hardware_connected()) {
             lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_remove_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
@@ -388,14 +394,56 @@ void ui_keyboard_inject_key(uint32_t key)
                 lv_textarea_cursor_left(target);
             } else if (key == LV_KEY_RIGHT) {
                 lv_textarea_cursor_right(target);
+            } else if (key == LV_KEY_UP) {
+                lv_textarea_cursor_up(target);
+            } else if (key == LV_KEY_DOWN) {
+                lv_textarea_cursor_down(target);
             } else if (key == LV_KEY_ENTER) {
                 char str[2] = {'\n', '\0'};
                 lv_textarea_add_text(target, str);
+            } else if (key == LV_KEY_ESC) {
+                ui_keyboard_hide();
+                bsp_display_unlock();
+                return;
             }
             lv_obj_send_event(target, LV_EVENT_VALUE_CHANGED, nullptr);
             lv_obj_invalidate(target);
         } else {
             ESP_LOGW("ui_kb", "ui_keyboard_inject_key: NENHUM target textarea encontrado!");
+        }
+        bsp_display_unlock();
+    }
+}
+
+void ui_keyboard_inject_key_ex(uint32_t key, uint8_t modifier)
+{
+    if (modifier == 0) {
+        ui_keyboard_inject_key(key);
+        return;
+    }
+
+    if (bsp_display_lock(pdMS_TO_TICKS(50))) {
+        lv_display_trigger_activity(NULL);
+        if (ui_screensaver_is_active()) {
+            ui_screensaver_wake_up();
+        }
+        ui_screen_off_wake_up();
+
+        lv_obj_t *target = kb_target;
+        if (target == nullptr || !lv_obj_is_valid(target)) {
+            target = find_textarea_recursive(lv_screen_active());
+            if (target != nullptr) {
+                kb_target = target;
+            }
+        }
+
+        if (target != nullptr && lv_obj_is_valid(target)) {
+            ESP_LOGI("ui_kb", "ui_keyboard_inject_key_ex: 0x%lX mod=0x%02X no target=%p", (unsigned long)key, modifier,
+                     target);
+            lv_obj_send_event(target, LV_EVENT_KEY, &key);
+            lv_obj_invalidate(target);
+        } else {
+            ESP_LOGW("ui_kb", "ui_keyboard_inject_key_ex: NENHUM target encontrado!");
         }
         bsp_display_unlock();
     }

@@ -1,0 +1,384 @@
+# Plano de Arquitetura: Tab5 OS Modular & Sistema de Aplicações Desacopladas (WASM + Pacotes SD)
+
+> Branch: `feat/app-isolation`
+> Status: Em implementação
+> Data: 2026-08-28
+
+Este plano estabelece a separação do **Tab5 OS** em um **Sistema Operacional Base** (Kernel, Drivers, Shell, LVGL, WAMR Runtime e Gerenciador de Pacotes) e **Aplicações Independentes** distribuídas como pacotes individuais (`.tab5pkg`) executadas em sandbox WebAssembly de alta performance.
+
+As aplicações são **instaladas por cima do sistema operacional**: o firmware do SO base é flashado uma única vez e cada aplicação é instalada de forma isolada, com seu próprio instalador e ciclo de vida.
+
+---
+
+## 1. Visão Geral da Arquitetura
+
+```
++-------------------------------------------------------------------------+
+|                              CARTÃO SD                                  |
+|  /sdcard/apps/                                                          |
+|  ├── music.tab5pkg         ───(Instalador/App Store)───┐                |
+|  ├── chat.tab5pkg                                       │                |
+|  └── installed/                                         ▼                |
+|      └── com.tab5.music/ ── [manifest.json, app.wasm, icon.bin, data/]  |
++-------------------------------------------------------------------------+
+                                    │
+                                    ▼ (App Runtime)
++-------------------------------------------------------------------------+
+|                             TAB5 OS BASE                                |
+|  [ Shell & Desktop ] ─── [ App Registry & Lifecycle ] ─── [ Package Mgr]|
+|                                    │                                    |
+|                      [ WAMR (WebAssembly Engine) ]                      |
+|                                    │ (Native Host Bindings)             |
+|  [ LVGL 9.5 UI API ]  [ Storage/FS API ]  [ Audio/Net/BT API ]  [ IPC ] |
+|  ---------------------------------------------------------------------  |
+|  [ Drivers Hardware: MIPI-DSI, Touch, BMI270, INA226, RTC, WiFi/BT ]    |
+|  [ ESP-IDF v5.5.5 / FreeRTOS / ESP32-P4 RISC-V Dual-Core + 32MB PSRAM ] |
++-------------------------------------------------------------------------+
+```
+
+---
+
+## 2. Especificação do Pacote de Instalação (`.tab5pkg`)
+
+Cada aplicação terá seu próprio repositório/projeto e pipeline de build, gerando um pacote compactado `.tab5pkg`.
+
+### Estrutura do Pacote
+
+```
+com.tab5.appname.tab5pkg
+├── manifest.json       # Metadados, permissões, ID, versão, criador, ícone
+├── app.wasm            # Binário WebAssembly compilado pelo SDK da App
+├── icon.bin / icon.png # Asset de ícone (ou especificação de símbolo LVGL)
+└── assets/             # Imagens, fontes, sons ou dados estáticos da aplicação
+```
+
+### Exemplo de `manifest.json`
+
+```json
+{
+  "id": "com.tab5.notas",
+  "name": "Notas",
+  "version": "1.0.0",
+  "author": "Moisés Filho",
+  "description": "Editor de texto e notas do Tab5",
+  "entry": "app.wasm",
+  "icon": {
+    "symbol": "LV_SYMBOL_EDIT",
+    "bg_color": "#2196F3"
+  },
+  "file_associations": [".txt", ".md", ".log"],
+  "permissions": [
+    "storage.readwrite",
+    "ui.keyboard"
+  ]
+}
+```
+
+---
+
+## 3. Componentes do Sistema Operacional Base
+
+### 3.1. Tab5 Native Host SDK & Bindings (C/C++ Export)
+
+Camada que expõe as funções essenciais do SO para dentro do sandbox Wasm via WAMR Native Symbols:
+
+1. **UI / LVGL Host Bindings:** Funções para criar telas de app, botões, labels, textareas, listas e gerenciar layout responsivo.
+2. **Ciclo de Vida:** Eventos `app_on_init`, `app_on_resume`, `app_on_pause`, `app_on_destroy`, `app_on_open_file`.
+3. **Storage / I/O:** Leitura/escrita segura em sandbox de arquivos (`/sdcard/data/<app_id>/` e `/sdcard/`).
+4. **Hardware & Sistema:** Notificações, teclado virtual (`ui_keyboard`), áudio, status de rede/bateria e data/hora.
+
+### 3.2. Gerenciador de Pacotes (`package_manager` / `ui_appstore`)
+
+1. **Instalador:**
+   - Varredura de pacotes pendentes em `/sdcard/apps/*.tab5pkg` ou instalação via Gerenciador de Arquivos/Download.
+   - Extração do pacote para `/sdcard/apps/installed/<app_id>/`.
+   - Validação de integridade do manifesto e permissões.
+2. **Desinstalador:**
+   - Remoção da pasta de instalação e desregistro no `app_registry`.
+   - Opção de manter ou apagar dados de usuário (`/sdcard/data/<app_id>`).
+3. **App Registry Dinâmico:**
+   - O `app_registry` deixa de ser estático: no boot, ele lê os apps embutidos (partição dedicada) e `/sdcard/apps/installed/*/manifest.json`, populando o Desktop dinamicamente com ícones e callbacks de inicialização Wasm.
+
+### 3.3. Runtime WAMR (WebAssembly Micro Runtime)
+
+- Integrado como componente no ESP-IDF.
+- Configurado com memória PSRAM (Fast-Interpreter / AOT suporte RISC-V).
+- Instanciação de heap dedicada por processo/app isolado.
+
+---
+
+## 4. SDK para Criação de Aplicações Independentes (`tab5-app-sdk`)
+
+Um repositório/template de desenvolvimento separado permitirá compilar aplicações de forma isolada, gerando o arquivo `.tab5pkg` sem necessidade de clonar ou compilar o SO completo.
+
+### 4.1. Estrutura do Projeto de uma Aplicação
+
+```
+minha-app-tab5/
+├── CMakeLists.txt              # Build Wasm via Emscripten / Clang wasi-sdk
+├── manifest.json               # Metadados, versão, permissões e ícone
+├── assets/                     # Imagens, fontes, áudios
+│   └── icon.png
+├── src/
+│   ├── main.c / main.cpp       # Código da aplicação usando tab5_sdk.h
+│   └── ui.c
+└── tools/
+    └── pack.py                 # Script que empacota manifesto + wasm + assets em .tab5pkg
+```
+
+### 4.2. Exemplo de Código de uma Aplicação no SDK
+
+```c
+#include "tab5_sdk.h"
+
+static lv_obj_t *main_screen;
+static lv_obj_t *label;
+
+void on_button_click(lv_event_t *e) {
+    lv_label_set_text(label, "Olá do WebAssembly!");
+    tab5_sound_play_beep(1000, 100);
+}
+
+TAB5_APP_EXPORT void app_main(void) {
+    main_screen = tab5_ui_get_screen();
+
+    label = lv_label_create(main_screen);
+    lv_label_set_text(label, "Aplicação Desacoplada Tab5");
+    lv_obj_center(label);
+
+    lv_obj_t *btn = lv_button_create(main_screen);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -40);
+    lv_obj_add_event_cb(btn, on_button_click, LV_EVENT_CLICKED, NULL);
+}
+```
+
+---
+
+## 5. Fluxo de Instalação, Execução e Gerenciamento
+
+### 5.1. Ciclo de Instalação
+
+1. O usuário copia um arquivo `nome_app.tab5pkg` para a raiz ou pasta `/sdcard/apps/` do cartão SD (via leitor USB do PC ou via HTTP `:8080` do Tab5).
+2. O Tab5 OS inclui o app nativo **"Gerenciador de Apps / Instalador"** (ou detector automático no app de Arquivos):
+   - Ao tocar em um arquivo `.tab5pkg`, a UI exibe a tela de confirmação do instalador: Nome, Versão, Descrição, Criador e Permissões solicitadas.
+   - O OS descompacta o pacote para `/sdcard/apps/installed/<app_id>/`.
+   - O OS valida a assinatura/estrutura do `manifest.json`.
+   - O novo app é registrado imediatamente no `app_registry` e o ícone aparece na grade do Desktop em tempo real (sem precisar reiniciar o dispositivo).
+
+### 5.2. Ciclo de Execução
+
+1. **Toque no ícone do Desktop:**
+   - O SO aloca um ambiente de execução WAMR em PSRAM.
+   - O bytecode `app.wasm` é instanciado.
+   - O shell transiciona para uma nova janela/tela gerenciada pela `ui_app_bar` do sistema.
+   - Executa o ponto de entrada `app_main` / `on_launch`.
+2. **Fechamento do App (Botão Fechar na Barra Superior):**
+   - O SO invoca `on_close` do app para salvar dados.
+   - Destrói os objetos LVGL da tela do app.
+   - Libera a memória/instância do WAMR na PSRAM.
+   - Retorna ao Desktop com limpeza total de memória (zero vazamento de heap).
+
+---
+
+## 6. Estratégia de Branch & Repositórios (Trabalho em Paralelo)
+
+### 6.1. Branches do repositório `tab5-os`
+
+```
+main ───────────────────────────────────────────────► (estável, releases)
+   │
+develop ─── (linha atual: PoC monolítica contínua)
+   │
+   └─ feat/app-isolation   ← NOVO BRANCH (a partir da develop atual)
+         ├─ components/os → sistema base (WAMR + host bindings + package mgr)
+         ├─ 9 apps padrão EMBUTIDAS no firmware (partição dedicada/LittleFS)
+         └─ evolui em paralelo sem tocar em develop
+```
+
+- `feat/app-isolation` criado a partir da **develop atual** (todo histórico monolítico vira referência).
+- SO base mantém **flash funcionando a cada commit** com as 9 apps padrão embutidas.
+- Merge → `develop` → validação → release quando estável.
+
+### 6.2. Repositórios das Aplicações
+
+Cada app tem **repositório próprio** com pipeline de build → `.tab5pkg`:
+
+| Repositório | App | Distribuição |
+| :--- | :--- | :--- |
+| `tab5-os` (este) | SO base + instalador/app store | Firmware |
+| `tab5-app-wifi` | WiFi | **Padrão — embutida no firmware** |
+| `tab5-app-bluetooth` | Bluetooth | **Padrão — embutida no firmware** |
+| `tab5-app-notas` | Notas | **Padrão — embutida no firmware** |
+| `tab5-app-terminal` | Terminal | **Padrão — embutida no firmware** |
+| `tab5-app-camera` | Câmera | **Padrão — embutida no firmware** |
+| `tab5-app-gallery` | Galeria | **Padrão — embutida no firmware** |
+| `tab5-app-fileserver` | Servidor | **Padrão — embutida no firmware** |
+| `tab5-app-calendar` | Calendário | **Padrão — embutida no firmware** |
+| `tab5-app-files` | Arquivos | **Padrão — embutida no firmware** |
+| `tab5-app-music` | Música | **Opcional** — instalação via SD |
+| `tab5-app-chat` | Chat | **Opcional** — instalação via SD |
+
+### 6.3. Entrega dos Apps Padrão (Embutidos no Firmware)
+
+- Os **9 apps padrão** (`wifi`, `bluetooth`, `notas`, `terminal`, `camera`, `gallery`, `fileserver`, `calendar`, `files`) são compilados como pacotes e **gravados em uma partição dedicada do firmware** (LittleFS/SPIFFS ou partição `apps` custom), imunes à remoção do SD.
+- O SO base, no boot, registra os apps da partição embutida no `app_registry` — Desktop mostra os 9 ícones sempre.
+- **Música e Chat NÃO vêm embutidas**: ficam como `.tab5pkg` prontos (via repo próprio + download/transferência para `/sdcard/apps/`) para instalação sob demanda.
+- Atualizar app embutido = re-flash do firmware ou SO priorizar versão instalada no SD por cima da embutida (mesmo `app_id`, versão SD > embutida).
+
+---
+
+## 7. Fases de Implementação
+
+| Fase | Título | Entregas |
+| :--- | :--- | :--- |
+| **Fase 0: Branch & Esqueleto** | `feat/app-isolation` + estrutura modular | Branch da develop; estrutura `components/os/{base,runtime,packages}`; spec ABI `tab5_sdk.h`. |
+| **Fase 1: Core Host ABI** | Bindings C/C++ do SO | Símbolos nativos (LVGL, I/O, teclado, status, ciclo de vida). |
+| **Fase 2: WAMR Runtime** | WebAssembly Micro Runtime | WAMR no ESP-IDF, heap PSRAM, teste `.wasm` no hardware + simulador SDL. |
+| **Fase 3: Package Manager** | Pacotes `.tab5pkg` & manifestos | Parser JSON, instalador/desinstalador SD, app registry dinâmico. |
+| **Fase 4: Embedded Bundle** | Partição de apps padrão | Partição LittleFS/custom com 9 `.tab5pkg`; seed/registro no boot; precedência SD > embutido. |
+| **Fase 5: Installer UI / App Store** | Interface de instalação | Confirmação (nome, versão, permissões); integração com `ui_files`; instalar/atualizar/remover. |
+| **Fase 5b: Storage Manager** | Gerenciamento de memória e armazenamento | Módulo `storage_mgr` no OS core + app `tab5-app-storage` (ver seção 9). |
+| **Fase 6: SDK & Migração** | `tab5-app-sdk` + provas de conceito | Template de repo (CMake + clang wasi-sdk/Emscripten + `pack.py`); migrar `notas` e `calendar`. |
+| **Fase 7: Migração completa** | Portar todas as apps | Migrar 9 padrão p/ embutido + publicar `music`/`chat` opcionais; merge → `develop` → release. |
+
+---
+
+## 8. Apps Embutidas no Flash Principal (Submodules + Partição LittleFS)
+
+As 9 apps padrão vivem em **repositórios separados**, mas o flash do firmware deve entregá-las **junto com o SO base, em um único comando**. A estratégia adotada é **Híbrida — submodules pinados por tag**, com uma partição dedicada `apps` (LittleFS) gravada pelo `idf.py flash`.
+
+### 8.1. Arquitetura de integração
+
+```
+tab5-os (firmware)                        Repos externos (tab5-app-*)
+┌─────────────────────────────┐
+│ embedded_apps/              │  submodules pinados por tag (gitlink)
+│   ├─ wifi/        → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-wifi
+│   ├─ notas/       → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-notas
+│   ├─ terminal/    → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-terminal
+│   ├─ music/       → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-music
+│   ├─ chat/        → v0.1.0  │  ─────────►  github.com/moisesfilho/tab5-app-chat
+│   └─ ... (13 apps)          │  (cada repo compila .tab5pkg com wasi-sdk)
+└─────────────────────────────┘
+          │ tools/ci/build_embedded_apps.sh (wasi-sdk → .tab5pkg)
+          ▼
+   embedded_apps_pkg/  (13 .tab5pkg)
+          │ spiffs_create_partition_image(apps ... FLASH_IN_PROJECT)
+          ▼
+┌──────────────────────────────────────────────┐
+│  idf.py flash  (um único comando)            │
+│  bootloader + partition-table + factory + apps│
+└──────────────────────────────────────────────┘
+```
+
+### 8.2. Tarefas de implementação
+
+**T1 — Repositórios e tags:** criar os 9 repos `tab5-app-*`, pipeline de build `.tab5pkg` e tag inicial `v0.1.0` em cada.
+
+**T2 — Submodules no branch `feat/app-isolation`:**
+
+```bash
+git submodule add <url> embedded_apps/wifi
+git submodule add <url> embedded_apps/notas
+# ... 9 no total; pinar em tags (não em HEAD)
+```
+
+**T3 — Partição `apps`:** adicionar em `partitions.csv`:
+
+```
+apps, data, spiffs, , 4M,
+```
+
+(16MB flash; factory 4M + apps 4M + nvs/phy = folgado)
+
+**T4 — Dependência `esp_spiffs`:** adicionar `esp_spiffs` (componente do ESP-IDF).
+
+**T5 — Imagem da partição no build:** no `CMakeLists.txt` raiz:
+
+```cmake
+spiffs_create_partition_image(apps ${CMAKE_SOURCE_DIR}/embedded_apps_pkg FLASH_IN_PROJECT)
+```
+
+→ `idf.py flash` grava OS + apps num comando; gera `build/apps.bin` para o release.
+
+**T6 — Script `tools/ci/build_embedded_apps.sh`:** compila cada submodule com wasi-sdk, empacota `.tab5pkg`, popula `embedded_apps_pkg/`. Deve rodar **antes** do `idf.py build` (pasta precisa existir no configure do CMake). Fallback: se um submodule estiver vazio, pular o app (build sem ele).
+
+**T7 — Runtime:** no boot, montar `apps` read-only (esp_littlefs), enumerar `.tab5pkg`, registrar no `app_registry` dinâmico (ver Fase 3). Precedência: versão instalada no SD (`/sdcard/apps/installed/`) > embutida, por `app_id`.
+
+**T8 — CI:**
+
+- `quality-gate.yml`: instalar wasi-sdk + rodar `build_embedded_apps.sh` antes do build.
+- `release.yml`: coletar `build/apps.bin` no zip de gravação (`tab5_os_firmware.zip`).
+
+**T9 — Documentação:** manter esta seção atualizada com as decisões do flash único.
+
+### 8.3. Detalhes e gotchas
+
+- **Reprodutibilidade:** submodule pinado por tag = o firmware declara exatamente qual versão de cada app embarca. Release de app = bump da tag no submodule + commit no OS.
+- **Imune a SD removido:** partição littlefs fica no flash; SD só para pacotes opcionais (`music`/`chat`) e dados do usuário.
+- **Build local:** `git submodule update --init --recursive` + `tools/ci/build_embedded_apps.sh` + `idf.py flash` = tudo num comando.
+- **Pre-push hook** (`run_idf_build.sh`) já roda `idf.py build`; será necessário rodar o script de apps antes (ou integrar o script ao hook).
+- **`FLASH_IN_PROJECT`** regrava a partição em todo flash — correto para conteúdo imutável de fábrica.
+
+---
+
+## 9. Aplicação de Gerenciamento de Memória e Armazenamento
+
+App do sistema que responde a duas perguntas do usuário: **"o que está instalado?"** e **"quanto espaço ainda tenho para instalação?"**. É parte do fluxo de instalação (Fase 5) e fundamental para controlar os apps embutidos (partição `apps`) e os instalados no SD.
+
+### 9.1. Objetivo
+
+- Listar tudo que está instalado, com origem (embutido no firmware ou instalado no SD), versão e tamanho.
+- Exibir o espaço usado/livre em cada armazenamento (partição `apps` do flash, cartão SD, RAM).
+- Permitir desinstalar apps do SD (embutidas são read-only) e instalar pacotes pendentes.
+- Alertar sobre falta de espaço antes de iniciar uma instalação.
+
+### 9.2. Fontes de dados (módulo `storage_mgr` no OS core)
+
+Módulo novo em `components/os/core/storage_mgr` (API C, exposta ao app via host bindings da Fase 1), com funções:
+
+| Função | Dados | Fonte técnica |
+| :--- | :--- | :--- |
+| `storage_mgr_partition_stats()` | total/usado/livre da partição `apps` (embutidos) | `esp_littlefs_info()` |
+| `storage_mgr_sd_stats()` | total/usado/livre do cartão SD | `statvfs("/sdcard")` |
+| `storage_mgr_ram_stats()` | heap interna, DMA e PSRAM livres | `heap_caps_get_free_size()` |
+| `storage_mgr_installed_apps()` | lista de apps instaladas (id, versão, origem, tamanho) | Package Manager (Fase 3) |
+| `storage_mgr_pending_packages()` | `.tab5pkg` em `/sdcard/apps/` prontos para instalar | varredura do diretório |
+
+O módulo é testável no host (padrão F40: GoogleTest + stubs/mocks).
+
+### 9.3. Telas da aplicação
+
+1. **Instalados** — lista agrupada por origem (**Embutidas** / **No SD**). Cada item: ícone, nome, versão, origem e tamanho. Ações: *Desinstalar* (somente apps do SD) e *Abrir*.
+2. **Armazenamento** — barras de uso percentual + bytes para:
+   - Partição embutida `apps` (flash),
+   - Cartão SD,
+   - RAM interna / heap DMA e PSRAM.
+3. **Pacotes pendentes** — `.tab5pkg` localizados em `/sdcard/apps/` com nome, versão e tamanho; botão **Instalar** que abre o instalador (Fase 5).
+
+### 9.4. Regras e alertas
+
+- Alerta de **espaço baixo**: SD ou partição `apps` com < 10% livre (ou < 512 KB).
+- Estimativa de **quantos apps médios ainda cabem**, com base no tamanho médio dos instalados.
+- **Desinstalação de app embutida bloqueada** (partição read-only) com aviso claro; atualização só via re-flash do firmware.
+- Ao desinstalar um app do SD, oferecer **apagar os dados do usuário** em `/sdcard/data/<app_id>`.
+- Antes de instalar, o instalador consulta `storage_mgr_*` e bloqueia se o pacote não couber.
+
+### 9.5. Entrega
+
+- Módulo `storage_mgr` no OS core com testes host (F40).
+- App **`tab5-app-storage`** embutida por padrão (sempre disponível, fundamental para o instalador).
+- Repo próprio `tab5-app-storage` + pipeline `.tab5pkg`, integrada como submodule (seção 8).
+
+---
+
+## 10. Decisões Registradas
+
+- **Mecanismo de instalação:** SD Card Package (`.tab5pkg`) — apps instaladas por cima do SO base, com instalador próprio.
+- **Modelo de execução:** WebAssembly via WAMR (sandbox, máxima segurança, acesso a API LVGL/SO via símbolos nativos).
+- **Branch do SO base:** criado a partir da `develop` atual.
+- **Apps padrão:** embutidas no firmware (partição `apps` SPIFFS de 4MB), imunes à remoção do SD.
+- **Integração dos apps embutidos:** Híbrida — submodules pinados por tag + `spiffs_create_partition_image(..., FLASH_IN_PROJECT)` para flash único.
+- **Apps opcionais:** `music` e `chat` — originalmente opcionais, hoje também embutidas no firmware (13 pacotes no total).
+- **Apps ricas com native view:** apps que exigem UI complexa (wifi, bt, terminal, servidor, recorder, chat, music, files, gallery, camera) possuem *native view* no firmware (`ui_<app>_view_create`); a embalagem WASM é o launcher/manifesto. Apps WASM com native view não adicionam botões de ação via ABI WASM (callbacks não disparam) — botões de ação são adicionados nativamente.
+- **Gerenciamento de memória:** módulo `storage_mgr` no OS core + app `tab5-app-storage` embutida por padrão; exibe instalados, espaço livre (flash/SD/RAM) e pacotes pendentes.

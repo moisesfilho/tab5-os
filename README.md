@@ -1,7 +1,7 @@
 # tab5-os
 
 <p>
-  <img src="https://img.shields.io/badge/version-v0.4.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-v0.4.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/platform-ESP32--P4-blue" alt="Platform">
   <img src="https://img.shields.io/badge/ESP--IDF-v5.5.5-blue" alt="ESP-IDF">
@@ -12,6 +12,11 @@
 
 Prova de conceito de sistema operacional para o **M5Stack Tab5** (ESP32-P4): teclado virtual, rotação automática por IMU, barra superior estilo SO com relógio RTC e tema claro/escuro.
 
+- **Isolamento de Aplicações e WebAssembly Runtime (WAMR)** — execução de aplicativos em sandbox isolada através do motor WebAssembly Micro Runtime (WAMR), garantindo segurança, integridade do sistema operacional e ciclo de vida de processos desacoplado
+- **Host ABI e Sandboxing de Armazenamento** — conjunto de bindings nativos que expõem de forma segura a interface gráfica LVGL (App Bar, Teclado Virtual, Notificações Toast), hardware (bateria INA226, Wi-Fi, BLE, alto-falante, relógio e logs) e diretórios de armazenamento isolados por aplicação (`/sdcard/data/<app_id>`)
+- **Gerenciador de Pacotes (`.tab5pkg`) e Instalador Integrado** — formato padronizado de distribuição com `manifest.json`, varredura e registro dinâmico de aplicativos no boot, precedência SD sobre firmware embutido, associação direta com a extensão `.tab5pkg` no app Arquivos e modal visual de auditoria de permissões antes da instalação
+- **Gerenciador de Armazenamento e Memória** — aplicativo do sistema em 3 abas para monitoramento visual de ocupação de memória Flash (partição de apps), cartão SD e memória RAM/PSRAM, com listagem detalhada de apps instaladas, desinstalação segura com limpeza de dados e detecção de pacotes pendentes para instalação
+- **Tab5 App SDK e Ferramental de Build** — kit de desenvolvimento completo para criação de novas aplicações em C/C++ (`sdk/tab5-app-sdk`), com headers oficiais (`tab5_sdk.h`), ferramenta de empacotamento CLI (`tools/pack.py`), suporte a CMake Toolchain WebAssembly, templates e exemplos prontos
 - **Aplicativo Calendário Mensal e Popup da Barra do Sistema** — consulta rápida do calendário mensal acionada ao tocar na data/hora da barra de status (popup modal em overlay no `lv_layer_top()`) ou aplicativo dedicado em tela cheia na Área de Trabalho com ícone próprio estilizado, visualização em grade estruturada com separadores verticais e horizontais, destaque automático do dia atual em cor de destaque (`accent`), seleção interativa de datas, navegação fluida entre meses/anos com virada de dezembro/janeiro, botão "Hoje" e suporte completo a temas claro/escuro
 - **Captura de Tela (Screenshot) pela Barra do Sistema** — ícone de câmera na barra superior que captura a tela exatamente como exibida (aplicativos, barra do sistema, teclado virtual e modais) via snapshot LVGL da tela ativa composto com a camada superior (*blend* por alpha), gravando BMP 24-bit em task assíncrona no cartão SD (`/sdcard/screenshots/print_YYYYMMDD_HHMMSS.bmp`), com flash branco de confirmação, toast com o nome do arquivo, orientação correta nas 4 rotações do IMU e visualização direta no visualizador do Tab5
 - **Aplicativo Gravador de Voz e Player de Áudio** — gravação nativa de voz via microfones integrados com codec ADC ES7210 em formato padrão WAV PCM 16-bit 16 kHz Mono (`/sdcard/gravacoes/REC_YYYYMMDD_HHMMSS.wav`), trava de segurança automática de 5 minutos, reprodutor de áudio com codec DAC ES8388 e barra de progresso em tempo real, listagem cronológica com modal de exclusão e associação direta com arquivos `.wav` e `.pcm`
