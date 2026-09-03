@@ -108,10 +108,10 @@ idf.py -p /dev/ttyACM0 monitor --no-reset
 Validações automáticas garantem consistência de estilo e segurança no firmware:
 
 - **pre-commit** — hooks locais que rodam a cada commit: `clang-format` (estilo C/C++ do projeto), `cmake-lint` (CMakeLists) e `codespell` (typos, com ignore-list PT-BR).
-- **Testes unitários host-native** (`tools/ci/run_host_tests.sh`) — suíte GoogleTest com 84 testes sobre os módulos de lógica e persistência, cobertura gcov/lcov com gate ≥80% (atual: 92,7%) e redirecionamento de `/sdcard` para tmpdir via `--wrap` do linker.
+- **Testes unitários host-native** (`tools/ci/run_host_tests.sh`) — suíte GoogleTest com 84 testes sobre os módulos de lógica e persistência, cobertura gcov/lcov com gate ≥80% (atual: 82,0%) e redirecionamento de `/sdcard` para tmpdir via `--wrap` do linker.
 - **Regressão visual** (`tools/ci/run_sim_tests.sh`) — simulador SDL que executa a UI real em janela 720×1280 e compara capturas contra imagens douradas determinísticas de 17 cenários; detalhes em [tests/simulator/README.md](tests/simulator/README.md).
 - **GitHub Actions**:
-  - `ci.yml` — build com **ESP-IDF v5.5.5** (target `esp32p4`) + **clang-tidy** e **cppcheck** via `compile_commands.json`.
+  - `quality-gate.yml` — build com **ESP-IDF v5.5.5** (target `esp32p4`) + **clang-tidy** e **cppcheck** via `compile_commands.json`.
   - `codeql.yml` — análise estática de segurança (SAST) com **CodeQL** (C/C++), build manual `idf.py`.
 
 Para ativar os hooks localmente:
@@ -142,24 +142,16 @@ tab5-os/
 ├── main/
 │   └── app_main.cpp          # Boot: display, RTC, IMU, UI, registro de subsistemas
 ├── components/
-│   ├── os/                   # Núcleo do Sistema Operacional (Core & Shell)
+│   ├── os/                   # Núcleo do Sistema Operacional
 │   │   ├── core/             # Gerenciadores de sistema (app_registry, fuso horário, wifi, bt, imu)
 │   │   ├── shell/            # Interface do SO (ui_shell, desktop, barra, screensaver, teclado, tema)
+│   │   │                     # Views nativas de apps isolados (ui_*_view: wifi, bt, terminal, etc.)
+│   │   ├── runtime/          # WASM runtime (WAMR), package manager, manifest, storage sandbox, host ABI
 │   │   └── fonts/            # Fontes compiladas Latin-1
-│   ├── apps/                 # Aplicações de Usuário (Package by Feature)
-│   │   ├── calendar/         # Calendário mensal e visualização de grade
-│   │   ├── camera/           # Câmera com preview MIPI-CSI e captura JPEG
-│   │   ├── gallery/          # Visualizador JPEG de fotos
-│   │   ├── notas/            # Bloco de Notas
-│   │   ├── recorder/         # Gravador e Player de Voz
-│   │   ├── chat/             # Chat IA com LLM
-│   │   ├── terminal/         # Shell interativo e cliente SSH
-│   │   ├── fileserver/       # Servidor Web de Arquivos HTTP
-│   │   ├── files/            # Gerenciador de Arquivos microSD
-│   │   ├── wifi/             # Configurações de Wi-Fi
-│   │   └── bluetooth/        # Configurações de Bluetooth
 │   ├── m5stack_tab5/         # BSP local (override do oficial)
-│   └── rtc_rx8130/           # Driver do RTC RX8130CE
+│   └── rtc_rx8130/           # Driver do RTC RX8130
+├── sdk/
+│   └── tab5-app-sdk/         # Kit de desenvolvimento para apps WASM (headers, toolchain, templates, exemplos)
 ├── tools/
 │   └── ci/                   # Scripts de validação local (clang-tidy, cppcheck, idf.py, testes host, regressão visual)
 ├── tests/
