@@ -1,0 +1,15 @@
+{
+  "id": "com.tab5.hello",
+  "name": "Hello Tab5",
+  "version": "1.0.0",
+  "author": "Tab5 Developer",
+  "description": "Aplicacao de exemplo inicial demonstrando ciclo de vida e toasts no Tab5 OS.",
+  "entry": "app.wasm",
+  "icon_symbol": ">_",
+  "icon_bg_color": "#3B82F6",
+  "permissions": [
+    "ui_keyboard"
+  ],
+  "stack_size": 32768,
+  "heap_size": 65536
+}

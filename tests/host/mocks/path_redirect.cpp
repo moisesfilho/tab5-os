@@ -19,9 +19,22 @@ const std::string &make_root()
         const std::string base = dir != nullptr ? dir : tmpl;
         /* Provisiona o diretorio padrao do sistema, como o mount real */
         mkdir((base + "/tab5_os").c_str(), 0755);
+        mkdir((base + "/.tab5_os").c_str(), 0755);
         return base;
     }();
     return root;
+}
+
+const std::string &make_apps_root()
+{
+    static const std::string apps_root = [] {
+        std::string tmpl = "/tmp/tab5os_apps_XXXXXX";
+        std::vector<char> buf(tmpl.begin(), tmpl.end());
+        buf.push_back('\0');
+        const char *dir = mkdtemp(buf.data());
+        return dir != nullptr ? std::string(dir) : tmpl;
+    }();
+    return apps_root;
 }
 
 } // namespace
@@ -29,6 +42,11 @@ const std::string &make_root()
 const std::string &tmp_root()
 {
     return make_root();
+}
+
+const std::string &apps_root()
+{
+    return make_apps_root();
 }
 
 std::string redirect_path(const char *path)
@@ -43,6 +61,14 @@ std::string redirect_path(const char *path)
     }
     if (std::strcmp(path, "/sdcard") == 0) {
         return tmp_root();
+    }
+    constexpr const char kPrefixApps[] = "/apps/";
+    const size_t apps_len = sizeof(kPrefixApps) - 1;
+    if (std::strncmp(path, kPrefixApps, apps_len) == 0) {
+        return apps_root() + "/" + (path + apps_len);
+    }
+    if (std::strcmp(path, "/apps") == 0) {
+        return apps_root();
     }
     return path;
 }

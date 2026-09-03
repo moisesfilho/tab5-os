@@ -66,6 +66,23 @@ const app_desc_t *app_registry_find_by_id(const char *id)
     return nullptr;
 }
 
+esp_err_t app_registry_unregister(const char *id)
+{
+    if (id == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    for (auto it = s_apps.begin(); it != s_apps.end(); ++it) {
+        if (strcmp(it->id, id) == 0) {
+            ESP_LOGI(TAG, "Aplicacao desregistrada: %s", id);
+            s_apps.erase(it);
+            return ESP_OK;
+        }
+    }
+
+    return ESP_ERR_NOT_FOUND;
+}
+
 const std::vector<app_desc_t> &app_registry_get_all(void)
 {
     return s_apps;

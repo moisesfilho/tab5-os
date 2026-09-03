@@ -65,6 +65,26 @@ typedef struct {
 } app_desc_t;
 ```
 
+> [!NOTE]
+> **Ícone em Aplicações Isoladas (`.tab5pkg` / `manifest.json`):**
+> Para apps distribuídas como pacote (modelo isolado WASM), o ícone é definido no `manifest.json` e **não** no `app_desc_t`. O parser (`tab5_manifest.cpp`) aceita os campos abaixo, tanto no formato de topo nível quanto aninhados em `"icon"`:
+>
+> | Campo | Exemplo | Descrição |
+> | :--- | :--- | :--- |
+> | `icon_symbol` / `icon.symbol` | `"LV_SYMBOL_EDIT"` ou `">_"` | Glifo exibido no desktop. Aceita **nomes de macro LVGL** (`LV_SYMBOL_*`) — resolvidos automaticamente para o glifo real — ou um texto/glifo cru. |
+> | `icon_bg_color` / `icon.bg_color` | `"#F59E0B"` | Cor de fundo da caixa do ícone em hex RGB. Se omitido, usa a cor de destaque suave do tema. |
+>
+> ```json
+> {
+>   "id": "com.tab5.notas",
+>   "name": "Notas",
+>   "icon_symbol": "LV_SYMBOL_EDIT",
+>   "icon_bg_color": "#F59E0B"
+> }
+> ```
+>
+> O nome da macro (ex.: `LV_SYMBOL_EDIT`) é o formato recomendado no manifesto, pois é legível e resolvido em tempo de registro; escrever o glifo UTF-8 cru também funciona. Textos curtos sem correspondência (ex.: `">_"` ou emoji) são mantidos como-estão.
+
 ---
 
 ## 4. Componentes Compartilhados do Sistema
@@ -99,6 +119,16 @@ ui_app_bar_refresh_theme(&app_bar);
 >   - Exemplo 1: `"Arquivos - /sdcard/fotos"`
 >   - Exemplo 2: `"Notas - Sem título"` ou `"Notas - config.txt"`
 >   - Exemplo 3: `"Galeria - foto.jpg (1/10)"`
+
+> [!IMPORTANT]
+> **Botões de ação em apps com Native View (modelo WASM):**
+> Aplicações embutidas como pacote WASM que possuem uma *native view* no firmware (ex. `wifi`, `bluetooth`, `terminal`, `servidor`, `recorder`, `chat`, `music`) **NÃO devem adicionar botões de ação via ABI WASM** (`tab5_ui_app_bar_add_action_button` no `main.c` da app):
+> - Callbacks registrados pelo WASM não disparam (não há *trampoline* WAMR para function pointers) — o botão aparece mas fica morto;
+> - Renderizam fora do padrão visual da barra nativa.
+>
+> A tela real dessas apps é montada pela native view (`ui_<app>_view_create`), que deve adicionar os botões de ação por meio da API **nativa** `ui_app_bar_add_action_button` (estilo já compatível com o botão "Fechar"). Ex.: a lixeira (limpar chat) do Chat é adicionada em `ui_chat_view.cpp` de forma nativa.
+>
+> **Reprodução em segundo plano (Música):** a reprodução roda na task `music_play_task` (FreeRTOS), independente da UI. Ao fechar o app, `ui_music_on_close` pausa apenas o `s_update_timer` (que atualiza widgets LVGL e, se ativo após a destruição da tela, causa *use-after-free* → reboot); a música continua tocando. Ao reabrir, `ui_music_view_create` → `ui_music_on_open` retoma o timer.
 
 ---
 

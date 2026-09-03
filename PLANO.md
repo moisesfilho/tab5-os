@@ -2499,6 +2499,123 @@ main/app_main.cpp             # [MODIFY] chama os_config_migrate() antes de carr
 
 ---
 
+# [x] Fase 46: Isolamento e Modularização de Aplicações (WebAssembly WAMR, Package Manager, Storage Manager & SDK) `✅ IMPLEMENTADO`
+
+## 1. Contexto & Objetivos
+
+- Desacoplar as aplicações do código principal do firmware do Tab5 OS.
+- Implementar modelo de execução isolado em sandbox via WebAssembly (WAMR).
+- Criar a Host ABI do sistema com bindings seguros para LVGL, hardware, armazenamento privado e ciclo de vida de processos.
+- Implementar o Package Manager com formato `.tab5pkg`, parser JSON de `manifest.json`, registro dinâmico e precedência de armazenamento.
+- Implementar a Interface do Instalador de Aplicações com modal de confirmação e auditoria de permissões.
+- Implementar o Gerenciador de Armazenamento e Memória em 3 abas (Memória & Discos, Apps Instaladas e Pacotes Pendentes).
+- Disponibilizar o **Tab5 App SDK** (`sdk/tab5-app-sdk/`) com headers, CLI `pack.py`, macros CMake, templates e exemplos.
+
+## 2. Decisões Arquiteturais
+
+| Decisão | Escolha | Motivação |
+|---|---|---|
+| Runtime | WebAssembly Micro Runtime (WAMR) | Segurança por sandbox, isolamento de falhas, portabilidade e eficiência em PSRAM no ESP32-P4 |
+| Formato de Pacote | Diretório/Bundle `.tab5pkg` | Empacotamento declarativo com `manifest.json`, binário `app.wasm` e pasta `assets/` |
+| Sandboxing de Armazenamento | `/sdcard/data/<app_id>/` | Isolamento estrito de dados privados por aplicação, impedindo corrupção entre apps |
+| Precedência de Apps | SD Card > Partição Embutida (`/apps`) | Permite aos desenvolvedores testar e atualizar versões mais recentes de apps pelo SD sem re-flash |
+| Gestão de Espaço | Módulo `storage_mgr` + UI 3 abas | Transparência total de recursos (Flash, SD e RAM) com desinstalação segura e limpeza de dados |
+| Toolchain do Desenvolvedor | Tab5 App SDK + `pack.py` + CMake | Automação completa para criação de apps independentes por terceiros |
+
+## 3. Estrutura de Arquivos Criados
+
+```
+components/os/runtime/
+├── include/tab5_sdk.h            # Header C oficial com funções da Host ABI
+├── tab5_host_abi.h/.cpp          # Tabela de símbolos nativos e gerenciamento de contexto
+├── tab5_lifecycle_host.h/.cpp    # Ciclo de vida de processos da app ativa
+├── tab5_manifest.h/.cpp          # Parser e modulo de validacao do manifest.json
+├── tab5_package_mgr.h/.cpp       # Gerenciador de instalação, desinstalação e execução
+├── tab5_storage_sandbox.h/.cpp   # Resolução segura de caminhos e sandboxing
+├── tab5_sys_host.cpp             # Bindings de bateria, Wi-Fi, BLE, áudio e logs
+├── tab5_ui_host.cpp              # Bindings de tela, app bar, teclado e toasts
+└── tab5_wasm_runtime.h/.cpp      # Motor de execução WAMR integrado
+components/os/core/
+└── storage_mgr.h/.cpp            # Varredura de partições, cálculo de tamanhos e estatísticas
+components/os/shell/
+├── ui_installer.h/.cpp           # Modal de instalação e auditoria de permissões
+└── ui_storage_view.h/.cpp        # Aplicativo de Gerenciamento de Armazenamento e Memória
+sdk/tab5-app-sdk/
+├── cmake/                        # Toolchain e macros CMake
+├── include/                      # Headers públicos tab5_sdk.h e tab5_manifest.h
+├── templates/hello_app/          # Template base para novas aplicações
+├── examples/                     # Exemplos hello_wasm e notes_wasm
+└── tools/pack.py                 # Ferramenta CLI de validação e empacotamento
+```
+
+## 4. Etapas Executadas
+
+- [x] **Etapa 1 — Core Host ABI**: Bindings nativos para LVGL, I/O em sandbox, hardware, ciclo de vida e gerenciamento de permissões.
+- [x] **Etapa 2 — WAMR Runtime**: Integração do WebAssembly Micro Runtime para ESP32-P4 e host mocks.
+- [x] **Etapa 3 — Package Manager**: Parser de manifesto, associação `.tab5pkg` e registro dinâmico no boot.
+- [x] **Etapa 4 — Embedded Bundle**: Precedência de execução (SD sobre firmware embutido) e varredura de pacotes.
+- [x] **Etapa 5 — Installer UI**: Modal de instalação com confirmação de permissões e associação no app Arquivos.
+- [x] **Etapa 6 — Storage Manager**: Aplicativo de 3 abas para visualização de ocupação de disco, desinstalação e pacotes pendentes.
+- [x] **Etapa 7 — Tab5 App SDK**: Headers, ferramenta de empacotamento `pack.py`, template inicial e exemplos práticos.
+- [x] **Etapa 8 — Validação & Qualidade**: 132 testes de host aprovados (100%), pre-commit 100% limpo e gravação validada no ESP32-P4.
+
+## 5. Critérios de Validação
+
+1. `tests/host`: 132/132 testes unitários aprovados com 100% de sucesso. ✓
+2. `tests/test_pack_tool.py`: Testes unitários do empacotador CLI aprovados. ✓
+3. `pre-commit run --all-files`: 100% em conformidade com as regras de qualidade do projeto. ✓
+4. `idf.py build` e gravação no hardware (`/dev/ttyACM0`): Sistema operacional inicializa perfeitamente com todos os subsistemas. ✓
+
+## 6. Padrão Arquitetural para Migração de Aplicações com Interface Rica (Rich UI)
+
+> [!IMPORTANT]
+> **Diretriz Obrigatória para Migrações de Aplicações**:
+> Ao migrar aplicativos do firmware monolítico para repositórios isolados (`tab5-app-*`), deve-se atentar ao tipo de interface do aplicativo para garantir fidelidade visual e usabilidade:
+>
+> 1. **Aplicações de Texto / Terminal / Editor (ex: Notas)**:
+>    - Utilizam o canvas padrão `ctx->content_area` (`lv_textarea`) gerenciado pelo runtime WAMR (`tab5_ui_host.cpp`).
+>    - A aplicação WASM controla o texto através da Host ABI (`tab5_ui_textarea_set_text`).
+>
+> 2. **Aplicações com Interface Gráfica Especializada (ex: Calendário, Arquivos, Galeria, Música)**:
+>    - **Não devem** ter sua interface rica substituída por texto puro em fallback no `textarea`.
+>    - **Arquitetura de Host View (`ui_*_view`)**:
+>      - Criar um componente de visualização modular em `components/os/shell/` (ex: `ui_calendar_view.h/.cpp`, `ui_files_view.h/.cpp`).
+>      - No runtime do host (`components/os/runtime/tab5_ui_host.cpp`), dentro de `tab5_ui_host_create_app_screen`, interceptar o `ctx->app_id` da aplicação:
+>        - Ocultar o textarea padrão: `lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN)`.
+>        - Instanciar a Host View nativa passando a tela pai e a `ui_app_bar_t` (ex: `ui_files_view_create(scr, bar)`).
+>      - Integrar os hooks de ciclo de vida nos eventos correspondentes:
+>        - Destruição: liberar a instância em `tab5_ui_host_cleanup_app_screen`.
+>        - Layout / Rotação: chamar `ui_*_view_apply_layout` em `tab5_ui_host_apply_layout`.
+>        - Tema (Claro/Escuro): chamar `ui_*_view_refresh_theme` em `tab5_ui_host_refresh_theme`.
+>      - No repositório isolado da aplicação (`tab5-app-*/src/main.c`), registrar os callbacks de ciclo de vida (`tab5_lifecycle_register`) para manter sincronização sem sobrescrever a barra de ações ou injetar texto redundante.
+
+## 7. Status de Conclusão: `[x] CONCLUÍDO (100%)`
+
+### Migração de Câmera e Galeria para Apps Isoladas (complemento da Fase 46)
+
+> **Estado:** `[x] CONCLUÍDO` — mesmas telas do monolítico, agora servidas por Host Views nativas.
+
+| Aplicação | Repositório | Pacote embutido | Host View nativa | Ações de barra |
+|---|---|---|---|---|
+| Câmera | `tab5-app-camera` | `com.tab5.camera.tab5pkg` | `ui_camera_view` | Preview ao vivo (`camera_mgr`), disparo com flash/toast, atalho → Galeria |
+| Galeria | `tab5-app-gallery` | `com.tab5.gallery.tab5pkg` | `ui_gallery_view` | Navegação, exclusão com modal, atalho → Câmera, abertura por `.jpg/.jpeg/.png/.bmp` |
+
+**Mudanças estruturais:**
+
+- `ui_camera.cpp/.h` e `ui_gallery.cpp/.h` (monolíticos) foram convertidos em **Host Views reutilizáveis** em `components/os/shell/` (`ui_camera_view`, `ui_gallery_view`), seguindo o padrão de `ui_files_view`/`ui_calendar_view`.
+- `camera_mgr` (driver de câmera) e `tjpgd` (decoder JPEG) foram movidos de `components/apps/` para `components/os/core/`, pois agora são dependências do núcleo (não da aplicação).
+- `components/os/runtime/tab5_ui_host.cpp` passou a despachar `com.tab5.camera`/`com.tab5.gallery` para as Host Views nativas (ocultando o textarea padrão), com hooks de `resume` (inicia preview / varre diretório) e `open_file` (galeria abre a foto).
+- Navegação cruzada Câmera ↔ Galeria agora usa `tab5_package_mgr_launch("com.tab5.camera|gallery")`, respeitando o ciclo de vida do runtime.
+- Apps nativas removidas do registro monolítico (`ui_shell`), tiles do Desktop agora vêm dos manifestos isolados (ícone por símbolo + cor de fundo).
+
+**Validação:**
+
+1. `tools/ci/run_sim_tests.sh`: cenários `app_camera` e `app_gallery` **PASS** contra goldens do monolítico (fidelidade visual idêntica); goldens de desktop (`shell_desktop`, `shell_power`, `shell_settings`, `shell_calendar_popup`) regenerados por causa dos tiles isolados.
+2. `tools/ci/run_host_tests.sh`: 134/134 testes aprovados, cobertura 90% ≥ 80%.
+3. `idf.py build`: firmware compila; `apps.bin` contém os pacotes `com.tab5.camera` e `com.tab5.gallery`.
+
+---
+
 ## Sugestões de Novas Aplicações ou Melhorias (Não Planejadas)
 
 > [!NOTE]

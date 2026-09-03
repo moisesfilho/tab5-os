@@ -16,6 +16,7 @@
 #include "rtc_rx8130.h"
 #include "display_storage.h"
 #include "camera_mgr.h"
+#include "tab5_keyboard.h"
 #include "http_file_server.h"
 #include "ai_storage.h"
 #include "timezone_mgr.h"
@@ -92,6 +93,9 @@ extern "C" void app_main(void)
 
     /* Inicia o monitor de bateria INA226 (poll de 1 s na task LVGL) */
     battery_reader_start();
+
+    /* Deteccao automatica do teclado fisico M5Stack (Ext.Port1 / I2C bus 0) */
+    tab5_keyboard_init();
 
     /* Liga o radio WiFi (ESP32-C6 companion via SDIO) e inicia o STA + scan */
     wifi_mgr_start();

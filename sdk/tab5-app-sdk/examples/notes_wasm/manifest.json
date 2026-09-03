@@ -1,0 +1,21 @@
+{
+  "id": "com.tab5.example.notes",
+  "name": "Notas Wasm",
+  "version": "1.0.0",
+  "author": "Tab5 Team",
+  "description": "Port da aplicacao de Notas rodando em sandbox isolada com Wasm.",
+  "entry": "app.wasm",
+  "icon_symbol": "LV_SYMBOL_EDIT",
+  "icon_bg_color": "#F59E0B",
+  "file_associations": [
+    ".txt",
+    ".md"
+  ],
+  "permissions": [
+    "storage_read",
+    "storage_write",
+    "ui_keyboard"
+  ],
+  "stack_size": 65536,
+  "heap_size": 131072
+}
