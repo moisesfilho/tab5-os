@@ -1,7 +1,7 @@
 # tab5-os
 
 <p>
-  <img src="https://img.shields.io/badge/version-v0.4.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-v0.4.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/platform-ESP32--P4-blue" alt="Platform">
   <img src="https://img.shields.io/badge/ESP--IDF-v5.5.5-blue" alt="ESP-IDF">
