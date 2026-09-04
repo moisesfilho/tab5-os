@@ -16,7 +16,6 @@ void ui_recorder_view_apply_layout(ui_recorder_view_t *view);
 void ui_recorder_view_destroy(ui_recorder_view_t *view);
 
 /* Legados */
-void ui_recorder_register(void);
 lv_obj_t *ui_recorder_create(void);
 void ui_recorder_on_open(void);
 void ui_recorder_on_close(void);

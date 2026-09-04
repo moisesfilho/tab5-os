@@ -43,6 +43,12 @@ tab5_err_t tab5_storage_sandbox_remove(const char *rel_or_abs_path, const char *
  */
 tab5_err_t tab5_storage_sandbox_get_app_dir(const char *app_id, char *out_buf, size_t buf_size);
 
+/**
+ * @brief Lista os arquivos e subdiretórios de forma segura respeitando a sandbox.
+ */
+tab5_err_t tab5_storage_sandbox_scandir(const char *rel_or_abs_path, tab5_dir_entry_t *entries, uint32_t max_entries,
+                                        uint32_t *out_count, const char *app_id, uint32_t permissions);
+
 #ifdef __cplusplus
 }
 #endif

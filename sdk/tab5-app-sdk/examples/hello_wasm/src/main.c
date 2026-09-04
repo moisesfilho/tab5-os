@@ -28,3 +28,9 @@ TAB5_APP_EXPORT int main(int argc, char **argv)
     tab5_lifecycle_register(&cbs);
     return 0;
 }
+
+TAB5_APP_EXPORT void tab5_app_on_theme_changed(bool dark)
+{
+    (void)dark;
+    tab5_ui_app_bar_set_title("Hello Wasm");
+}

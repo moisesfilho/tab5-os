@@ -1,5 +1,4 @@
 #include "ui_terminal_view.h"
-#include "app_registry.h"
 #include "ui_shell.h"
 #include "ui_keyboard.h"
 #include "ui_theme.h"
@@ -357,7 +356,6 @@ void clear_btn_click_cb(lv_event_t *event)
 void close_btn_click_cb(lv_event_t *event)
 {
     (void)event;
-    ui_shell_close_terminal();
 }
 
 void apply_terminal_theme(void)
@@ -494,20 +492,4 @@ lv_obj_t *ui_terminal_create(void)
     ui_terminal_apply_layout();
 
     return term_scr;
-}
-
-void ui_terminal_register(void)
-{
-    static const app_desc_t s_terminal_desc = {
-        .id = "terminal",
-        .name = "Terminal",
-        .icon_symbol = ">_",
-        .icon_bg_color = nullptr,
-        .icon_builder = nullptr,
-        .icon_theme_refresh = nullptr,
-        .on_launch = ui_shell_open_terminal,
-        .file_extensions = nullptr,
-        .on_open_file = nullptr,
-    };
-    app_registry_register(&s_terminal_desc);
 }

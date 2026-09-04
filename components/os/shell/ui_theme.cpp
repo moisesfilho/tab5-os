@@ -2,6 +2,7 @@
 #include "ui_keyboard.h"
 #include "ui_status.h"
 #include "ui_bar.h"
+#include "tab5_ui_host.h"
 
 namespace {
 
@@ -36,6 +37,7 @@ void apply_theme_all(void)
     ui_keyboard_refresh_theme();
     ui_status_refresh_theme();
     ui_bar_refresh_theme();
+    tab5_ui_host_refresh_theme();
 }
 
 } // namespace

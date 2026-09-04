@@ -139,12 +139,7 @@ namespace {
 
 void act_open_wifi(void)
 {
-    ui_shell_open_wifi();
-}
-
-void act_close_wifi(void)
-{
-    ui_shell_close_wifi();
+    tab5_package_mgr_launch("com.tab5.wifi", nullptr);
 }
 
 void act_open_files(void)
@@ -160,12 +155,12 @@ void act_open_notas(void)
 
 void act_open_terminal(void)
 {
-    ui_shell_open_terminal();
+    tab5_package_mgr_launch("com.tab5.terminal", nullptr);
 }
 
 void act_open_bluetooth(void)
 {
-    ui_shell_open_bluetooth();
+    tab5_package_mgr_launch("com.tab5.bluetooth", nullptr);
 }
 
 void act_open_gallery(void)
@@ -176,17 +171,17 @@ void act_open_gallery(void)
 
 void act_open_music(void)
 {
-    ui_shell_open_music();
+    tab5_package_mgr_launch("com.tab5.music", nullptr);
 }
 
 void act_open_chat(void)
 {
-    ui_shell_open_chat();
+    tab5_package_mgr_launch("com.tab5.chat", nullptr);
 }
 
 void act_open_recorder(void)
 {
-    ui_shell_open_recorder();
+    tab5_package_mgr_launch("com.tab5.recorder", nullptr);
 }
 
 void act_open_camera(void)
@@ -196,7 +191,7 @@ void act_open_camera(void)
 
 void act_open_fileserver(void)
 {
-    ui_shell_open_fileserver();
+    tab5_package_mgr_launch("com.tab5.fileserver", nullptr);
 }
 
 void act_open_calendar(void)

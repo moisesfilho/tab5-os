@@ -632,13 +632,14 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
         entry->host_ctx.is_wasm = true;
         entry->host_ctx.wasm_instance = &entry->wasm_inst;
 
-        // Tenta app_main, depois main, depois _start
+        // Executa o ponto de entrada principal (que faz tab5_lifecycle_register)
         if (tab5_wasm_call_function(&entry->wasm_inst, "app_main", 0, nullptr) != TAB5_OK) {
             if (tab5_wasm_call_function(&entry->wasm_inst, "main", 0, nullptr) != TAB5_OK) {
                 tab5_wasm_call_function(&entry->wasm_inst, "_start", 0, nullptr);
             }
         }
-        LOG_I("Execucao do ponto de entrada Wasm concluida para %s", app_id);
+        LOG_I("Execucao do ponto de entrada Wasm concluida para %s (lifecycle on_init=%p)", app_id,
+              entry->host_ctx.lifecycle.on_init);
     }
 
     tab5_lifecycle_host_resume_app(&entry->host_ctx);

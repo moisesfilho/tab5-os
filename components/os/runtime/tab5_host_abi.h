@@ -48,9 +48,10 @@ typedef struct {
     char app_name[64];                    /**< Nome da aplicação */
     uint32_t permissions;                 /**< Máscara de bits de tab5_permission_flags_t */
     tab5_app_state_t state;               /**< Estado atual do ciclo de vida */
-    tab5_ui_obj_t root_screen;            /**< lv_obj_t* da tela da app */
-    tab5_ui_obj_t app_bar;                /**< Handle da barra de título padrão */
-    tab5_ui_obj_t content_area;           /**< Handle do widget de edição/conteúdo principal (textarea) */
+    void *root_screen;                    /**< lv_obj_t* da tela da app */
+    void *app_bar;                        /**< Handle da barra de título padrão */
+    void *app_bar_handle;                 /**< Ponteiro para ui_app_bar_t (replice de tema) */
+    void *content_area;                   /**< Handle do widget de edição/conteúdo principal (textarea) */
     tab5_lifecycle_callbacks_t lifecycle; /**< Callbacks registrados pela app */
     bool is_wasm;                         /**< Indica se o contexto e de app WebAssembly */
     void *wasm_instance;                  /**< Ponteiro para tab5_wasm_app_instance_t */

@@ -11,6 +11,7 @@
 #include <cstring>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #ifdef ESP_PLATFORM
 #include "esp_log.h"
@@ -255,5 +256,53 @@ tab5_err_t tab5_storage_sandbox_remove(const char *rel_or_abs_path, const char *
         return TAB5_ERR_NOT_FOUND;
     }
 
+    return TAB5_OK;
+}
+
+tab5_err_t tab5_storage_sandbox_scandir(const char *rel_or_abs_path, tab5_dir_entry_t *entries, uint32_t max_entries,
+                                        uint32_t *out_count, const char *app_id, uint32_t permissions)
+{
+    if (rel_or_abs_path == nullptr || entries == nullptr || max_entries == 0 || out_count == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+    *out_count = 0;
+
+    char safe_path[256];
+    tab5_err_t err =
+        tab5_storage_sandbox_resolve_path(rel_or_abs_path, safe_path, sizeof(safe_path), app_id, permissions, false);
+    if (err != TAB5_OK) {
+        return err;
+    }
+
+    DIR *d = opendir(safe_path);
+    if (d == nullptr) {
+        return TAB5_ERR_NOT_FOUND;
+    }
+
+    uint32_t count = 0;
+    struct dirent *de;
+    while ((de = readdir(d)) != nullptr && count < max_entries) {
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) {
+            continue;
+        }
+        strncpy(entries[count].name, de->d_name, sizeof(entries[count].name) - 1);
+        entries[count].name[sizeof(entries[count].name) - 1] = '\0';
+        entries[count].is_dir = 0;
+        entries[count].size = 0;
+        entries[count].mtime = 0;
+
+        std::string full_item = std::string(safe_path) + "/" + de->d_name;
+        struct stat st;
+        if (stat(full_item.c_str(), &st) == 0) {
+            entries[count].size = (uint32_t)st.st_size;
+            entries[count].mtime = (uint32_t)st.st_mtime;
+            if (S_ISDIR(st.st_mode)) {
+                entries[count].is_dir = 1;
+            }
+        }
+        count++;
+    }
+    closedir(d);
+    *out_count = count;
     return TAB5_OK;
 }

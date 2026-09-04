@@ -1,5 +1,4 @@
 #include "ui_chat_view.h"
-#include "app_registry.h"
 #include "ui_shell.h"
 #include "ui_keyboard.h"
 #include "ui_theme.h"
@@ -882,20 +881,4 @@ void ui_chat_apply_layout(void)
     }
     lv_obj_set_pos(messages_cont, 0, msg_y);
     lv_obj_set_size(messages_cont, scr_w, msg_h);
-}
-
-void ui_chat_register(void)
-{
-    static const app_desc_t s_chat_desc = {
-        .id = "chat",
-        .name = "Chat",
-        .icon_symbol = "IA",
-        .icon_bg_color = nullptr,
-        .icon_builder = nullptr,
-        .icon_theme_refresh = nullptr,
-        .on_launch = ui_shell_open_chat,
-        .file_extensions = nullptr,
-        .on_open_file = nullptr,
-    };
-    app_registry_register(&s_chat_desc);
 }

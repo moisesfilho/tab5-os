@@ -1,5 +1,4 @@
 #include "ui_fileserver_view.h"
-#include "app_registry.h"
 #include "http_file_server.h"
 #include "ui_bar.h"
 #include "ui_app_bar.h"
@@ -152,7 +151,6 @@ void toggle_btn_cb(lv_event_t *e)
 void close_click_cb(lv_event_t *e)
 {
     (void)e;
-    ui_shell_close_fileserver();
 }
 
 void timer_cb(lv_timer_t *timer)
@@ -498,20 +496,4 @@ void ui_fileserver_apply_layout(void)
     if (fileserver_scr != nullptr) {
         lv_obj_invalidate(fileserver_scr);
     }
-}
-
-void ui_fileserver_register(void)
-{
-    static const app_desc_t s_fileserver_desc = {
-        .id = "fileserver",
-        .name = "Servidor",
-        .icon_symbol = LV_SYMBOL_DRIVE,
-        .icon_bg_color = nullptr,
-        .icon_builder = nullptr,
-        .icon_theme_refresh = nullptr,
-        .on_launch = ui_shell_open_fileserver,
-        .file_extensions = nullptr,
-        .on_open_file = nullptr,
-    };
-    app_registry_register(&s_fileserver_desc);
 }

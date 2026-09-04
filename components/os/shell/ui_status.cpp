@@ -7,6 +7,7 @@
 #include "bt_mgr.h"
 #include "music_player.h"
 #include "battery_reader.h"
+#include "tab5_package_mgr.h"
 
 namespace {
 
@@ -201,13 +202,13 @@ void status_timer_cb(lv_timer_t *timer)
 void wifi_icon_click_cb(lv_event_t *event)
 {
     (void)event;
-    ui_shell_open_wifi();
+    tab5_package_mgr_launch("com.tab5.wifi", nullptr);
 }
 
 void bt_icon_click_cb(lv_event_t *event)
 {
     (void)event;
-    ui_shell_open_bluetooth();
+    tab5_package_mgr_launch("com.tab5.bluetooth", nullptr);
 }
 
 void music_icon_click_cb(lv_event_t *event)

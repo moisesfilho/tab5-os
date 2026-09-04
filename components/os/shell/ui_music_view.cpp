@@ -1,5 +1,4 @@
 #include "ui_music_view.h"
-#include "app_registry.h"
 #include "music_player.h"
 #include "ui_app_bar.h"
 #include "ui_bar.h"
@@ -131,7 +130,6 @@ void format_file_size(size_t bytes, char *buf, size_t buf_len)
 void back_btn_cb(lv_event_t *event)
 {
     (void)event;
-    ui_shell_close_music();
 }
 
 void refresh_btn_cb(lv_event_t *event)
@@ -787,23 +785,6 @@ static void resolution_cb(lv_event_t *event)
 }
 
 } // namespace
-
-void ui_music_register(void)
-{
-    static const char *const s_music_exts[] = {"mp3", "wav", nullptr};
-    static const app_desc_t s_music_app = {
-        .id = "music",
-        .name = "Música",
-        .icon_symbol = LV_SYMBOL_AUDIO,
-        .icon_bg_color = nullptr,
-        .icon_builder = nullptr,
-        .icon_theme_refresh = nullptr,
-        .on_launch = ui_shell_open_music,
-        .file_extensions = s_music_exts,
-        .on_open_file = ui_shell_open_music_with_file,
-    };
-    app_registry_register(&s_music_app);
-}
 
 struct ui_music_view_s {
     lv_obj_t *parent = nullptr;

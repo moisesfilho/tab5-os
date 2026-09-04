@@ -1,5 +1,4 @@
 #include "ui_wifi_view.h"
-#include "app_registry.h"
 #include "ui_bar.h"
 #include "ui_app_bar.h"
 #include "ui_font.h"
@@ -574,7 +573,7 @@ void close_cb(lv_event_t *event)
     if (password_ta != nullptr) {
         lv_obj_set_style_bg_opa(password_ta, LV_OPA_TRANSP, LV_PART_CURSOR);
     }
-    ui_shell_close_wifi();
+    /* TODO: migrar para WASM — close via package_mgr */
 }
 
 } // namespace
@@ -830,20 +829,4 @@ void ui_wifi_refresh_theme(void)
 void ui_wifi_apply_layout(void)
 {
     apply_wifi_layout();
-}
-
-void ui_wifi_register(void)
-{
-    static const app_desc_t s_wifi_desc = {
-        .id = "wifi",
-        .name = "WiFi",
-        .icon_symbol = LV_SYMBOL_WIFI,
-        .icon_bg_color = nullptr,
-        .icon_builder = nullptr,
-        .icon_theme_refresh = nullptr,
-        .on_launch = ui_shell_open_wifi,
-        .file_extensions = nullptr,
-        .on_open_file = nullptr,
-    };
-    app_registry_register(&s_wifi_desc);
 }

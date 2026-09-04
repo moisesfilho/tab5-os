@@ -14,8 +14,7 @@ void ui_wifi_view_refresh_theme(ui_wifi_view_t *view);
 void ui_wifi_view_apply_layout(ui_wifi_view_t *view);
 void ui_wifi_view_destroy(ui_wifi_view_t *view);
 
-/* Legados para shell se necessário */
-void ui_wifi_register(void);
+/* Legados para view wrappers internos */
 lv_obj_t *ui_wifi_create(void);
 void ui_wifi_refresh_theme(void);
 void ui_wifi_apply_layout(void);

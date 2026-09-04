@@ -15,7 +15,6 @@ void ui_bluetooth_view_apply_layout(ui_bluetooth_view_t *view);
 void ui_bluetooth_view_destroy(ui_bluetooth_view_t *view);
 
 /* Legados */
-void ui_bluetooth_register(void);
 lv_obj_t *ui_bluetooth_create(void);
 void ui_bluetooth_refresh_theme(void);
 void ui_bluetooth_apply_layout(void);

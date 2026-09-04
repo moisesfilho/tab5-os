@@ -1,5 +1,4 @@
 #include "ui_bluetooth_view.h"
-#include "app_registry.h"
 #include "ui_bar.h"
 #include "ui_app_bar.h"
 #include "ui_font.h"
@@ -692,7 +691,6 @@ void forget_button_cb(lv_event_t *event)
 void close_button_cb(lv_event_t *event)
 {
     (void)event;
-    ui_shell_close_bluetooth();
 }
 
 void load_saved_devices(void)
@@ -916,20 +914,4 @@ void ui_bluetooth_refresh_theme(void)
 void ui_bluetooth_apply_layout(void)
 {
     apply_bt_layout();
-}
-
-void ui_bluetooth_register(void)
-{
-    static const app_desc_t s_bluetooth_desc = {
-        .id = "bluetooth",
-        .name = "Bluetooth",
-        .icon_symbol = LV_SYMBOL_BLUETOOTH,
-        .icon_bg_color = nullptr,
-        .icon_builder = nullptr,
-        .icon_theme_refresh = nullptr,
-        .on_launch = ui_shell_open_bluetooth,
-        .file_extensions = nullptr,
-        .on_open_file = nullptr,
-    };
-    app_registry_register(&s_bluetooth_desc);
 }

@@ -2,13 +2,7 @@
 #include "ui_bar.h"
 #include "ui_keyboard.h"
 #include "ui_desktop.h"
-#include "ui_wifi_view.h"
-#include "ui_bluetooth_view.h"
-#include "ui_terminal_view.h"
-#include "ui_fileserver_view.h"
-#include "ui_recorder_view.h"
 #include "ui_chat_view.h"
-#include "ui_music_view.h"
 #include "ui_screensaver.h"
 #include "ui_screen_off.h"
 #include "ui_theme.h"
@@ -23,16 +17,8 @@
 namespace {
 
 lv_obj_t *desktop_scr = nullptr;
-lv_obj_t *wifi_scr = nullptr;
-lv_obj_t *bt_scr = nullptr;
-lv_obj_t *terminal_scr = nullptr;
-lv_obj_t *fileserver_scr = nullptr;
-lv_obj_t *recorder_scr = nullptr;
-lv_obj_t *recorder_caller_scr = nullptr;
 lv_obj_t *chat_scr = nullptr;
 lv_obj_t *chat_caller_scr = nullptr;
-lv_obj_t *music_scr = nullptr;
-lv_obj_t *music_caller_scr = nullptr;
 lv_obj_t *storage_scr = nullptr;
 lv_obj_t *storage_caller_scr = nullptr;
 lv_obj_t *splash = nullptr;
@@ -81,16 +67,8 @@ void splash_start(void)
  * (notas, wifi, files, bluetooth) nao possuem on_close e sao ignorados. */
 void notify_app_closed(lv_obj_t *scr)
 {
-    if (scr == terminal_scr) {
-        ui_terminal_on_close();
-    } else if (scr == fileserver_scr) {
-        ui_fileserver_on_close();
-    } else if (scr == recorder_scr) {
-        ui_recorder_on_close();
-    } else if (scr == chat_scr) {
+    if (scr == chat_scr) {
         ui_chat_on_close();
-    } else if (scr == music_scr) {
-        ui_music_on_close();
     }
 }
 
@@ -135,13 +113,7 @@ void ui_shell_init(void)
 
     /* Cria a area de trabalho dinamicamente a partir dos apps registrados */
     ui_desktop_create(desktop_scr);
-    wifi_scr = ui_wifi_create();
-    bt_scr = ui_bluetooth_create();
-    terminal_scr = ui_terminal_create();
-    fileserver_scr = ui_fileserver_create();
-    recorder_scr = ui_recorder_create();
     chat_scr = ui_chat_create();
-    music_scr = ui_music_create();
     storage_scr = ui_storage_view_create();
     ui_screensaver_init();
     ui_screen_off_init();
@@ -149,82 +121,6 @@ void ui_shell_init(void)
     lv_timer_create(inactivity_timer_cb, 1000, nullptr);
 
     splash_start();
-}
-
-void ui_shell_open_wifi(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(wifi_scr);
-}
-
-void ui_shell_close_wifi(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(desktop_scr);
-}
-
-void ui_shell_open_bluetooth(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(bt_scr);
-}
-
-void ui_shell_close_bluetooth(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(desktop_scr);
-}
-
-void ui_shell_open_terminal(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(terminal_scr);
-    ui_terminal_apply_layout();
-}
-
-void ui_shell_close_terminal(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(desktop_scr);
-}
-
-void ui_shell_open_fileserver(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(fileserver_scr);
-    ui_fileserver_on_open();
-}
-
-void ui_shell_close_fileserver(void)
-{
-    ui_keyboard_hide();
-    shell_load_scr(desktop_scr);
-}
-
-void ui_shell_open_recorder(void)
-{
-    ui_keyboard_hide();
-    recorder_caller_scr = desktop_scr;
-    shell_load_scr(recorder_scr);
-    ui_recorder_on_open();
-}
-
-void ui_shell_open_recorder_with_file(const char *filepath)
-{
-    ui_keyboard_hide();
-    lv_obj_t *act = lv_disp_get_scr_act(NULL);
-    recorder_caller_scr = (act != nullptr && act != recorder_scr) ? act : desktop_scr;
-    ui_recorder_open_file(filepath);
-    shell_load_scr(recorder_scr);
-    ui_recorder_on_open();
-}
-
-void ui_shell_close_recorder(void)
-{
-    ui_keyboard_hide();
-    lv_obj_t *target = (recorder_caller_scr != nullptr) ? recorder_caller_scr : desktop_scr;
-    recorder_caller_scr = nullptr;
-    shell_load_scr(target);
 }
 
 void ui_shell_open_chat(void)
@@ -240,31 +136,6 @@ void ui_shell_close_chat(void)
     ui_keyboard_hide();
     lv_obj_t *target = (chat_caller_scr != nullptr) ? chat_caller_scr : desktop_scr;
     chat_caller_scr = nullptr;
-    shell_load_scr(target);
-}
-
-void ui_shell_open_music(void)
-{
-    ui_keyboard_hide();
-    music_caller_scr = desktop_scr;
-    shell_load_scr(music_scr);
-    ui_music_on_open();
-}
-
-void ui_shell_open_music_with_file(const char *filepath)
-{
-    ui_keyboard_hide();
-    lv_obj_t *act = lv_disp_get_scr_act(NULL);
-    music_caller_scr = (act != nullptr && act != music_scr) ? act : desktop_scr;
-    ui_music_open_file(filepath);
-    shell_load_scr(music_scr);
-}
-
-void ui_shell_close_music(void)
-{
-    ui_keyboard_hide();
-    lv_obj_t *target = (music_caller_scr != nullptr) ? music_caller_scr : desktop_scr;
-    music_caller_scr = nullptr;
     shell_load_scr(target);
 }
 
@@ -287,13 +158,7 @@ void ui_shell_close_storage(void)
 void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
-    ui_wifi_refresh_theme();
-    ui_bluetooth_refresh_theme();
-    ui_terminal_refresh_theme();
-    ui_fileserver_refresh_theme();
-    ui_recorder_refresh_theme();
     ui_chat_refresh_theme();
-    ui_music_refresh_theme();
     ui_storage_view_refresh_theme();
     tab5_ui_host_refresh_theme();
 
@@ -306,21 +171,7 @@ void ui_shell_refresh_theme(void)
 void ui_shell_notify_keyboard_layout(void)
 {
     lv_obj_t *act = lv_disp_get_scr_act(NULL);
-    if (act == wifi_scr) {
-        ui_wifi_apply_layout();
-    } else if (act == bt_scr) {
-        ui_bluetooth_apply_layout();
-    } else if (act == terminal_scr) {
-        ui_terminal_apply_layout();
-    } else if (act == fileserver_scr) {
-        ui_fileserver_apply_layout();
-    } else if (act == recorder_scr) {
-        ui_recorder_apply_layout();
-    } else if (act == chat_scr) {
-        ui_chat_apply_layout();
-    } else if (act == music_scr) {
-        ui_music_apply_layout();
-    } else if (act == storage_scr) {
+    if (act == storage_scr) {
         ui_storage_view_apply_layout();
     } else {
         tab5_ui_host_apply_layout();

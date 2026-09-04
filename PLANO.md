@@ -52,6 +52,8 @@ Documento mestre de planejamento técnico, decisões de engenharia, arquitetura 
 | `[ ]` | **Fase 43** | TTS em Nuvem no Chat (Leitura de Respostas) | Aplicativo / Conectividade / Áudio | Auto-falar resposta do assistente via API TTS (OpenAI/Google/Azure/ElevenLabs) → MP3 → minimp3 → es8388, com config e parada |
 | `[x]` | **Fase 44** | Visualização de Arquivos/Pastas Ocultos no app Arquivos | Aplicativo / UI | Toggle "Mostrar ocultos" na barra (ocultos por padrão, persistido em NVS), filtro de nomes iniciados em `.` em `load_directory` |
 | `[x]` | **Fase 45** | Consolidação das Configs do SO em Pasta Oculta | Sistema / Config | Todas as configs em `/sdcard/.tab5_os/` (corrigindo `timezone.cfg` que sai de `/sdcard/`), migração automática no boot com fallback de leitura |
+| `[x]` | **Fase 46** | Isolamento e Modularização de Aplicações | Sistema / WAMR | Sandbox WAMR, `.tab5pkg`, Package Manager, Storage Sandbox e Tab5 SDK |
+| `[-]` | **Fase 47** | Host ABI de UI Genérica & Desacoplamento Total | Sistema / SDK / UI | Handles opacos de UI, widgets nativos (containers, flex, labels, buttons, sliders, switches, lists), despacho de eventos assíncrono para WASM |
 
 
 ---
@@ -2613,6 +2615,56 @@ sdk/tab5-app-sdk/
 1. `tools/ci/run_sim_tests.sh`: cenários `app_camera` e `app_gallery` **PASS** contra goldens do monolítico (fidelidade visual idêntica); goldens de desktop (`shell_desktop`, `shell_power`, `shell_settings`, `shell_calendar_popup`) regenerados por causa dos tiles isolados.
 2. `tools/ci/run_host_tests.sh`: 134/134 testes aprovados, cobertura 90% ≥ 80%.
 3. `idf.py build`: firmware compila; `apps.bin` contém os pacotes `com.tab5.camera` e `com.tab5.gallery`.
+
+---
+
+# [-] Fase 47: Host ABI de UI Genérica & Desacoplamento Total de Aplicações `🚧 EM ANDAMENTO`
+
+## 1. Contexto & Objetivos
+
+- Eliminar a necessidade de código de interface de usuário das aplicações embutido no SO (`ui_*_view.cpp` em `components/os/shell/`).
+- Expandir a **Host ABI de UI do Tab5 SDK** para suportar a construção declarativa e dinâmica de telas ricas diretamente no código WebAssembly/C da aplicação.
+- Implementar gerenciamento seguro de widgets nativos por handles opacos (`tab5_ui_obj_t = uint32_t`).
+- Fornecer despacho bidirecional de eventos de interface (`TAB5_UI_EVENT_CLICKED`, `TAB5_UI_EVENT_VALUE_CHANGED`, `TAB5_UI_EVENT_LONG_PRESSED`, `TAB5_UI_EVENT_FOCUSED`, `TAB5_UI_EVENT_DEFOCUSED`) do host LVGL para o runtime WAMR (`tab5_app_on_ui_event`).
+- Criar a aplicação de referência rica **`com.tab5.widgetsdemo`** no SDK (`sdk/tab5-app-sdk/examples/widgets_demo/`) demonstrando contêineres flex, botões, labels, switches, sliders e listas.
+
+## 2. Decisões Arquiteturais
+
+| Decisão | Escolha | Motivação |
+|---|---|---|
+| Gerenciamento de Objetos | Handles Inteiros Opacos (`uint32_t`) | Protege a sandbox WASM contra manipulação direta de ponteiros de memória do host e evita memory leaks no LVGL. |
+| Hierarquia de Layout | Contêineres Flexbox (`LV_FLEX_FLOW_ROW / COLUMN`) | Permite criar layouts responsivos que se adaptam automaticamente a orientações retrato e paisagem. |
+| Despacho de Eventos | Invocação direta de `tab5_app_on_ui_event` / `on_ui_event` | Comunicação transparente de eventos de toque e controle do host para o bytecode WASM sem overhead. |
+| Design System | Herança automática de `ui_theme` e `ui_font` | Garante consistência visual, cores dos temas claro/escuro e tipografia com acentuação PT-BR sem complexidade extra nas apps. |
+
+## 3. Estrutura de Arquivos
+
+```
+components/os/runtime/
+├── include/tab5_sdk.h            # Tipos, constantes de layout/eventos e protótipos de widgets
+├── tab5_host_abi.h/.cpp          # Tabela de símbolos nativos WAMR estendida com APIs de UI
+├── tab5_lifecycle_host.h/.cpp    # Suporte a ciclo de vida com eventos de interface
+└── tab5_ui_host.h/.cpp           # Tabela de handles, bindings LVGL de widgets e dispatcher de eventos
+sdk/tab5-app-sdk/
+├── include/tab5_sdk.h            # Header C oficial sincronizado para desenvolvedores
+└── examples/widgets_demo/        # Exemplo rico demonstrando todos os widgets desacoplados
+```
+
+## 4. Etapas de Execução
+
+- [x] **Etapa 1 — Especificação dos Tipos e Headers do SDK**: Tipos `tab5_ui_obj_t`, alinhamentos, fluxos flexíveis, códigos de evento e protótipos das funções de UI em `tab5_sdk.h`.
+- [x] **Etapa 2 — Bindings de Widgets no Host**: Tabela de handles (`MAX_UI_HANDLES`), criação de contêineres, labels, botões, switches, sliders, listas e callback unificado `on_generic_widget_event_cb` em `tab5_ui_host.cpp`.
+- [x] **Etapa 3 — Exportação de Símbolos WAMR**: Registro das funções nativas na tabela de símbolos da Host ABI em `tab5_host_abi.cpp`.
+- [x] **Etapa 4 — Aplicação de Demonstração Rica (`widgets_demo`)**: Criação do código-fonte `main.c`, manifesto `manifest.json`, compilação WASI-SDK e empacotamento em `com.tab5.widgetsdemo.tab5pkg`.
+- [x] **Etapa 5 — Validação em Testes e Hardware**: Suíte GoogleTest no host com 100% de sucesso e cobertura ≥80%, pre-commit aprovado e gravação validada no Tab5 com auto-registro no boot.
+- [x] **Etapa 6 — Migração Gradual de Aplicações Nativas**: Migrada a aplicação **Calendário (`com.tab5.calendar`)** para construção de tela 100% dinâmica via WebAssembly e Tab5 SDK com grade em tabela unificada idêntica ao design nativo (cabeçalho com botões Mês Anterior/Hoje/Próximo estilizados com bordas e raio, barra de dias da semana em `surface_alt`, tabela conectada de 6 linhas x 7 colunas com bordas finas, células transparentes, texto mutado para dias fora do mês e destaque no dia atual/selecionado com suporte a touch), eliminando a interceptação de Host View no SO.
+- [x] **Etapa 7 — Migração do Lote 1 de Aplicações**: Migradas com sucesso para a Host ABI genérica desacoplada as aplicações:
+  - **Servidor de Arquivos (`com.tab5.fileserver`)**: Cards ricos de status (badge online/offline), IP/URL Wi-Fi dinâmico, botão Iniciar/Desligar e instruções de acesso remoto.
+  - **Gravador de Áudio (`com.tab5.recorder`)**: Card de captura de voz com microfone ES7210, Card de reprodução e Card de listagem de arquivos WAV no microSD.
+  - **Terminal Micro-Shell (`com.tab5.terminal`)**: Micro-shell com histórico dinâmico, barra rápida de botões de comandos (`help`, `ls`, `free`, `df`, `date`, `clear`) e execução via Host ABI `tab5_terminal_exec`.
+  - Remoção de interceptações estáticas e views dedicadas no SO para esses apps, mantendo a suíte de testes de host em 100% (cobertura 80.2%) e firmware gravado no dispositivo.
+- [ ] **Etapa 8 — Migração do Lote 2 de Aplicações**: Migrar **Música (`com.tab5.music`)**, **Wi-Fi (`com.tab5.wifi`)** e **Bluetooth (`com.tab5.bluetooth`)** para a Host ABI desacoplada.
+- [ ] **Etapa 9 — Migração do Lote 3 de Aplicações**: Migrar **Chat IA (`com.tab5.chat`)**, **Arquivos (`com.tab5.files`)**, **Câmera (`com.tab5.camera`)** e **Galeria (`com.tab5.gallery`)**.
 
 ---
 

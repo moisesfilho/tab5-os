@@ -97,7 +97,7 @@ int watch_interactive_keys(void *userdata, SDL_Event *event)
 
     switch (key) {
     case SDLK_1:
-        ui_shell_open_wifi();
+        tab5_package_mgr_launch("com.tab5.wifi", nullptr);
         break;
     case SDLK_2:
         tab5_package_mgr_launch("com.tab5.files", nullptr);
@@ -106,10 +106,10 @@ int watch_interactive_keys(void *userdata, SDL_Event *event)
         tab5_package_mgr_launch("com.tab5.notas", nullptr);
         break;
     case SDLK_4:
-        ui_shell_open_terminal();
+        tab5_package_mgr_launch("com.tab5.terminal", nullptr);
         break;
     case SDLK_5:
-        ui_shell_open_bluetooth();
+        tab5_package_mgr_launch("com.tab5.bluetooth", nullptr);
         break;
     case SDLK_6:
         tab5_package_mgr_launch("com.tab5.camera", nullptr);
@@ -118,25 +118,19 @@ int watch_interactive_keys(void *userdata, SDL_Event *event)
         tab5_package_mgr_launch("com.tab5.gallery", nullptr);
         break;
     case SDLK_8:
-        ui_shell_open_fileserver();
+        tab5_package_mgr_launch("com.tab5.fileserver", nullptr);
         break;
     case SDLK_9:
-        ui_shell_open_recorder();
+        tab5_package_mgr_launch("com.tab5.recorder", nullptr);
         break;
     case SDLK_0:
         ui_shell_open_chat();
         break;
     case SDLK_m:
-        ui_shell_open_music();
+        tab5_package_mgr_launch("com.tab5.music", nullptr);
         break;
     case SDLK_d:
-        ui_shell_close_wifi();
-        ui_shell_close_bluetooth();
-        ui_shell_close_terminal();
-        ui_shell_close_fileserver();
-        ui_shell_close_recorder();
         ui_shell_close_chat();
-        ui_shell_close_music();
         break;
     case SDLK_p:
         simact::click(21, 20);

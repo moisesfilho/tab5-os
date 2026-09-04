@@ -15,7 +15,6 @@ void ui_chat_view_apply_layout(ui_chat_view_t *view);
 void ui_chat_view_destroy(ui_chat_view_t *view);
 
 /* Legados */
-void ui_chat_register(void);
 lv_obj_t *ui_chat_create(void);
 void ui_chat_on_open(void);
 void ui_chat_on_close(void);

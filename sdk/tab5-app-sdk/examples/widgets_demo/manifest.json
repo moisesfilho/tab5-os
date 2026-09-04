@@ -1,0 +1,16 @@
+{
+  "id": "com.tab5.widgetsdemo",
+  "name": "Widgets Demo",
+  "version": "1.0.0",
+  "author": "Moisés Filho",
+  "description": "Demonstrador de interface rica desacoplada via Host ABI",
+  "entry": "app.wasm",
+  "icon": {
+    "symbol": "LV_SYMBOL_SETTINGS",
+    "bg_color": "#4CAF50"
+  },
+  "permissions": [
+    "storage.readwrite",
+    "ui.keyboard"
+  ]
+}

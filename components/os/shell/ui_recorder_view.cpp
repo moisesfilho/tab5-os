@@ -1,5 +1,4 @@
 #include "ui_recorder_view.h"
-#include "app_registry.h"
 #include "audio_recorder.h"
 #include "ui_bar.h"
 #include "ui_app_bar.h"
@@ -87,7 +86,6 @@ void format_time_mmss(uint32_t sec, char *buf, size_t buf_len)
 void back_btn_cb(lv_event_t *event)
 {
     (void)event;
-    ui_shell_close_recorder();
 }
 
 void refresh_btn_cb(lv_event_t *event)
@@ -1033,21 +1031,4 @@ void ui_recorder_refresh_theme(void)
 void ui_recorder_apply_layout(void)
 {
     apply_recorder_layout();
-}
-
-void ui_recorder_register(void)
-{
-    static const char *s_recorder_extensions[] = {"wav", "pcm", nullptr};
-    static const app_desc_t s_recorder_desc = {
-        .id = "recorder",
-        .name = "Gravador",
-        .icon_symbol = nullptr,
-        .icon_bg_color = nullptr,
-        .icon_builder = ui_recorder_build_icon,
-        .icon_theme_refresh = ui_recorder_theme_icon,
-        .on_launch = ui_shell_open_recorder,
-        .file_extensions = s_recorder_extensions,
-        .on_open_file = ui_shell_open_recorder_with_file,
-    };
-    app_registry_register(&s_recorder_desc);
 }

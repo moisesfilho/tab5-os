@@ -349,9 +349,13 @@ tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *f
 
 #if HAVE_WAMR
 #ifdef ESP_PLATFORM
+    // Thread host com stack em SRAM interna: bindings nativos que acessam
+    // flash SPI (NVS, spiffs) exigem stack em RAM interna, senão o ESP32-P4
+    // dispara assert esp_task_stack_is_sane_cache_disabled(). Mantida mínima
+    // (16KB) pois a SRAM interna é escassa; bindings e LVGL usam pouca stack.
     esp_pthread_cfg_t pcfg = esp_pthread_get_default_config();
-    pcfg.stack_size = 64 * 1024;
-    pcfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    pcfg.stack_size = 16 * 1024;
+    pcfg.stack_alloc_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
     pcfg.inherit_cfg = false;
     esp_pthread_set_cfg(&pcfg);
 #endif
@@ -359,7 +363,7 @@ tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *f
     pthread_t thread;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, 64 * 1024);
+    pthread_attr_setstacksize(&attr, 16 * 1024);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
     WasmCallInternalArgs args = {

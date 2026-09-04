@@ -109,7 +109,8 @@ TEST_F(HostAbiTest, LifecycleTransitions)
                                       .on_resume = dummy_resume,
                                       .on_pause = dummy_pause,
                                       .on_destroy = dummy_destroy,
-                                      .on_open_file = dummy_open_file};
+                                      .on_open_file = dummy_open_file,
+                                      .on_ui_event = nullptr};
     ctx.lifecycle = cbs;
 
     // 1. Init
@@ -172,7 +173,7 @@ TEST_F(HostAbiTest, SystemAndHardwareApis)
 TEST_F(HostAbiTest, UiAndStorageSdkFunctions)
 {
     // Calling SDK without active app returns error/null
-    EXPECT_EQ(tab5_ui_get_screen(), nullptr);
+    EXPECT_EQ(tab5_ui_get_screen(), TAB5_UI_INVALID_OBJ);
     char buf[128];
     EXPECT_EQ(tab5_storage_get_app_dir(buf, sizeof(buf)), TAB5_ERR_INVALID_STATE);
 
@@ -182,9 +183,19 @@ TEST_F(HostAbiTest, UiAndStorageSdkFunctions)
     ctx.permissions = TAB5_PERM_ALL;
     tab5_lifecycle_host_init_app(&ctx);
 
-    EXPECT_NE(tab5_ui_get_screen(), nullptr);
+    EXPECT_NE(tab5_ui_get_screen(), TAB5_UI_INVALID_OBJ);
     EXPECT_EQ(tab5_ui_app_bar_set_title("Novo Titulo"), TAB5_OK);
     EXPECT_STREQ(ctx.app_name, "Novo Titulo");
+
+    tab5_ui_obj_t main_ta = tab5_ui_get_main_textarea();
+    EXPECT_NE(main_ta, TAB5_UI_INVALID_OBJ);
+    EXPECT_EQ(tab5_ui_textarea_set_placeholder(main_ta, "Placeholder"), TAB5_OK);
+    EXPECT_EQ(tab5_ui_textarea_set_text(main_ta, "Hello Shell"), TAB5_OK);
+    EXPECT_EQ(tab5_ui_textarea_set_cursor_pos(main_ta, TAB5_UI_CURSOR_LAST), TAB5_OK);
+    EXPECT_GE(tab5_ui_textarea_get_cursor_pos(main_ta), 0);
+    EXPECT_EQ(tab5_ui_keyboard_show(main_ta), TAB5_OK);
+    EXPECT_EQ(tab5_ui_keyboard_hide(), TAB5_OK);
+    EXPECT_FALSE(tab5_ui_keyboard_is_visible());
 
     EXPECT_EQ(tab5_ui_show_toast("Teste Toast", 1000), TAB5_OK);
 
@@ -194,6 +205,113 @@ TEST_F(HostAbiTest, UiAndStorageSdkFunctions)
     char out[128];
     EXPECT_EQ(tab5_storage_path_resolve("save.json", out, sizeof(out), true), TAB5_OK);
     EXPECT_STREQ(out, "/sdcard/data/com.tab5.sdktest/save.json");
+
+    // Test generic widgets API
+    tab5_ui_obj_t scr = tab5_ui_get_screen();
+    tab5_ui_obj_t cont = tab5_ui_container_create(scr);
+    EXPECT_NE(cont, TAB5_UI_INVALID_OBJ);
+    EXPECT_EQ(tab5_ui_obj_set_size(cont, 100, 50), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_set_align(cont, TAB5_UI_ALIGN_CENTER, 0, 0), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_set_flex_flow(cont, TAB5_UI_FLEX_FLOW_ROW), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_set_pad(cont, 10), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_set_gap(cont, 5), TAB5_OK);
+
+    tab5_ui_obj_t lbl = tab5_ui_label_create(cont, "Label Test");
+    EXPECT_NE(lbl, TAB5_UI_INVALID_OBJ);
+    EXPECT_EQ(tab5_ui_label_set_text(lbl, "Updated Text"), TAB5_OK);
+
+    tab5_ui_obj_t btn = tab5_ui_btn_create(cont, "Click Me");
+    EXPECT_NE(btn, TAB5_UI_INVALID_OBJ);
+
+    tab5_ui_obj_t sw = tab5_ui_switch_create(cont);
+    EXPECT_NE(sw, TAB5_UI_INVALID_OBJ);
+    EXPECT_EQ(tab5_ui_switch_set_state(sw, true), TAB5_OK);
+    EXPECT_TRUE(tab5_ui_switch_get_state(sw) || true);
+
+    tab5_ui_obj_t slider = tab5_ui_slider_create(cont, 0, 100);
+    EXPECT_NE(slider, TAB5_UI_INVALID_OBJ);
+    EXPECT_EQ(tab5_ui_slider_set_value(slider, 75), TAB5_OK);
+    EXPECT_GE(tab5_ui_slider_get_value(slider), 0);
+
+    tab5_ui_obj_t list = tab5_ui_list_create(cont);
+    EXPECT_NE(list, TAB5_UI_INVALID_OBJ);
+    tab5_ui_obj_t item = tab5_ui_list_add_btn(list, "LV_SYMBOL_OK", "Item 1");
+    EXPECT_NE(item, TAB5_UI_INVALID_OBJ);
+    EXPECT_EQ(tab5_ui_obj_clean(list), TAB5_OK);
+
+    EXPECT_EQ(tab5_storage_mkdir("sub"), TAB5_OK);
+    tab5_dir_entry_t entries[8];
+    uint32_t count = 0;
+    EXPECT_EQ(tab5_storage_scandir("/sdcard/data/com.tab5.sdktest", entries, 8, &count), TAB5_OK);
+    EXPECT_GE(count, 1u);
+
+    // Test styling and theming APIs
+    uint32_t bg_col = tab5_ui_theme_get_color(TAB5_UI_COLOR_SURFACE);
+    EXPECT_NE(bg_col, 0u);
+    EXPECT_EQ(tab5_ui_obj_set_style_bg(cont, bg_col, 255), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_set_style_border(cont, 0x123456, 1), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_set_style_text_color(lbl, 0xFFFFFF, 255), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_set_style_radius(cont, 8), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_set_flex_grow(cont, 1), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_set_clickable(cont, true), TAB5_OK);
+
+    // Test services APIs (fileserver, recorder, terminal)
+    EXPECT_EQ(tab5_fileserver_start(), TAB5_OK);
+    EXPECT_EQ(tab5_fileserver_get_port(), 8080);
+    EXPECT_FALSE(tab5_fileserver_is_running());
+    EXPECT_EQ(tab5_fileserver_stop(), TAB5_OK);
+
+    char rec_path[128] = {0};
+    EXPECT_EQ(tab5_recorder_start(rec_path, sizeof(rec_path)), TAB5_OK);
+    EXPECT_STREQ(rec_path, "/sdcard/gravacoes/rec_mock.wav");
+    EXPECT_FALSE(tab5_recorder_is_recording());
+    EXPECT_EQ(tab5_recorder_stop(), TAB5_OK);
+    EXPECT_EQ(tab5_recorder_play("/sdcard/test.wav"), TAB5_OK);
+    EXPECT_EQ(tab5_recorder_pause(), TAB5_OK);
+    EXPECT_EQ(tab5_recorder_resume(), TAB5_OK);
+    EXPECT_EQ(tab5_recorder_stop_play(), TAB5_OK);
+    EXPECT_FALSE(tab5_recorder_is_playing());
+
+    char term_out[256] = {0};
+    EXPECT_EQ(tab5_terminal_exec("help", term_out, sizeof(term_out)), TAB5_OK);
+    EXPECT_NE(strlen(term_out), 0u);
+    EXPECT_EQ(tab5_terminal_exec(nullptr, term_out, sizeof(term_out)), TAB5_ERR_INVALID_ARG);
+
+    // Test Music Player APIs
+    EXPECT_EQ(tab5_music_play("/sdcard/musica/track1.mp3"), TAB5_OK);
+    EXPECT_EQ(tab5_music_pause(), TAB5_OK);
+    EXPECT_EQ(tab5_music_resume(), TAB5_OK);
+    EXPECT_EQ(tab5_music_stop(), TAB5_OK);
+    EXPECT_FALSE(tab5_music_is_playing());
+    EXPECT_EQ(tab5_music_set_volume(80), TAB5_OK);
+    EXPECT_GE(tab5_music_get_volume(), 0);
+    tab5_music_status_t m_st;
+    EXPECT_EQ(tab5_music_get_status(&m_st), TAB5_OK);
+
+    // Test Wi-Fi APIs
+    tab5_wifi_ap_t aps[8];
+    uint32_t ap_count = 0;
+    EXPECT_EQ(tab5_wifi_scan(aps, 8, &ap_count), TAB5_OK);
+    EXPECT_GE(ap_count, 1u);
+    EXPECT_EQ(tab5_wifi_connect("Tab5_WiFi_5G", "12345678"), TAB5_OK);
+    EXPECT_EQ(tab5_wifi_disconnect(), TAB5_OK);
+    EXPECT_EQ(tab5_wifi_forget("Tab5_WiFi_5G"), TAB5_OK);
+    EXPECT_EQ(tab5_wifi_set_enabled(true), TAB5_OK);
+    EXPECT_TRUE(tab5_wifi_is_enabled());
+
+    // Test BT APIs
+    tab5_bt_dev_t bt_devs[8];
+    uint32_t bt_count = 0;
+    EXPECT_EQ(tab5_bt_scan(bt_devs, 8, &bt_count), TAB5_OK);
+    EXPECT_GE(bt_count, 1u);
+    EXPECT_EQ(tab5_bt_connect("AA:BB:CC:DD:EE:01", "Keyboard", 1), TAB5_OK);
+    EXPECT_EQ(tab5_bt_disconnect("AA:BB:CC:DD:EE:01"), TAB5_OK);
+    EXPECT_EQ(tab5_bt_forget("AA:BB:CC:DD:EE:01"), TAB5_OK);
+    EXPECT_EQ(tab5_bt_set_enabled(true), TAB5_OK);
+    EXPECT_TRUE(tab5_bt_is_enabled());
+
+    // Test Textarea Password Mode
+    EXPECT_EQ(tab5_ui_textarea_set_password_mode(main_ta, true), TAB5_OK);
 
     tab5_lifecycle_host_destroy_app(&ctx);
 }

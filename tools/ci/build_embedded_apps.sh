@@ -16,7 +16,7 @@ compile_app() {
     if [ -f "${app_dir}/src/main.c" ] && [ -x "${WASI_CLANG}" ]; then
         echo "[INFO] Compilando ${app_dir}/src/main.c para ${app_dir}/app.wasm..."
         "${WASI_CLANG}" -O2 -I"${SDK_INC}" \
-            -Wl,--export=main -Wl,--export=app_main -Wl,--allow-undefined \
+            -Wl,--export=main -Wl,--export=app_main -Wl,--export=tab5_app_on_ui_event -Wl,--export=on_ui_event -Wl,--export=tab5_app_on_theme_changed -Wl,--export=on_theme_changed -Wl,--allow-undefined \
             -o "${app_dir}/app.wasm" "${app_dir}/src/main.c"
     elif [ ! -f "${app_dir}/app.wasm" ]; then
         echo "[WARN] Gerando dummy wasm para ${app_dir}..."
@@ -54,6 +54,11 @@ done
 if [ -d "${REPO_ROOT}/sdk/tab5-app-sdk/examples/hello_wasm" ]; then
     compile_app "${REPO_ROOT}/sdk/tab5-app-sdk/examples/hello_wasm"
     python3 "${PACK_TOOL}" "${REPO_ROOT}/sdk/tab5-app-sdk/examples/hello_wasm" -o "${PKG_OUTPUT_DIR}"
+fi
+
+if [ -d "${REPO_ROOT}/sdk/tab5-app-sdk/examples/widgets_demo" ]; then
+    compile_app "${REPO_ROOT}/sdk/tab5-app-sdk/examples/widgets_demo"
+    python3 "${PACK_TOOL}" "${REPO_ROOT}/sdk/tab5-app-sdk/examples/widgets_demo" -o "${PKG_OUTPUT_DIR}"
 fi
 
 # Varre submodulos em embedded_apps/ se existirem (suporte a CI/produção)

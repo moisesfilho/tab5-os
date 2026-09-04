@@ -16,7 +16,6 @@ void ui_music_view_apply_layout(ui_music_view_t *view);
 void ui_music_view_destroy(ui_music_view_t *view);
 
 /* Legados */
-void ui_music_register(void);
 lv_obj_t *ui_music_create(void);
 void ui_music_on_open(void);
 void ui_music_on_close(void);
