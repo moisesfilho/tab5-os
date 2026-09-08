@@ -30,7 +30,19 @@ typedef struct {
     uint8_t *wasm_buf; /**< Buffer em PSRAM contendo o bytecode .wasm */
     size_t wasm_buf_size;
     bool is_running;
+    uint32_t call_depth; /**< Chamadas WAMR ativas nesta instância. */
+    bool unload_pending; /**< Teardown solicitado durante uma chamada. */
+    uint32_t generation; /**< Época; invalida jobs postados antes do unload. */
 } tab5_wasm_app_instance_t;
+
+/**
+ * @brief Seleciona o primeiro entrypoint exportado suportado pela app.
+ *
+ * A consulta usa apenas a tabela de exports do módulo: não cria pthread nem
+ * executa bytecode. A ordem é app_main, depois main; _start nunca é aceito.
+ * O ponteiro retornado aponta para uma string estática do runtime.
+ */
+tab5_err_t tab5_wasm_select_entrypoint(tab5_wasm_app_instance_t *inst, const char **out_func_name);
 
 /**
  * @brief Inicializa o motor WAMR e registra os símbolos da Host ABI.
@@ -54,6 +66,14 @@ tab5_err_t tab5_wasm_load_from_file(const char *wasm_path, uint32_t stack_size, 
  */
 tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *func_name, uint32_t argc,
                                    uint32_t *argv);
+
+/**
+ * @brief Chama uma função Wasm que recebe uma string UTF-8 como argumento.
+ *
+ * A string é copiada para a memória do módulo e liberada antes do retorno,
+ * inclusive quando a chamada falha.
+ */
+tab5_err_t tab5_wasm_call_string_function(tab5_wasm_app_instance_t *inst, const char *func_name, const char *value);
 
 /**
  * @brief Descarrega a aplicação Wasm e libera toda a memória PSRAM associada.

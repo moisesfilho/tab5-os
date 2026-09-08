@@ -16,6 +16,7 @@
 #include "ui_bar.h"
 #include "app_registry.h"
 #include "tab5_package_mgr.h"
+#include "tab5_sdk.h"
 
 /* ------------------------------------------------------------------ */
 /* Injecao de eventos SDL (mesmo caminho do touch real no device)      */

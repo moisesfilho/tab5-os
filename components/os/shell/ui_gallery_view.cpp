@@ -67,6 +67,14 @@ namespace {
 void load_and_display_current_photo(ui_gallery_view_t *view);
 void scan_directory(ui_gallery_view_t *view, const std::string &dir_path);
 
+void gallery_parent_size_changed_cb(lv_event_t *e)
+{
+    ui_gallery_view_t *view = (ui_gallery_view_t *)lv_event_get_user_data(e);
+    if (view != nullptr) {
+        ui_gallery_view_apply_layout(view);
+    }
+}
+
 /* =========================================================================
  * Decodificador Real JPEG / BMP para Renderizacao no Canvas
  * ========================================================================= */
@@ -685,15 +693,7 @@ ui_gallery_view_t *ui_gallery_view_create(lv_obj_t *parent, ui_app_bar_t app_bar
     lv_obj_set_style_pad_top(view->empty_label, 12, 0);
 
     /* Reage a mudanca de rotacao */
-    lv_obj_add_event_cb(
-        parent,
-        [](lv_event_t *e) {
-            ui_gallery_view_t *v = (ui_gallery_view_t *)lv_event_get_user_data(e);
-            if (v != nullptr) {
-                ui_gallery_view_apply_layout(v);
-            }
-        },
-        LV_EVENT_SIZE_CHANGED, view);
+    lv_obj_add_event_cb(parent, gallery_parent_size_changed_cb, LV_EVENT_SIZE_CHANGED, view);
 
     apply_gallery_theme(view);
     ui_gallery_view_apply_layout(view);
@@ -800,10 +800,60 @@ void ui_gallery_view_destroy(ui_gallery_view_t *view)
         return;
     }
     ESP_LOGI(TAG, "fechando app Galeria");
+
+    // O canvas aponta diretamente para gallery_canvas_buf. Remova os objetos
+    // que o usam antes de liberar o buffer; isso também elimina callbacks que
+    // carregam `view` como user data. O owner deve zerar o ponteiro após esta
+    // chamada; a função só é segura enquanto `view` ainda é válido.
     if (view->confirm_modal != nullptr) {
         lv_obj_delete(view->confirm_modal);
         view->confirm_modal = nullptr;
     }
+
+    if (view->image_canvas != nullptr) {
+        lv_obj_invalidate(view->image_canvas);
+        // image_canvas is owned by image_container.  Deleting both the child
+        // and its parent can make LVGL unlink the same child twice; deleting
+        // the owning container below removes the canvas safely.
+        view->image_canvas = nullptr;
+    }
+    if (view->image_container != nullptr) {
+        lv_obj_delete(view->image_container);
+        view->image_container = nullptr;
+    }
+    if (view->prev_btn != nullptr) {
+        lv_obj_delete(view->prev_btn);
+        view->prev_btn = nullptr;
+    }
+    if (view->next_btn != nullptr) {
+        lv_obj_delete(view->next_btn);
+        view->next_btn = nullptr;
+    }
+    if (view->empty_container != nullptr) {
+        lv_obj_delete(view->empty_container);
+        view->empty_container = nullptr;
+    }
+    if (view->trash_btn != nullptr) {
+        lv_obj_delete(view->trash_btn);
+        view->trash_btn = nullptr;
+    }
+    if (view->camera_btn != nullptr) {
+        lv_obj_delete(view->camera_btn);
+        view->camera_btn = nullptr;
+    }
+
+    if (view->parent != nullptr) {
+        lv_obj_remove_event_cb(view->parent, gallery_parent_size_changed_cb);
+    }
+
+    view->trash_label = nullptr;
+    view->camera_label = nullptr;
+    view->prev_label = nullptr;
+    view->next_label = nullptr;
+    view->empty_icon = nullptr;
+    view->empty_label = nullptr;
+    view->parent = nullptr;
+
     if (view->gallery_canvas_buf != nullptr) {
         free(view->gallery_canvas_buf);
         view->gallery_canvas_buf = nullptr;

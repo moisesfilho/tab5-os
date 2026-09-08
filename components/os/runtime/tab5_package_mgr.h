@@ -58,11 +58,15 @@ tab5_err_t tab5_package_mgr_get_app_info(const char *app_id, tab5_installed_app_
  * @brief Lança a execução de uma aplicação desacoplada/isolada Wasm.
  */
 tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_path);
+tab5_err_t tab5_package_mgr_launch_direct(const char *app_id, const char *open_file_path);
 
 /**
  * @brief Fecha a aplicação ativa atualmente em execução.
  */
 tab5_err_t tab5_package_mgr_close_active(void);
+
+/** Processa o fechamento adiado quando a callback da app antiga retornou. */
+void tab5_package_mgr_process_pending_close(void);
 
 /**
  * @brief Lê o manifest.json diretamente de um arquivo de pacote .tab5pkg (TAR).

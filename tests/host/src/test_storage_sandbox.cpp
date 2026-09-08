@@ -2,6 +2,9 @@
 #include "tab5_storage_sandbox.h"
 #include "tab5_host_abi.h"
 #include <cstring>
+#include <cstdio>
+#include <cerrno>
+#include <sys/stat.h>
 
 TEST(StorageSandboxTest, GetAppDir)
 {
@@ -122,4 +125,24 @@ TEST(StorageSandboxTest, NonSdPathsBlocked)
     EXPECT_EQ(
         tab5_storage_sandbox_resolve_path("/etc/passwd", out, sizeof(out), "com.tab5.notas", TAB5_PERM_ALL, false),
         TAB5_ERR_ACCESS_DENIED);
+}
+
+TEST(StorageSandboxTest, ScandirReturnsEntriesBeyondTheUiPage)
+{
+    const char *dir = "/sdcard/scandir_limit_test";
+    ASSERT_TRUE(mkdir(dir, 0755) == 0 || errno == EEXIST);
+
+    for (int i = 0; i < 220; ++i) {
+        char path[128];
+        snprintf(path, sizeof(path), "%s/%s%03d", dir, (i % 2) == 0 ? ".hidden" : "visible", i);
+        FILE *file = fopen(path, "w");
+        ASSERT_NE(file, nullptr);
+        fclose(file);
+    }
+
+    tab5_dir_entry_t entries[512] = {};
+    uint32_t count = 0;
+    EXPECT_EQ(tab5_storage_sandbox_scandir(dir, entries, 512, &count, "com.tab5.files", TAB5_PERM_STORAGE_READ),
+              TAB5_OK);
+    EXPECT_EQ(count, 220u);
 }

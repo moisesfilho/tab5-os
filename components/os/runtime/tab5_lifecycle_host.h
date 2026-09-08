@@ -37,6 +37,9 @@ tab5_err_t tab5_lifecycle_host_open_file(tab5_app_context_t *ctx, const char *fi
  */
 tab5_err_t tab5_lifecycle_host_destroy_app(tab5_app_context_t *ctx);
 
+/** Aborta uma inicialização candidata sem invalidar a aplicação anterior. */
+tab5_err_t tab5_lifecycle_host_abort_app(tab5_app_context_t *ctx);
+
 #ifdef __cplusplus
 }
 #endif

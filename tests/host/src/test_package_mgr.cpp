@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "tab5_package_mgr.h"
+#include "tab5_host_abi.h"
 #include "app_registry.h"
 #include "path_redirect.hpp"
 #include <cstring>
@@ -63,6 +64,10 @@ TEST_F(PackageMgrTest, InstallLaunchAndUninstallApp)
 
     // 4. Execução
     EXPECT_EQ(tab5_package_mgr_launch("com.tab5.sample", nullptr), TAB5_OK);
+    tab5_app_context_t *active = tab5_host_get_active_app();
+    ASSERT_NE(active, nullptr);
+    EXPECT_EQ(tab5_package_mgr_launch("com.tab5.sample", nullptr), TAB5_OK);
+    EXPECT_EQ(tab5_host_get_active_app(), active);
     EXPECT_EQ(tab5_package_mgr_close_active(), TAB5_OK);
 
     // 5. Desinstalação
@@ -97,6 +102,31 @@ TEST_F(PackageMgrTest, ScanInstalledApps)
 
     tab5_package_mgr_uninstall("com.tab5.app1", false);
     tab5_package_mgr_uninstall("com.tab5.app2", false);
+}
+
+TEST_F(PackageMgrTest, MissingWasmLaunchFailsWithoutActivation)
+{
+    const std::string app_dir = hostmock::tmp_root() + "/previous_app";
+    ASSERT_EQ(mkdir(app_dir.c_str(), 0755), 0);
+
+    FILE *manifest = fopen((app_dir + "/manifest.json").c_str(), "w");
+    ASSERT_NE(manifest, nullptr);
+    fputs("{\"id\": \"com.tab5.previous\", \"name\": \"Previous App\","
+          " \"version\": \"1.0.0\", \"entry\": \"missing.wasm\"}",
+          manifest);
+    fclose(manifest);
+
+    char app_id[64] = {};
+    ASSERT_EQ(tab5_package_mgr_install(app_dir.c_str(), app_id, sizeof(app_id)), TAB5_OK);
+    tab5_app_context_t previous = {};
+    previous.state = TAB5_APP_STATE_RESUMED;
+    strcpy(previous.app_id, "com.tab5.native");
+    ASSERT_EQ(tab5_host_set_active_app(&previous), TAB5_OK);
+    EXPECT_EQ(tab5_package_mgr_launch("com.tab5.previous", nullptr), TAB5_ERR_NOT_FOUND);
+    EXPECT_EQ(tab5_host_get_active_app(), &previous);
+    tab5_host_clear_active_app();
+
+    EXPECT_EQ(tab5_package_mgr_uninstall("com.tab5.previous", true), TAB5_OK);
 }
 
 TEST_F(PackageMgrTest, EmbeddedAppPrecedence)

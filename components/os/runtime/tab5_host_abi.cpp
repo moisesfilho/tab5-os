@@ -14,6 +14,7 @@
 #if defined(ESP_PLATFORM) || defined(LV_LVGL_H_INCLUDE_SIMPLE) || defined(LV_CONF_INCLUDE_SIMPLE) ||                   \
     defined(TAB5_SIMULATOR)
 #include "lvgl.h"
+#include "bsp/m5stack_tab5.h"
 #include "ui_app_bar.h"
 #include "ui_font.h"
 #define HAVE_LVGL 1
@@ -21,7 +22,16 @@
 #define HAVE_LVGL 0
 #endif
 
+#if HAVE_LVGL
+#define LV_LOCK() bsp_display_lock(pdMS_TO_TICKS(500))
+#define LV_UNLOCK() bsp_display_unlock()
+#else
+#define LV_LOCK() (void)0
+#define LV_UNLOCK() (void)0
+#endif
+
 #if defined(ESP_PLATFORM)
+#include "esp_log.h"
 #include "http_file_server.h"
 #include "audio_recorder.h"
 #include "terminal_cmd.h"
@@ -29,6 +39,12 @@
 #include "wifi_mgr.h"
 #include "bt_mgr.h"
 #include "esp_wifi.h"
+#include "ai_client.h"
+#include "ai_storage.h"
+#include "file_assoc.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include <vector>
 #endif
 
 static tab5_app_context_t *s_active_app_ctx = nullptr;
@@ -83,7 +99,16 @@ tab5_ui_obj_t tab5_ui_get_screen(void)
     if (s_active_app_ctx == nullptr) {
         return TAB5_UI_INVALID_OBJ;
     }
-    return tab5_ui_host_register_obj(s_active_app_ctx->root_screen);
+#if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_UI_INVALID_OBJ;
+    }
+#endif
+    tab5_ui_obj_t screen = tab5_ui_host_register_obj(s_active_app_ctx->root_screen);
+#if HAVE_LVGL
+    LV_UNLOCK();
+#endif
+    return screen;
 }
 
 tab5_err_t tab5_ui_app_bar_set_title(const char *title)
@@ -93,6 +118,9 @@ tab5_err_t tab5_ui_app_bar_set_title(const char *title)
     }
 
 #if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
+    }
     if (s_active_app_ctx->app_bar != nullptr) {
         lv_obj_t *bar = (lv_obj_t *)s_active_app_ctx->app_bar;
         lv_obj_t *lbl = lv_obj_get_child(bar, 0);
@@ -100,6 +128,7 @@ tab5_err_t tab5_ui_app_bar_set_title(const char *title)
             lv_label_set_text(lbl, title);
         }
     }
+    LV_UNLOCK();
 #endif
     strncpy(s_active_app_ctx->app_name, title, sizeof(s_active_app_ctx->app_name) - 1);
     s_active_app_ctx->app_name[sizeof(s_active_app_ctx->app_name) - 1] = '\0';
@@ -113,6 +142,9 @@ tab5_ui_obj_t tab5_ui_app_bar_add_action_button(const char *symbol_or_text, void
         return TAB5_UI_INVALID_OBJ;
     }
 #if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_UI_INVALID_OBJ;
+    }
     if (s_active_app_ctx->app_bar != nullptr) {
         lv_obj_t *bar = (lv_obj_t *)s_active_app_ctx->app_bar;
         lv_obj_t *actions_cont = lv_obj_get_child(bar, 1);
@@ -204,13 +236,19 @@ tab5_ui_obj_t tab5_ui_app_bar_add_action_button(const char *symbol_or_text, void
                 }
             },
             LV_EVENT_CLICKED, cb_data);
+        if (s_active_app_ctx->is_wasm) {
+            lv_obj_add_event_cb(btn, tab5_ui_host_generic_widget_event_cb, LV_EVENT_ALL, nullptr);
+        }
 
         lv_obj_t *lbl = lv_label_create(btn);
         lv_label_set_text(lbl, sym != nullptr ? sym : "");
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18_latin1, 0);
         lv_obj_center(lbl);
-        return tab5_ui_host_register_obj(btn);
+        tab5_ui_obj_t handle = tab5_ui_host_register_obj(btn);
+        LV_UNLOCK();
+        return handle;
     }
+    LV_UNLOCK();
 #endif
     return 0x3000;
 }
@@ -220,7 +258,21 @@ tab5_ui_obj_t tab5_ui_get_main_textarea(void)
     if (s_active_app_ctx == nullptr) {
         return TAB5_UI_INVALID_OBJ;
     }
-    return tab5_ui_host_register_obj(s_active_app_ctx->content_area);
+#if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_UI_INVALID_OBJ;
+    }
+#endif
+    tab5_ui_obj_t textarea = tab5_ui_host_register_obj(s_active_app_ctx->content_area);
+#if HAVE_LVGL
+    LV_UNLOCK();
+#endif
+    return textarea;
+}
+
+tab5_ui_obj_t tab5_ui_textarea_create(tab5_ui_obj_t parent)
+{
+    return tab5_ui_host_textarea_create(parent);
 }
 
 tab5_err_t tab5_ui_textarea_set_text(tab5_ui_obj_t ta, const char *text)
@@ -275,6 +327,16 @@ bool tab5_ui_keyboard_is_visible(void)
     return tab5_ui_host_keyboard_is_visible();
 }
 
+int32_t tab5_ui_keyboard_get_height(void)
+{
+    return tab5_ui_host_keyboard_get_height();
+}
+
+void tab5_ui_get_display_size(int32_t *out_w, int32_t *out_h)
+{
+    tab5_ui_host_get_display_size(out_w, out_h);
+}
+
 tab5_err_t tab5_ui_show_toast(const char *message, uint32_t duration_ms)
 {
     return tab5_ui_host_show_toast(message, duration_ms);
@@ -292,6 +354,21 @@ tab5_ui_obj_t tab5_ui_container_create(tab5_ui_obj_t parent)
 tab5_err_t tab5_ui_obj_set_size(tab5_ui_obj_t obj, int32_t w, int32_t h)
 {
     return tab5_ui_host_obj_set_size(obj, w, h);
+}
+
+tab5_err_t tab5_ui_obj_set_scrollable(tab5_ui_obj_t obj, bool scrollable)
+{
+    return tab5_ui_host_obj_set_scrollable(obj, scrollable);
+}
+
+tab5_err_t tab5_ui_obj_scroll_to_bottom(tab5_ui_obj_t obj, bool animated)
+{
+    return tab5_ui_host_obj_scroll_to_bottom(obj, animated);
+}
+
+tab5_err_t tab5_ui_obj_scroll_to_top(tab5_ui_obj_t obj, bool animated)
+{
+    return tab5_ui_host_obj_scroll_to_top(obj, animated);
 }
 
 tab5_err_t tab5_ui_obj_set_align(tab5_ui_obj_t obj, tab5_ui_align_t align, int32_t x_ofs, int32_t y_ofs)
@@ -322,6 +399,11 @@ tab5_ui_obj_t tab5_ui_label_create(tab5_ui_obj_t parent, const char *text)
 tab5_err_t tab5_ui_label_set_text(tab5_ui_obj_t obj, const char *text)
 {
     return tab5_ui_host_label_set_text(obj, text);
+}
+
+tab5_err_t tab5_ui_label_set_wrap(tab5_ui_obj_t obj, bool wrap)
+{
+    return tab5_ui_host_label_set_wrap(obj, wrap);
 }
 
 tab5_ui_obj_t tab5_ui_btn_create(tab5_ui_obj_t parent, const char *label_or_symbol)
@@ -374,6 +456,11 @@ tab5_err_t tab5_ui_obj_clean(tab5_ui_obj_t obj)
     return tab5_ui_host_obj_clean(obj);
 }
 
+tab5_err_t tab5_ui_obj_clean_deferred(tab5_ui_obj_t obj)
+{
+    return tab5_ui_host_obj_clean_deferred(obj);
+}
+
 tab5_err_t tab5_ui_clear_content(void)
 {
     return tab5_ui_host_clear_app_content(s_active_app_ctx);
@@ -397,6 +484,11 @@ tab5_err_t tab5_ui_obj_set_style_border(tab5_ui_obj_t obj, uint32_t border_hex, 
 tab5_err_t tab5_ui_obj_set_style_text_color(tab5_ui_obj_t obj, uint32_t color_hex, uint8_t opa)
 {
     return tab5_ui_host_obj_set_style_text_color(obj, color_hex, opa);
+}
+
+tab5_err_t tab5_ui_obj_set_style_text_size(tab5_ui_obj_t obj, int32_t size_px)
+{
+    return tab5_ui_host_obj_set_style_text_size(obj, size_px);
 }
 
 tab5_err_t tab5_ui_obj_set_style_radius(tab5_ui_obj_t obj, int32_t radius)
@@ -880,6 +972,233 @@ bool tab5_bt_is_enabled(void)
     return true;
 }
 
+/* ========================================================================= */
+/* Cliente AI                                                                */
+/* ========================================================================= */
+
+static char s_ai_response_buf[4096] = {0};
+static char s_ai_error_buf[256] = {0};
+static volatile int s_ai_state = 0;
+
+#if defined(ESP_PLATFORM)
+static std::vector<ai_msg_t> s_ai_history;
+
+static void on_ai_response_cb(const char *response_text, void *user_data)
+{
+    (void)user_data;
+    if (response_text != nullptr) {
+        strncpy(s_ai_response_buf, response_text, sizeof(s_ai_response_buf) - 1);
+        s_ai_response_buf[sizeof(s_ai_response_buf) - 1] = '\0';
+    }
+    if (!s_ai_history.empty()) {
+        s_ai_history.push_back({"assistant", response_text ? response_text : ""});
+    }
+    s_ai_state = 2;
+}
+
+static void on_ai_state_cb(ai_state_t state, const char *status_msg, void *user_data)
+{
+    (void)user_data;
+    (void)status_msg;
+    if (state == AI_STATE_CONNECTING || state == AI_STATE_SENDING || state == AI_STATE_RECEIVING) {
+        s_ai_state = 1;
+    } else if (state == AI_STATE_ERROR) {
+        s_ai_state = 3;
+        if (status_msg != nullptr) {
+            strncpy(s_ai_error_buf, status_msg, sizeof(s_ai_error_buf) - 1);
+            s_ai_error_buf[sizeof(s_ai_error_buf) - 1] = '\0';
+        }
+    } else if (state == AI_STATE_CANCELLED) {
+        s_ai_state = 4;
+    }
+}
+#endif
+
+tab5_err_t tab5_ai_send(const char *prompt)
+{
+#if defined(ESP_PLATFORM)
+    if (prompt == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+    if (ai_client_is_busy()) {
+        return TAB5_ERR_INVALID_STATE;
+    }
+
+    ai_cfg_t cfg;
+    ai_storage_load(&cfg);
+
+    s_ai_response_buf[0] = '\0';
+    s_ai_error_buf[0] = '\0';
+    s_ai_state = 1;
+
+    std::string trimmed = prompt;
+    while (!trimmed.empty() && (trimmed.back() == '\n' || trimmed.back() == '\r' || trimmed.back() == ' ')) {
+        trimmed.pop_back();
+    }
+    while (!trimmed.empty() && (trimmed.front() == '\n' || trimmed.front() == '\r' || trimmed.front() == ' ')) {
+        trimmed.erase(trimmed.begin());
+    }
+
+    if (trimmed.empty()) {
+        s_ai_state = 0;
+        return TAB5_ERR_INVALID_ARG;
+    }
+
+    s_ai_history.push_back({"user", trimmed});
+
+    esp_err_t err = ai_client_send(&cfg, s_ai_history, on_ai_response_cb, on_ai_state_cb, nullptr);
+    if (err != ESP_OK) {
+        s_ai_state = 3;
+        strncpy(s_ai_error_buf, "Falha ao iniciar comunicacao", sizeof(s_ai_error_buf) - 1);
+        return TAB5_ERR_FAIL;
+    }
+    return TAB5_OK;
+#else
+    (void)prompt;
+    return TAB5_OK;
+#endif
+}
+
+tab5_err_t tab5_ai_cancel(void)
+{
+#if defined(ESP_PLATFORM)
+    ai_client_cancel();
+    s_ai_state = 4;
+    return TAB5_OK;
+#else
+    return TAB5_OK;
+#endif
+}
+
+bool tab5_ai_is_busy(void)
+{
+#if defined(ESP_PLATFORM)
+    return ai_client_is_busy();
+#else
+    return false;
+#endif
+}
+
+tab5_err_t tab5_ai_config_load(tab5_ai_config_t *out_cfg)
+{
+    if (out_cfg == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+#if defined(ESP_PLATFORM)
+    ai_cfg_t internal;
+    ai_storage_load(&internal);
+    memset(out_cfg, 0, sizeof(*out_cfg));
+    strncpy(out_cfg->base_url, internal.base_url, sizeof(out_cfg->base_url) - 1);
+    strncpy(out_cfg->token, internal.token, sizeof(out_cfg->token) - 1);
+    strncpy(out_cfg->model, internal.model, sizeof(out_cfg->model) - 1);
+    out_cfg->max_tokens = internal.max_tokens;
+    return TAB5_OK;
+#else
+    memset(out_cfg, 0, sizeof(*out_cfg));
+    return TAB5_OK;
+#endif
+}
+
+tab5_err_t tab5_ai_config_save(const tab5_ai_config_t *cfg)
+{
+    if (cfg == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+#if defined(ESP_PLATFORM)
+    ai_cfg_t internal;
+    ai_storage_get_default(&internal);
+    strncpy(internal.base_url, cfg->base_url, sizeof(internal.base_url) - 1);
+    strncpy(internal.token, cfg->token, sizeof(internal.token) - 1);
+    strncpy(internal.model, cfg->model, sizeof(internal.model) - 1);
+    internal.max_tokens = cfg->max_tokens;
+    return ai_storage_save(&internal) == ESP_OK ? TAB5_OK : TAB5_ERR_FAIL;
+#else
+    (void)cfg;
+    return TAB5_OK;
+#endif
+}
+
+int32_t tab5_ai_get_state(void)
+{
+    return (int32_t)s_ai_state;
+}
+
+const char *tab5_ai_get_response(void)
+{
+    return s_ai_response_buf[0] != '\0' ? s_ai_response_buf : nullptr;
+}
+
+const char *tab5_ai_get_error(void)
+{
+    return s_ai_error_buf[0] != '\0' ? s_ai_error_buf : nullptr;
+}
+
+void tab5_ai_consume_response(void)
+{
+    s_ai_response_buf[0] = '\0';
+    s_ai_error_buf[0] = '\0';
+    s_ai_state = 0;
+}
+
+/* ========================================================================= */
+/* Associacao de Arquivos                                                    */
+/* ========================================================================= */
+
+tab5_err_t tab5_file_assoc_open(const char *path)
+{
+    if (path == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+#if defined(ESP_PLATFORM)
+    file_assoc_open(path);
+    return TAB5_OK;
+#else
+    return TAB5_OK;
+#endif
+}
+
+/* ========================================================================= */
+/* NVS Generico                                                              */
+/* ========================================================================= */
+
+tab5_err_t tab5_nvs_get_u8(const char *ns, const char *key, uint8_t *out_val)
+{
+    if (ns == nullptr || key == nullptr || out_val == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+#if defined(ESP_PLATFORM)
+    nvs_handle_t nvs;
+    if (nvs_open(ns, NVS_READONLY, &nvs) != ESP_OK) {
+        return TAB5_ERR_NOT_FOUND;
+    }
+    esp_err_t err = nvs_get_u8(nvs, key, out_val);
+    nvs_close(nvs);
+    return err == ESP_OK ? TAB5_OK : TAB5_ERR_NOT_FOUND;
+#else
+    *out_val = 0;
+    return TAB5_ERR_NOT_FOUND;
+#endif
+}
+
+tab5_err_t tab5_nvs_set_u8(const char *ns, const char *key, uint8_t val)
+{
+    if (ns == nullptr || key == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+#if defined(ESP_PLATFORM)
+    nvs_handle_t nvs;
+    if (nvs_open(ns, NVS_READWRITE, &nvs) != ESP_OK) {
+        return TAB5_ERR_FAIL;
+    }
+    nvs_set_u8(nvs, key, val);
+    nvs_commit(nvs);
+    nvs_close(nvs);
+    return TAB5_OK;
+#else
+    return TAB5_OK;
+#endif
+}
+
 } // extern "C"
 
 /* ========================================================================= */
@@ -928,7 +1247,18 @@ static tab5_err_t wasm_tab5_sound_play_beep(wasm_exec_env_t exec_env, uint32_t f
 
 static tab5_err_t wasm_tab5_storage_get_app_dir(wasm_exec_env_t exec_env, char *out_buf, size_t buf_size)
 {
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr && out_buf != nullptr) {
+        char *native_buf = (char *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_buf);
+        if (native_buf != nullptr) {
+            return tab5_storage_get_app_dir(native_buf, buf_size);
+        }
+        return TAB5_ERR_INVALID_ARG;
+    }
+#else
     (void)exec_env;
+#endif
     return tab5_storage_get_app_dir(out_buf, buf_size);
 }
 
@@ -941,7 +1271,18 @@ static tab5_err_t wasm_tab5_storage_mkdir(wasm_exec_env_t exec_env, const char *
 static tab5_err_t wasm_tab5_storage_path_resolve(wasm_exec_env_t exec_env, const char *in_path, char *out_path,
                                                  size_t out_size, bool write_access)
 {
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr && out_path != nullptr) {
+        char *native_out = (char *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_path);
+        if (native_out != nullptr) {
+            return tab5_storage_path_resolve(in_path, native_out, out_size, write_access);
+        }
+        return TAB5_ERR_INVALID_ARG;
+    }
+#else
     (void)exec_env;
+#endif
     return tab5_storage_path_resolve(in_path, out_path, out_size, write_access);
 }
 
@@ -960,25 +1301,74 @@ static tab5_err_t wasm_tab5_storage_scandir(wasm_exec_env_t exec_env, const char
 
 static tab5_err_t wasm_tab5_system_get_battery(wasm_exec_env_t exec_env, tab5_battery_info_t *out_info)
 {
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr && out_info != nullptr) {
+        tab5_battery_info_t *native_info =
+            (tab5_battery_info_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_info);
+        if (native_info != nullptr) {
+            return tab5_system_get_battery(native_info);
+        }
+        return TAB5_ERR_INVALID_ARG;
+    }
+#else
     (void)exec_env;
+#endif
     return tab5_system_get_battery(out_info);
 }
 
 static tab5_err_t wasm_tab5_system_get_bt_status(wasm_exec_env_t exec_env, tab5_bt_info_t *out_info)
 {
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr && out_info != nullptr) {
+        tab5_bt_info_t *native_info =
+            (tab5_bt_info_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_info);
+        if (native_info != nullptr) {
+            return tab5_system_get_bt_status(native_info);
+        }
+        return TAB5_ERR_INVALID_ARG;
+    }
+#else
     (void)exec_env;
+#endif
     return tab5_system_get_bt_status(out_info);
 }
 
 static tab5_err_t wasm_tab5_system_get_time(wasm_exec_env_t exec_env, int64_t *out_epoch, struct tm *out_time)
 {
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr) {
+        int64_t *native_epoch =
+            out_epoch ? (int64_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_epoch)
+                      : nullptr;
+        struct tm *native_time =
+            out_time ? (struct tm *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_time)
+                     : nullptr;
+        return tab5_system_get_time(native_epoch, native_time);
+    }
+#else
     (void)exec_env;
+#endif
     return tab5_system_get_time(out_epoch, out_time);
 }
 
 static tab5_err_t wasm_tab5_system_get_wifi_status(wasm_exec_env_t exec_env, tab5_wifi_info_t *out_info)
 {
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr && out_info != nullptr) {
+        tab5_wifi_info_t *native_info =
+            (tab5_wifi_info_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_info);
+        if (native_info != nullptr) {
+            return tab5_system_get_wifi_status(native_info);
+        }
+        return TAB5_ERR_INVALID_ARG;
+    }
+#else
     (void)exec_env;
+#endif
     return tab5_system_get_wifi_status(out_info);
 }
 
@@ -1023,6 +1413,36 @@ static bool wasm_tab5_ui_keyboard_is_visible(wasm_exec_env_t exec_env)
 {
     (void)exec_env;
     return tab5_ui_keyboard_is_visible();
+}
+
+static int32_t wasm_tab5_ui_keyboard_get_height(wasm_exec_env_t exec_env)
+{
+    (void)exec_env;
+    return tab5_ui_keyboard_get_height();
+}
+
+static void wasm_tab5_ui_get_display_size(wasm_exec_env_t exec_env, int32_t *out_w, int32_t *out_h)
+{
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr) {
+        int32_t *native_w =
+            out_w ? (int32_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_w) : nullptr;
+        int32_t *native_h =
+            out_h ? (int32_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_h) : nullptr;
+        tab5_ui_get_display_size(native_w, native_h);
+        return;
+    }
+#else
+    (void)exec_env;
+#endif
+    tab5_ui_get_display_size(out_w, out_h);
+}
+
+static tab5_ui_obj_t wasm_tab5_ui_textarea_create(wasm_exec_env_t exec_env, tab5_ui_obj_t parent)
+{
+    (void)exec_env;
+    return tab5_ui_textarea_create(parent);
 }
 
 static tab5_err_t wasm_tab5_ui_keyboard_show(wasm_exec_env_t exec_env, tab5_ui_obj_t target_textarea)
@@ -1108,6 +1528,24 @@ static tab5_err_t wasm_tab5_ui_obj_set_size(wasm_exec_env_t exec_env, tab5_ui_ob
     return tab5_ui_obj_set_size(obj, w, h);
 }
 
+static tab5_err_t wasm_tab5_ui_obj_set_scrollable(wasm_exec_env_t exec_env, tab5_ui_obj_t obj, bool scrollable)
+{
+    (void)exec_env;
+    return tab5_ui_obj_set_scrollable(obj, scrollable);
+}
+
+static tab5_err_t wasm_tab5_ui_obj_scroll_to_bottom(wasm_exec_env_t exec_env, tab5_ui_obj_t obj, bool animated)
+{
+    (void)exec_env;
+    return tab5_ui_obj_scroll_to_bottom(obj, animated);
+}
+
+static tab5_err_t wasm_tab5_ui_obj_scroll_to_top(wasm_exec_env_t exec_env, tab5_ui_obj_t obj, bool animated)
+{
+    (void)exec_env;
+    return tab5_ui_obj_scroll_to_top(obj, animated);
+}
+
 static tab5_err_t wasm_tab5_ui_obj_set_align(wasm_exec_env_t exec_env, tab5_ui_obj_t obj, uint32_t align, int32_t x_ofs,
                                              int32_t y_ofs)
 {
@@ -1143,6 +1581,12 @@ static tab5_err_t wasm_tab5_ui_label_set_text(wasm_exec_env_t exec_env, tab5_ui_
 {
     (void)exec_env;
     return tab5_ui_label_set_text(obj, text);
+}
+
+static tab5_err_t wasm_tab5_ui_label_set_wrap(wasm_exec_env_t exec_env, tab5_ui_obj_t obj, bool wrap)
+{
+    (void)exec_env;
+    return tab5_ui_label_set_wrap(obj, wrap);
 }
 
 static tab5_ui_obj_t wasm_tab5_ui_btn_create(wasm_exec_env_t exec_env, tab5_ui_obj_t parent,
@@ -1208,6 +1652,12 @@ static tab5_err_t wasm_tab5_ui_obj_clean(wasm_exec_env_t exec_env, tab5_ui_obj_t
     return tab5_ui_obj_clean(obj);
 }
 
+static tab5_err_t wasm_tab5_ui_obj_clean_deferred(wasm_exec_env_t exec_env, tab5_ui_obj_t obj)
+{
+    (void)exec_env;
+    return tab5_ui_obj_clean_deferred(obj);
+}
+
 static tab5_err_t wasm_tab5_ui_clear_content(wasm_exec_env_t exec_env)
 {
     (void)exec_env;
@@ -1239,6 +1689,12 @@ static tab5_err_t wasm_tab5_ui_obj_set_style_text_color(wasm_exec_env_t exec_env
 {
     (void)exec_env;
     return tab5_ui_obj_set_style_text_color(obj, color_hex, (uint8_t)opa);
+}
+
+static tab5_err_t wasm_tab5_ui_obj_set_style_text_size(wasm_exec_env_t exec_env, tab5_ui_obj_t obj, int32_t size_px)
+{
+    (void)exec_env;
+    return tab5_ui_obj_set_style_text_size(obj, size_px);
 }
 
 static tab5_err_t wasm_tab5_ui_obj_set_style_radius(wasm_exec_env_t exec_env, tab5_ui_obj_t obj, int32_t radius)
@@ -1403,7 +1859,19 @@ static int32_t wasm_tab5_music_get_volume(wasm_exec_env_t exec_env)
 
 static tab5_err_t wasm_tab5_music_get_status(wasm_exec_env_t exec_env, tab5_music_status_t *out_status)
 {
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr && out_status != nullptr) {
+        tab5_music_status_t *native_status =
+            (tab5_music_status_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_status);
+        if (native_status != nullptr) {
+            return tab5_music_get_status(native_status);
+        }
+        return TAB5_ERR_INVALID_ARG;
+    }
+#else
     (void)exec_env;
+#endif
     return tab5_music_get_status(out_status);
 }
 
@@ -1414,7 +1882,20 @@ static tab5_err_t wasm_tab5_music_get_status(wasm_exec_env_t exec_env, tab5_musi
 static tab5_err_t wasm_tab5_wifi_scan(wasm_exec_env_t exec_env, tab5_wifi_ap_t *out_aps, uint32_t max_aps,
                                       uint32_t *out_count)
 {
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr) {
+        tab5_wifi_ap_t *native_aps =
+            out_aps ? (tab5_wifi_ap_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_aps)
+                    : nullptr;
+        uint32_t *native_count =
+            out_count ? (uint32_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_count)
+                      : nullptr;
+        return tab5_wifi_scan(native_aps, max_aps, native_count);
+    }
+#else
     (void)exec_env;
+#endif
     return tab5_wifi_scan(out_aps, max_aps, out_count);
 }
 
@@ -1455,7 +1936,20 @@ static bool wasm_tab5_wifi_is_enabled(wasm_exec_env_t exec_env)
 static tab5_err_t wasm_tab5_bt_scan(wasm_exec_env_t exec_env, tab5_bt_dev_t *out_devs, uint32_t max_devs,
                                     uint32_t *out_count)
 {
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr) {
+        tab5_bt_dev_t *native_devs =
+            out_devs ? (tab5_bt_dev_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_devs)
+                     : nullptr;
+        uint32_t *native_count =
+            out_count ? (uint32_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_count)
+                      : nullptr;
+        return tab5_bt_scan(native_devs, max_devs, native_count);
+    }
+#else
     (void)exec_env;
+#endif
     return tab5_bt_scan(out_devs, max_devs, out_count);
 }
 
@@ -1489,6 +1983,159 @@ static bool wasm_tab5_bt_is_enabled(wasm_exec_env_t exec_env)
     return tab5_bt_is_enabled();
 }
 
+/* ========================================================================= */
+/* AI Client Wrappers                                                        */
+/* ========================================================================= */
+
+static tab5_err_t wasm_tab5_ai_send(wasm_exec_env_t exec_env, const char *prompt)
+{
+    (void)exec_env;
+    return tab5_ai_send(prompt);
+}
+
+static tab5_err_t wasm_tab5_ai_cancel(wasm_exec_env_t exec_env)
+{
+    (void)exec_env;
+    return tab5_ai_cancel();
+}
+
+static bool wasm_tab5_ai_is_busy(wasm_exec_env_t exec_env)
+{
+    (void)exec_env;
+    return tab5_ai_is_busy();
+}
+
+static tab5_err_t wasm_tab5_ai_config_load(wasm_exec_env_t exec_env, tab5_ai_config_t *out_cfg)
+{
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr && out_cfg != nullptr) {
+        tab5_ai_config_t *native_cfg =
+            (tab5_ai_config_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_cfg);
+        if (native_cfg != nullptr) {
+            return tab5_ai_config_load(native_cfg);
+        }
+        return TAB5_ERR_INVALID_ARG;
+    }
+#else
+    (void)exec_env;
+#endif
+    return tab5_ai_config_load(out_cfg);
+}
+
+static tab5_err_t wasm_tab5_ai_config_save(wasm_exec_env_t exec_env, const tab5_ai_config_t *cfg)
+{
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr && cfg != nullptr) {
+        const tab5_ai_config_t *native_cfg =
+            (const tab5_ai_config_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)cfg);
+        if (native_cfg != nullptr) {
+            return tab5_ai_config_save(native_cfg);
+        }
+        return TAB5_ERR_INVALID_ARG;
+    }
+#else
+    (void)exec_env;
+#endif
+    return tab5_ai_config_save(cfg);
+}
+
+static int32_t wasm_tab5_ai_get_state(wasm_exec_env_t exec_env)
+{
+    (void)exec_env;
+    return tab5_ai_get_state();
+}
+
+static uint32_t wasm_tab5_ai_get_response(wasm_exec_env_t exec_env)
+{
+    const char *text = tab5_ai_get_response();
+    if (text == nullptr) {
+        return 0;
+    }
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst == nullptr) {
+        return 0;
+    }
+    size_t len = strlen(text) + 1;
+    uint32_t offset = wasm_runtime_module_malloc(module_inst, len, nullptr);
+    if (offset != 0) {
+        char *dest = (char *)wasm_runtime_addr_app_to_native(module_inst, offset);
+        if (dest != nullptr) {
+            memcpy(dest, text, len);
+        }
+    }
+    return offset;
+#else
+    (void)exec_env;
+    // cppcheck-suppress CastAddressToIntegerAtReturn -- simulator fallback ABI
+    return (uint32_t)(uintptr_t)text;
+#endif
+}
+
+static uint32_t wasm_tab5_ai_get_error(wasm_exec_env_t exec_env)
+{
+    const char *text = tab5_ai_get_error();
+    if (text == nullptr) {
+        return 0;
+    }
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst == nullptr) {
+        return 0;
+    }
+    size_t len = strlen(text) + 1;
+    uint32_t offset = wasm_runtime_module_malloc(module_inst, len, nullptr);
+    if (offset != 0) {
+        char *dest = (char *)wasm_runtime_addr_app_to_native(module_inst, offset);
+        if (dest != nullptr) {
+            memcpy(dest, text, len);
+        }
+    }
+    return offset;
+#else
+    (void)exec_env;
+    // cppcheck-suppress CastAddressToIntegerAtReturn -- simulator fallback ABI
+    return (uint32_t)(uintptr_t)text;
+#endif
+}
+
+static void wasm_tab5_ai_consume_response(wasm_exec_env_t exec_env)
+{
+    (void)exec_env;
+    tab5_ai_consume_response();
+}
+
+static tab5_err_t wasm_tab5_file_assoc_open(wasm_exec_env_t exec_env, const char *path)
+{
+    (void)exec_env;
+    return tab5_file_assoc_open(path);
+}
+
+static tab5_err_t wasm_tab5_nvs_get_u8(wasm_exec_env_t exec_env, const char *ns, const char *key, uint8_t *out_val)
+{
+#if HAVE_WAMR_ENV
+    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    if (module_inst != nullptr && out_val != nullptr) {
+        uint8_t *native_val = (uint8_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_val);
+        if (native_val != nullptr) {
+            return tab5_nvs_get_u8(ns, key, native_val);
+        }
+        return TAB5_ERR_INVALID_ARG;
+    }
+#else
+    (void)exec_env;
+#endif
+    return tab5_nvs_get_u8(ns, key, out_val);
+}
+
+static tab5_err_t wasm_tab5_nvs_set_u8(wasm_exec_env_t exec_env, const char *ns, const char *key, uint8_t val)
+{
+    (void)exec_env;
+    return tab5_nvs_set_u8(ns, key, val);
+}
+
 } // namespace
 
 /* ========================================================================= */
@@ -1515,7 +2162,10 @@ static tab5_native_symbol_t s_native_symbols[] = {
     {"tab5_ui_keyboard_hide", (void *)wasm_tab5_ui_keyboard_hide, "()i", nullptr},
     {"tab5_ui_keyboard_is_visible", (void *)wasm_tab5_ui_keyboard_is_visible, "()i", nullptr},
     {"tab5_ui_keyboard_show", (void *)wasm_tab5_ui_keyboard_show, "(i)i", nullptr},
+    {"tab5_ui_keyboard_get_height", (void *)wasm_tab5_ui_keyboard_get_height, "()i", nullptr},
+    {"tab5_ui_get_display_size", (void *)wasm_tab5_ui_get_display_size, "(**)", nullptr},
     {"tab5_ui_show_toast", (void *)wasm_tab5_ui_show_toast, "($i)i", nullptr},
+    {"tab5_ui_textarea_create", (void *)wasm_tab5_ui_textarea_create, "(i)i", nullptr},
     {"tab5_ui_textarea_get_text", (void *)wasm_tab5_ui_textarea_get_text, "(i)i", nullptr},
     {"tab5_ui_textarea_set_placeholder", (void *)wasm_tab5_ui_textarea_set_placeholder, "(i$)i", nullptr},
     {"tab5_ui_textarea_set_text", (void *)wasm_tab5_ui_textarea_set_text, "(i$)i", nullptr},
@@ -1524,12 +2174,16 @@ static tab5_native_symbol_t s_native_symbols[] = {
     {"tab5_ui_textarea_set_password_mode", (void *)wasm_tab5_ui_textarea_set_password_mode, "(ii)i", nullptr},
     {"tab5_ui_container_create", (void *)wasm_tab5_ui_container_create, "(i)i", nullptr},
     {"tab5_ui_obj_set_size", (void *)wasm_tab5_ui_obj_set_size, "(iii)i", nullptr},
+    {"tab5_ui_obj_set_scrollable", (void *)wasm_tab5_ui_obj_set_scrollable, "(ii)i", nullptr},
+    {"tab5_ui_obj_scroll_to_bottom", (void *)wasm_tab5_ui_obj_scroll_to_bottom, "(ii)i", nullptr},
+    {"tab5_ui_obj_scroll_to_top", (void *)wasm_tab5_ui_obj_scroll_to_top, "(ii)i", nullptr},
     {"tab5_ui_obj_set_align", (void *)wasm_tab5_ui_obj_set_align, "(iiii)i", nullptr},
     {"tab5_ui_obj_set_flex_flow", (void *)wasm_tab5_ui_obj_set_flex_flow, "(ii)i", nullptr},
     {"tab5_ui_obj_set_pad", (void *)wasm_tab5_ui_obj_set_pad, "(ii)i", nullptr},
     {"tab5_ui_obj_set_gap", (void *)wasm_tab5_ui_obj_set_gap, "(ii)i", nullptr},
     {"tab5_ui_label_create", (void *)wasm_tab5_ui_label_create, "(i$)i", nullptr},
     {"tab5_ui_label_set_text", (void *)wasm_tab5_ui_label_set_text, "(i$)i", nullptr},
+    {"tab5_ui_label_set_wrap", (void *)wasm_tab5_ui_label_set_wrap, "(ii)i", nullptr},
     {"tab5_ui_btn_create", (void *)wasm_tab5_ui_btn_create, "(i$)i", nullptr},
     {"tab5_ui_switch_create", (void *)wasm_tab5_ui_switch_create, "(i)i", nullptr},
     {"tab5_ui_switch_set_state", (void *)wasm_tab5_ui_switch_set_state, "(ii)i", nullptr},
@@ -1540,11 +2194,13 @@ static tab5_native_symbol_t s_native_symbols[] = {
     {"tab5_ui_list_create", (void *)wasm_tab5_ui_list_create, "(i)i", nullptr},
     {"tab5_ui_list_add_btn", (void *)wasm_tab5_ui_list_add_btn, "(i$$)i", nullptr},
     {"tab5_ui_obj_clean", (void *)wasm_tab5_ui_obj_clean, "(i)i", nullptr},
+    {"tab5_ui_obj_clean_deferred", (void *)wasm_tab5_ui_obj_clean_deferred, "(i)i", nullptr},
     {"tab5_ui_clear_content", (void *)wasm_tab5_ui_clear_content, "()i", nullptr},
     {"tab5_ui_theme_get_color", (void *)wasm_tab5_ui_theme_get_color, "(i)i", nullptr},
     {"tab5_ui_obj_set_style_bg", (void *)wasm_tab5_ui_obj_set_style_bg, "(iii)i", nullptr},
     {"tab5_ui_obj_set_style_border", (void *)wasm_tab5_ui_obj_set_style_border, "(iii)i", nullptr},
     {"tab5_ui_obj_set_style_text_color", (void *)wasm_tab5_ui_obj_set_style_text_color, "(iii)i", nullptr},
+    {"tab5_ui_obj_set_style_text_size", (void *)wasm_tab5_ui_obj_set_style_text_size, "(ii)i", nullptr},
     {"tab5_ui_obj_set_style_radius", (void *)wasm_tab5_ui_obj_set_style_radius, "(ii)i", nullptr},
     {"tab5_ui_obj_set_flex_grow", (void *)wasm_tab5_ui_obj_set_flex_grow, "(ii)i", nullptr},
     {"tab5_ui_obj_set_clickable", (void *)wasm_tab5_ui_obj_set_clickable, "(ii)i", nullptr},
@@ -1580,7 +2236,19 @@ static tab5_native_symbol_t s_native_symbols[] = {
     {"tab5_bt_disconnect", (void *)wasm_tab5_bt_disconnect, "($)i", nullptr},
     {"tab5_bt_forget", (void *)wasm_tab5_bt_forget, "($)i", nullptr},
     {"tab5_bt_set_enabled", (void *)wasm_tab5_bt_set_enabled, "(i)i", nullptr},
-    {"tab5_bt_is_enabled", (void *)wasm_tab5_bt_is_enabled, "()i", nullptr}};
+    {"tab5_bt_is_enabled", (void *)wasm_tab5_bt_is_enabled, "()i", nullptr},
+    {"tab5_ai_send", (void *)wasm_tab5_ai_send, "($)i", nullptr},
+    {"tab5_ai_cancel", (void *)wasm_tab5_ai_cancel, "()i", nullptr},
+    {"tab5_ai_is_busy", (void *)wasm_tab5_ai_is_busy, "()i", nullptr},
+    {"tab5_ai_config_load", (void *)wasm_tab5_ai_config_load, "(*)i", nullptr},
+    {"tab5_ai_config_save", (void *)wasm_tab5_ai_config_save, "(*)i", nullptr},
+    {"tab5_ai_get_state", (void *)wasm_tab5_ai_get_state, "()i", nullptr},
+    {"tab5_ai_get_response", (void *)wasm_tab5_ai_get_response, "()i", nullptr},
+    {"tab5_ai_get_error", (void *)wasm_tab5_ai_get_error, "()i", nullptr},
+    {"tab5_ai_consume_response", (void *)wasm_tab5_ai_consume_response, "()", nullptr},
+    {"tab5_file_assoc_open", (void *)wasm_tab5_file_assoc_open, "($)i", nullptr},
+    {"tab5_nvs_get_u8", (void *)wasm_tab5_nvs_get_u8, "($$*)i", nullptr},
+    {"tab5_nvs_set_u8", (void *)wasm_tab5_nvs_set_u8, "($$i)i", nullptr}};
 
 const tab5_native_symbol_t *tab5_host_abi_get_symbols(uint32_t *out_count)
 {

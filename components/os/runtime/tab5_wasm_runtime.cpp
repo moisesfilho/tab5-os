@@ -14,6 +14,10 @@
 
 static const char *TAG = "tab5_wasm";
 
+/* Implementado pelo package manager; mantido como chokepoint pós-retorno para
+ * que lifecycle/UI de uma app antiga não sejam destruídos no callback. */
+extern "C" void tab5_package_mgr_process_pending_close(void);
+
 #ifdef ESP_PLATFORM
 #include "wasm_export.h"
 #include "esp_log.h"
@@ -159,6 +163,7 @@ static tab5_err_t tab5_wasm_load_from_bytes_direct(const uint8_t *bytes, size_t 
     out_inst->wasm_buf = wasm_buf;
     out_inst->wasm_buf_size = size;
     out_inst->is_running = true;
+    out_inst->generation = 1;
 
     LOG_I("App Wasm %s instanciada com sucesso (Stack=%u, Heap=%u)", out_inst->app_id[0] ? out_inst->app_id : "unnamed",
           (unsigned)real_stack, (unsigned)real_heap);
@@ -190,6 +195,10 @@ tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t
         return TAB5_ERR_INVALID_ARG;
     }
 
+    // A instância nunca pode aparentar estar viva quando a criação do worker
+    // falha antes de qualquer recurso do WAMR ser alocado.
+    memset(out_inst, 0, sizeof(*out_inst));
+
 #if HAVE_WAMR
 #ifdef ESP_PLATFORM
     esp_pthread_cfg_t pcfg = esp_pthread_get_default_config();
@@ -219,6 +228,7 @@ tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t
     pthread_attr_destroy(&attr);
     if (rc != 0) {
         LOG_E("pthread_create failed for wasm load: %d", rc);
+        memset(out_inst, 0, sizeof(*out_inst));
         return TAB5_ERR_FAIL;
     }
 
@@ -241,6 +251,7 @@ tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t
     }
     out_inst->wasm_buf_size = size;
     out_inst->is_running = true;
+    out_inst->generation = 1;
     return TAB5_OK;
 #endif
 }
@@ -289,6 +300,32 @@ tab5_err_t tab5_wasm_load_from_file(const char *wasm_path, uint32_t stack_size, 
 }
 
 #if HAVE_WAMR
+extern "C" tab5_err_t tab5_wasm_select_entrypoint(tab5_wasm_app_instance_t *inst, const char **out_func_name)
+{
+    if (inst == nullptr || out_func_name == nullptr || !inst->is_running) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+
+    *out_func_name = nullptr;
+    wasm_module_inst_t module_inst = (wasm_module_inst_t)inst->module_inst;
+    if (wasm_runtime_lookup_function(module_inst, "app_main") != nullptr) {
+        *out_func_name = "app_main";
+        return TAB5_OK;
+    }
+    if (wasm_runtime_lookup_function(module_inst, "main") != nullptr) {
+        *out_func_name = "main";
+        return TAB5_OK;
+    }
+    return TAB5_ERR_NOT_FOUND;
+}
+
+static void tab5_wasm_call_depth_leave(tab5_wasm_app_instance_t *inst)
+{
+    if (inst->call_depth > 0) {
+        --inst->call_depth;
+    }
+}
+
 static tab5_err_t tab5_wasm_call_function_direct(tab5_wasm_app_instance_t *inst, const char *func_name, uint32_t argc,
                                                  uint32_t *argv)
 {
@@ -296,12 +333,16 @@ static tab5_err_t tab5_wasm_call_function_direct(tab5_wasm_app_instance_t *inst,
         return TAB5_ERR_INVALID_ARG;
     }
 
+    uint32_t &call_depth = inst->call_depth;
+    ++call_depth;
+
     wasm_module_inst_t module_inst = (wasm_module_inst_t)inst->module_inst;
     wasm_exec_env_t exec_env = (wasm_exec_env_t)inst->exec_env;
 
     wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, func_name);
     if (func == nullptr) {
         LOG_W("Funcao %s nao encontrada no modulo Wasm", func_name);
+        tab5_wasm_call_depth_leave(inst);
         return TAB5_ERR_NOT_FOUND;
     }
 
@@ -315,6 +356,7 @@ static tab5_err_t tab5_wasm_call_function_direct(tab5_wasm_app_instance_t *inst,
     if (!wasm_runtime_call_wasm(exec_env, func, argc, local_argv)) {
         const char *exception = wasm_runtime_get_exception(module_inst);
         LOG_E("Excecao na execucao Wasm [%s]: %s", func_name, exception != nullptr ? exception : "desconhecida");
+        tab5_wasm_call_depth_leave(inst);
         return TAB5_ERR_FAIL;
     }
 
@@ -322,6 +364,7 @@ static tab5_err_t tab5_wasm_call_function_direct(tab5_wasm_app_instance_t *inst,
         argv[0] = local_argv[0];
     }
 
+    --call_depth;
     return TAB5_OK;
 }
 
@@ -341,6 +384,20 @@ static void *wasm_call_pthread_worker(void *arg)
 }
 #endif
 
+#if !HAVE_WAMR
+extern "C" tab5_err_t tab5_wasm_select_entrypoint(tab5_wasm_app_instance_t *inst, const char **out_func_name)
+{
+    if (inst == nullptr || out_func_name == nullptr || !inst->is_running) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+
+    // O host de testes não incorpora WAMR. Mantemos o contrato de chamada
+    // determinístico sem fingir que _start é um entrypoint de aplicação.
+    *out_func_name = "app_main";
+    return TAB5_OK;
+}
+#endif
+
 tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *func_name, uint32_t argc, uint32_t *argv)
 {
     if (inst == nullptr || func_name == nullptr || !inst->is_running) {
@@ -348,45 +405,57 @@ tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *f
     }
 
 #if HAVE_WAMR
-#ifdef ESP_PLATFORM
-    // Thread host com stack em SRAM interna: bindings nativos que acessam
-    // flash SPI (NVS, spiffs) exigem stack em RAM interna, senão o ESP32-P4
-    // dispara assert esp_task_stack_is_sane_cache_disabled(). Mantida mínima
-    // (16KB) pois a SRAM interna é escassa; bindings e LVGL usam pouca stack.
-    esp_pthread_cfg_t pcfg = esp_pthread_get_default_config();
-    pcfg.stack_size = 16 * 1024;
-    pcfg.stack_alloc_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
-    pcfg.inherit_cfg = false;
-    esp_pthread_set_cfg(&pcfg);
-#endif
-
-    pthread_t thread;
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, 16 * 1024);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-
-    WasmCallInternalArgs args = {
-        .inst = inst,
-        .func_name = func_name,
-        .argc = argc,
-        .argv = argv,
-        .result = TAB5_ERR_FAIL,
-    };
-
-    int rc = pthread_create(&thread, &attr, wasm_call_pthread_worker, &args);
-    pthread_attr_destroy(&attr);
-    if (rc != 0) {
-        LOG_E("pthread_create failed for wasm call: %d", rc);
-        return TAB5_ERR_FAIL;
+    tab5_err_t res = tab5_wasm_call_function_direct(inst, func_name, argc, argv);
+    if (inst->call_depth == 0 && inst->unload_pending) {
+        (void)tab5_wasm_unload(inst);
     }
-
-    pthread_join(thread, nullptr);
-    return args.result;
+    tab5_package_mgr_process_pending_close();
+    return res;
 #else
     (void)argc;
     (void)argv;
+    ++inst->call_depth;
+    --inst->call_depth;
+    if (inst->call_depth == 0 && inst->unload_pending) {
+        (void)tab5_wasm_unload(inst);
+    }
+    tab5_package_mgr_process_pending_close();
     return TAB5_OK;
+#endif
+}
+
+tab5_err_t tab5_wasm_call_string_function(tab5_wasm_app_instance_t *inst, const char *func_name, const char *value)
+{
+    if (inst == nullptr || func_name == nullptr || value == nullptr || !inst->is_running) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+
+#if HAVE_WAMR
+    wasm_module_inst_t module_inst = (wasm_module_inst_t)inst->module_inst;
+    size_t length = strlen(value) + 1;
+    if (length > UINT32_MAX) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+
+    uint32_t offset = wasm_runtime_module_malloc(module_inst, (uint32_t)length, nullptr);
+    if (offset == 0) {
+        return TAB5_ERR_NO_MEM;
+    }
+
+    tab5_err_t result = TAB5_ERR_FAIL;
+    char *module_string = (char *)wasm_runtime_addr_app_to_native(module_inst, offset);
+    if (module_string != nullptr) {
+        memcpy(module_string, value, length);
+        uint32_t argv[1] = {offset};
+        result = tab5_wasm_call_function(inst, func_name, 1, argv);
+    }
+    wasm_runtime_module_free(module_inst, offset);
+    return result;
+#else
+    // O stub de host não instancia WAMR; mantém o contrato de chamada
+    // determinístico sem tentar interpretar ponteiros como offsets Wasm.
+    uint32_t argv[1] = {0};
+    return tab5_wasm_call_function(inst, func_name, 1, argv);
 #endif
 }
 
@@ -394,6 +463,14 @@ tab5_err_t tab5_wasm_unload(tab5_wasm_app_instance_t *inst)
 {
     if (inst == nullptr) {
         return TAB5_ERR_INVALID_ARG;
+    }
+
+    uint32_t &call_depth = inst->call_depth;
+    bool &unload_pending = inst->unload_pending;
+    if (call_depth > 0) {
+        unload_pending = true;
+        ++inst->generation;
+        return TAB5_OK;
     }
 
 #if HAVE_WAMR
@@ -425,6 +502,9 @@ tab5_err_t tab5_wasm_unload(tab5_wasm_app_instance_t *inst)
 #endif
 
     inst->is_running = false;
+    ++inst->generation;
+    inst->unload_pending = false;
+    inst->call_depth = 0;
     LOG_I("App Wasm %s descarregada com sucesso", inst->app_id[0] ? inst->app_id : "unnamed");
     return TAB5_OK;
 }

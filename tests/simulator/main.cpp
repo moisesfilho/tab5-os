@@ -124,13 +124,10 @@ int watch_interactive_keys(void *userdata, SDL_Event *event)
         tab5_package_mgr_launch("com.tab5.recorder", nullptr);
         break;
     case SDLK_0:
-        ui_shell_open_chat();
+        tab5_package_mgr_launch("com.tab5.chat", nullptr);
         break;
     case SDLK_m:
         tab5_package_mgr_launch("com.tab5.music", nullptr);
-        break;
-    case SDLK_d:
-        ui_shell_close_chat();
         break;
     case SDLK_p:
         simact::click(21, 20);

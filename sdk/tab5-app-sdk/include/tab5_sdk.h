@@ -17,11 +17,14 @@
 extern "C" {
 #endif
 
-/* Export macro for Wasm/Native modules */
-#if defined(__wasm__) || defined(__EMSCRIPTEN__)
+/* Export macros for Wasm/Native modules.  Callbacks use visibility only;
+ * the build wrapper owns the single ABI entrypoint export. */
+#if defined(__wasm__) || defined(__wasm32__) || defined(__EMSCRIPTEN__)
 #define TAB5_APP_EXPORT __attribute__((visibility("default")))
+#define TAB5_APP_ENTRYPOINT_EXPORT __attribute__((visibility("default"))) __attribute__((export_name("app_main")))
 #else
 #define TAB5_APP_EXPORT
+#define TAB5_APP_ENTRYPOINT_EXPORT
 #endif
 
 /* ========================================================================= */
@@ -238,6 +241,11 @@ tab5_ui_obj_t tab5_ui_app_bar_add_action_button(const char *symbol_or_text, void
 tab5_ui_obj_t tab5_ui_get_main_textarea(void);
 
 /**
+ * @brief Cria um widget textarea de linha única estilizado pelo tema atual.
+ */
+tab5_ui_obj_t tab5_ui_textarea_create(tab5_ui_obj_t parent);
+
+/**
  * @brief Define o texto de um widget textarea.
  */
 tab5_err_t tab5_ui_textarea_set_text(tab5_ui_obj_t ta, const char *text);
@@ -285,6 +293,16 @@ tab5_err_t tab5_ui_keyboard_hide(void);
 bool tab5_ui_keyboard_is_visible(void);
 
 /**
+ * @brief Retorna a altura atual do teclado virtual em pixels (0 se oculto).
+ */
+int32_t tab5_ui_keyboard_get_height(void);
+
+/**
+ * @brief Retorna a resolução da tela em pixels.
+ */
+void tab5_ui_get_display_size(int32_t *out_w, int32_t *out_h);
+
+/**
  * @brief Exibe uma notificação rápida (toast) na interface do usuário.
  * @param message Mensagem a ser exibida.
  * @param duration_ms Duração em milissegundos.
@@ -304,6 +322,21 @@ tab5_ui_obj_t tab5_ui_container_create(tab5_ui_obj_t parent);
  * @brief Define largura e altura de um objeto UI.
  */
 tab5_err_t tab5_ui_obj_set_size(tab5_ui_obj_t obj, int32_t w, int32_t h);
+
+/**
+ * @brief Habilita ou desabilita a rolagem e a barra de rolagem de um objeto.
+ */
+tab5_err_t tab5_ui_obj_set_scrollable(tab5_ui_obj_t obj, bool scrollable);
+
+/**
+ * @brief Rola um contêiner para a parte inferior (ex.: lista de mensagens de chat).
+ */
+tab5_err_t tab5_ui_obj_scroll_to_bottom(tab5_ui_obj_t obj, bool animated);
+
+/**
+ * @brief Rola um contêiner para o topo.
+ */
+tab5_err_t tab5_ui_obj_scroll_to_top(tab5_ui_obj_t obj, bool animated);
 
 /**
  * @brief Define o alinhamento de um objeto em relação ao seu pai.
@@ -334,6 +367,11 @@ tab5_ui_obj_t tab5_ui_label_create(tab5_ui_obj_t parent, const char *text);
  * @brief Altera o texto de um Label existente.
  */
 tab5_err_t tab5_ui_label_set_text(tab5_ui_obj_t obj, const char *text);
+
+/**
+ * @brief Habilita ou desabilita a quebra de linha (wrap) do texto de um Label.
+ */
+tab5_err_t tab5_ui_label_set_wrap(tab5_ui_obj_t obj, bool wrap);
 
 /**
  * @brief Cria um botão interativo padrão.
@@ -386,6 +424,11 @@ tab5_ui_obj_t tab5_ui_list_add_btn(tab5_ui_obj_t list, const char *symbol, const
 tab5_err_t tab5_ui_obj_clean(tab5_ui_obj_t obj);
 
 /**
+ * @brief Limpa os filhos de um contêiner após o callback de evento atual.
+ */
+tab5_err_t tab5_ui_obj_clean_deferred(tab5_ui_obj_t obj);
+
+/**
  * @brief Remove todos os widgets criados pelo app da tela raiz, preservando a
  *        barra de título (app bar) e a área de conteúdo padrão do host.
  * @return TAB5_OK em caso de sucesso.
@@ -430,6 +473,11 @@ tab5_err_t tab5_ui_obj_set_style_border(tab5_ui_obj_t obj, uint32_t border_hex, 
  * @param opa Opacidade de 0 a 255.
  */
 tab5_err_t tab5_ui_obj_set_style_text_color(tab5_ui_obj_t obj, uint32_t color_hex, uint8_t opa);
+
+/**
+ * @brief Define o tamanho da fonte de texto de um objeto.
+ */
+tab5_err_t tab5_ui_obj_set_style_text_size(tab5_ui_obj_t obj, int32_t size_px);
 
 /**
  * @brief Define o raio dos cantos arredondados (border radius).
@@ -491,6 +539,11 @@ typedef struct {
  * @param max_entries Quantidade máxima de entradas suportadas pelo buffer.
  * @param out_count Ponteiro para receber a quantidade de entradas encontradas.
  * @return TAB5_OK em caso de sucesso.
+ *
+ * Nota para implementacoes do host: na assinatura WAMR desta funcao, os
+ * parametros marcados como ponteiro ja sao convertidos de offsets WASM para
+ * enderecos nativos antes da chamada do wrapper. Nao use
+ * wasm_runtime_addr_app_to_native() novamente nesses parametros.
  */
 tab5_err_t tab5_storage_scandir(const char *rel_or_abs_path, tab5_dir_entry_t *entries, uint32_t max_entries,
                                 uint32_t *out_count);
@@ -763,6 +816,92 @@ tab5_err_t tab5_bt_set_enabled(bool enabled);
  * @brief Verifica se o subsistema Bluetooth esta ativo.
  */
 bool tab5_bt_is_enabled(void);
+
+/* ========================================================================= */
+/* Cliente AI (OpenAI-compatible Chat Completion)                             */
+/* ========================================================================= */
+
+typedef struct {
+    char base_url[256];
+    char token[512];
+    char model[64];
+    int32_t max_tokens;
+} tab5_ai_config_t;
+
+/**
+ * @brief Envia uma mensagem para o servidor AI e inicia processamento assincrono.
+ * Use tab5_ai_get_state() para verificar conclusao e tab5_ai_get_response() para ler.
+ */
+tab5_err_t tab5_ai_send(const char *prompt);
+
+/**
+ * @brief Cancela a requisicao AI em andamento.
+ */
+tab5_err_t tab5_ai_cancel(void);
+
+/**
+ * @brief Retorna se ha uma requisicao AI em processamento.
+ */
+bool tab5_ai_is_busy(void);
+
+/**
+ * @brief Carrega a configuracao AI salva (base_url, token, model, max_tokens).
+ */
+tab5_err_t tab5_ai_config_load(tab5_ai_config_t *out_cfg);
+
+/**
+ * @brief Salva a configuracao AI no armazenamento persistente.
+ */
+tab5_err_t tab5_ai_config_save(const tab5_ai_config_t *cfg);
+
+/**
+ * @brief Retorna o estado atual da requisicao AI.
+ * 0=ocioso, 1=processando, 2=resposta_pronta, 3=erro, 4=cancelado
+ */
+int32_t tab5_ai_get_state(void);
+
+/**
+ * @brief Retorna o texto da resposta AI (NULL se nao disponivel).
+ * O ponteiro e valido ate a proxima chamada a tab5_ai_consume_response().
+ */
+const char *tab5_ai_get_response(void);
+
+/**
+ * @brief Retorna a mensagem de erro (NULL se nao ha erro).
+ */
+const char *tab5_ai_get_error(void);
+
+/**
+ * @brief Consome a resposta e reseta o buffer interno.
+ */
+void tab5_ai_consume_response(void);
+
+/* ========================================================================= */
+/* Associacao de Arquivos (file association)                                */
+/* ========================================================================= */
+
+/**
+ * @brief Abre um arquivo usando o aplicativo associado a sua extensao.
+ */
+tab5_err_t tab5_file_assoc_open(const char *path);
+
+/* ========================================================================= */
+/* NVS Generico (chave-valor)                                                */
+/* ========================================================================= */
+
+/**
+ * @brief Le um valor u8 do NVS.
+ * @param ns Namespace (ex: "tab5").
+ * @param key Chave (ex: "files_hidden").
+ * @param out_val Ponteiro para receber o valor.
+ * @return TAB5_OK se encontrado, TAB5_ERR_NOT_FOUND caso contrario.
+ */
+tab5_err_t tab5_nvs_get_u8(const char *ns, const char *key, uint8_t *out_val);
+
+/**
+ * @brief Grava um valor u8 no NVS.
+ */
+tab5_err_t tab5_nvs_set_u8(const char *ns, const char *key, uint8_t val);
 
 #ifdef __cplusplus
 }

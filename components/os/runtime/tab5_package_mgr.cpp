@@ -9,6 +9,7 @@
 #include "tab5_storage_sandbox.h"
 #include "app_registry.h"
 #include "file_assoc.h"
+#include "tab5_wasm_dispatcher.h"
 #include <string>
 #include <vector>
 #include <map>
@@ -207,6 +208,7 @@ struct DynamicAppEntry {
 
 static std::map<std::string, std::unique_ptr<DynamicAppEntry>> s_dynamic_apps;
 static DynamicAppEntry *s_running_dynamic_app = nullptr;
+static DynamicAppEntry *s_pending_close_app = nullptr;
 
 static bool copy_file_contents(const char *src_path, const char *dst_path)
 {
@@ -331,6 +333,7 @@ tab5_err_t tab5_package_mgr_init(void)
     memset(s_slot_app_ids, 0, sizeof(s_slot_app_ids));
     s_slot_count = 0;
     s_running_dynamic_app = nullptr;
+    s_pending_close_app = nullptr;
     return TAB5_OK;
 }
 
@@ -344,7 +347,7 @@ static tab5_err_t register_dynamic_app_entry(const tab5_manifest_t &manifest, co
         // Se a app existente for embutida e a nova for do SD, compara versões
         if (existing->is_embedded && !is_embedded) {
             int cmp = tab5_manifest_version_compare(manifest.version, existing->manifest.version);
-            if (cmp >= 0) {
+            if (cmp > 0) {
                 LOG_I("App %s do SD (v%s) tem precedencia sobre embutida (v%s)", id.c_str(), manifest.version,
                       existing->manifest.version);
                 existing->manifest = manifest;
@@ -572,7 +575,7 @@ tab5_err_t tab5_package_mgr_get_app_info(const char *app_id, tab5_installed_app_
     return TAB5_OK;
 }
 
-tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_path)
+extern "C" tab5_err_t tab5_package_mgr_launch_direct(const char *app_id, const char *open_file_path)
 {
     if (app_id == nullptr) {
         return TAB5_ERR_INVALID_ARG;
@@ -585,26 +588,28 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
     }
 
     DynamicAppEntry *entry = it->second.get();
+    tab5_app_context_t *active_ctx = tab5_host_get_active_app();
+
+    // A relaunch of the already active entry must not overwrite its instance
+    // or context.  It is still valid to deliver a file request to it.
+    if ((s_running_dynamic_app == entry || active_ctx == &entry->host_ctx) && entry->wasm_inst.is_running) {
+        if (open_file_path != nullptr) {
+            return tab5_lifecycle_host_open_file(active_ctx != nullptr ? active_ctx : &entry->host_ctx, open_file_path);
+        }
+        return TAB5_OK;
+    }
+
+    DynamicAppEntry *previous_app = s_running_dynamic_app;
+    tab5_app_context_t *previous_ctx = active_ctx;
 
     LOG_I("Lançando aplicativo dinâmico: %s (dir=%s)", app_id, entry->install_dir.c_str());
 
-    // Fecha app anterior se houver
-    if (s_running_dynamic_app != nullptr) {
-        tab5_package_mgr_close_active();
-    }
-
-    // Prepara contexto
+    // Prepara o contexto, mas só o torna ativo depois que o módulo foi carregado.
     memset(&entry->host_ctx, 0, sizeof(entry->host_ctx));
     strncpy(entry->host_ctx.app_id, entry->manifest.id, sizeof(entry->host_ctx.app_id) - 1);
     strncpy(entry->host_ctx.app_name, entry->manifest.name, sizeof(entry->host_ctx.app_name) - 1);
     entry->host_ctx.permissions = entry->manifest.permissions;
     entry->host_ctx.state = TAB5_APP_STATE_UNINITIALIZED;
-
-    tab5_err_t err = tab5_lifecycle_host_init_app(&entry->host_ctx);
-    if (err != TAB5_OK) {
-        LOG_E("Falha no lifecycle_host_init_app para %s (err=%d)", app_id, (int)err);
-        return err;
-    }
 
     // Carrega WASM
     tab5_err_t wasm_err = TAB5_ERR_NOT_FOUND;
@@ -625,32 +630,92 @@ tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_pat
     }
 
     if (wasm_err != TAB5_OK) {
-        LOG_W("Bytecode Wasm nao carregado (%s, err=%d), rodando em modo container nativo", entry->manifest.entry,
-              (int)wasm_err);
-    } else {
-        LOG_I("Bytecode Wasm carregado com sucesso para %s, iniciando execucao...", app_id);
-        entry->host_ctx.is_wasm = true;
-        entry->host_ctx.wasm_instance = &entry->wasm_inst;
-
-        // Executa o ponto de entrada principal (que faz tab5_lifecycle_register)
-        if (tab5_wasm_call_function(&entry->wasm_inst, "app_main", 0, nullptr) != TAB5_OK) {
-            if (tab5_wasm_call_function(&entry->wasm_inst, "main", 0, nullptr) != TAB5_OK) {
-                tab5_wasm_call_function(&entry->wasm_inst, "_start", 0, nullptr);
-            }
-        }
-        LOG_I("Execucao do ponto de entrada Wasm concluida para %s (lifecycle on_init=%p)", app_id,
-              entry->host_ctx.lifecycle.on_init);
+        LOG_E("Bytecode Wasm nao carregado (%s, err=%d)", entry->manifest.entry, (int)wasm_err);
+        memset(&entry->host_ctx, 0, sizeof(entry->host_ctx));
+        return wasm_err;
     }
 
-    tab5_lifecycle_host_resume_app(&entry->host_ctx);
+    entry->host_ctx.is_wasm = true;
+    entry->host_ctx.wasm_instance = &entry->wasm_inst;
+
+    // O preflight ocorre antes de qualquer criação de tela. Assim, um pacote
+    // sem entrypoint suportado não entra no caminho de rollback LVGL.
+    const char *entrypoint = nullptr;
+    tab5_err_t entrypoint_err = tab5_wasm_select_entrypoint(&entry->wasm_inst, &entrypoint);
+    if (entrypoint_err != TAB5_OK || entrypoint == nullptr) {
+        LOG_W("Nenhum entrypoint suportado em %s", app_id);
+        tab5_wasm_unload(&entry->wasm_inst);
+        memset(&entry->host_ctx, 0, sizeof(entry->host_ctx));
+        tab5_host_set_active_app(previous_ctx);
+        return entrypoint_err == TAB5_OK ? TAB5_ERR_NOT_FOUND : entrypoint_err;
+    }
+
+    // A inicialização candidata troca o active context. Em qualquer falha,
+    // destrói a candidata e restaura o contexto anterior sem fechar sua app.
+    tab5_err_t err = tab5_lifecycle_host_init_app(&entry->host_ctx);
+    if (err != TAB5_OK) {
+        tab5_lifecycle_host_abort_app(&entry->host_ctx);
+        tab5_wasm_unload(&entry->wasm_inst);
+        memset(&entry->host_ctx, 0, sizeof(entry->host_ctx));
+        tab5_host_set_active_app(previous_ctx);
+        return err;
+    }
+
+    LOG_I("Bytecode Wasm carregado com sucesso para %s, iniciando execucao...", app_id);
+
+    // O preflight já selecionou o único símbolo que pode ser chamado.
+    tab5_err_t entry_err = tab5_wasm_call_function(&entry->wasm_inst, entrypoint, 0, nullptr);
+    if (entry_err != TAB5_OK) {
+        LOG_E("Falha no ponto de entrada Wasm de %s (err=%d)", app_id, (int)entry_err);
+        tab5_lifecycle_host_abort_app(&entry->host_ctx);
+        tab5_wasm_unload(&entry->wasm_inst);
+        memset(&entry->host_ctx, 0, sizeof(entry->host_ctx));
+        tab5_host_set_active_app(previous_ctx);
+        return entry_err;
+    }
+
+    err = tab5_lifecycle_host_resume_app(&entry->host_ctx);
+    if (err != TAB5_OK) {
+        tab5_lifecycle_host_abort_app(&entry->host_ctx);
+        tab5_wasm_unload(&entry->wasm_inst);
+        memset(&entry->host_ctx, 0, sizeof(entry->host_ctx));
+        tab5_host_set_active_app(previous_ctx);
+        return err;
+    }
 
     if (open_file_path != nullptr) {
-        tab5_lifecycle_host_open_file(&entry->host_ctx, open_file_path);
+        err = tab5_lifecycle_host_open_file(&entry->host_ctx, open_file_path);
+        if (err != TAB5_OK) {
+            tab5_lifecycle_host_abort_app(&entry->host_ctx);
+            tab5_wasm_unload(&entry->wasm_inst);
+            memset(&entry->host_ctx, 0, sizeof(entry->host_ctx));
+            tab5_host_set_active_app(previous_ctx);
+            return err;
+        }
+    }
+
+    // O candidato agora está validado; somente neste ponto fecha o anterior.
+    if (previous_app != nullptr && previous_app != entry) {
+        tab5_package_mgr_close_active();
     }
 
     s_running_dynamic_app = entry;
     LOG_I("App %s em execucao ativa", app_id);
     return TAB5_OK;
+}
+
+extern "C" tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *open_file_path)
+{
+    if (app_id == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+    if (s_dynamic_apps.find(app_id) == s_dynamic_apps.end()) {
+        return TAB5_ERR_NOT_FOUND;
+    }
+    // The worker performs tab5_lifecycle_host_resume_app(&entry->host_ctx)
+    // before tab5_package_mgr_close_active(); UI callers return immediately.
+    // dispatch post: app_id and open_file_path are copied by value.
+    return tab5_wasm_dispatch_post_launch(app_id, open_file_path);
 }
 
 tab5_err_t tab5_package_mgr_close_active(void)
@@ -660,10 +725,34 @@ tab5_err_t tab5_package_mgr_close_active(void)
     }
 
     DynamicAppEntry *entry = s_running_dynamic_app;
+
+    // Uma abertura disparada por callback não pode destruir a tela/contexto
+    // que ainda está na pilha. O runtime chamará o chokepoint após o join.
+    if (entry->wasm_inst.call_depth > 0) {
+        entry->wasm_inst.unload_pending = true;
+        s_pending_close_app = entry;
+        return TAB5_OK;
+    }
+
     s_running_dynamic_app = nullptr;
 
     tab5_lifecycle_host_destroy_app(&entry->host_ctx);
     tab5_wasm_unload(&entry->wasm_inst);
 
     return TAB5_OK;
+}
+
+extern "C" void tab5_package_mgr_process_pending_close(void)
+{
+    DynamicAppEntry *entry = s_pending_close_app;
+    if (entry == nullptr || entry->wasm_inst.call_depth != 0) {
+        return;
+    }
+
+    s_pending_close_app = nullptr;
+    if (s_running_dynamic_app == entry) {
+        s_running_dynamic_app = nullptr;
+    }
+    tab5_lifecycle_host_destroy_app(&entry->host_ctx);
+    tab5_wasm_unload(&entry->wasm_inst);
 }

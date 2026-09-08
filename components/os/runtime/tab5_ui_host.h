@@ -7,6 +7,7 @@
 
 #include "include/tab5_sdk.h"
 #include "tab5_host_abi.h"
+#include "lvgl.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,6 +24,13 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
 tab5_err_t tab5_ui_host_destroy_app_screen(tab5_app_context_t *ctx);
 
 /**
+ * @brief Aborta uma tela candidata e restaura a tela/handles anteriores.
+ *
+ * Usado somente quando o app candidato falha antes de se tornar ativo.
+ */
+tab5_err_t tab5_ui_host_abort_app_screen(tab5_app_context_t *ctx);
+
+/**
  * @brief Define o foco do teclado virtual.
  */
 tab5_err_t tab5_ui_host_keyboard_show(void *target_textarea);
@@ -36,6 +44,21 @@ tab5_err_t tab5_ui_host_keyboard_hide(void);
  * @brief Verifica se o teclado virtual está aberto.
  */
 bool tab5_ui_host_keyboard_is_visible(void);
+
+/**
+ * @brief Retorna a altura do teclado virtual em pixels (0 se oculto).
+ */
+int32_t tab5_ui_host_keyboard_get_height(void);
+
+/**
+ * @brief Retorna a resolução da tela em pixels.
+ */
+void tab5_ui_host_get_display_size(int32_t *out_w, int32_t *out_h);
+
+/**
+ * @brief Cria um widget textarea de linha única com estilo do tema atual.
+ */
+tab5_ui_obj_t tab5_ui_host_textarea_create(tab5_ui_obj_t parent_handle);
 
 /**
  * @brief Exibe um toast overlay na interface.
@@ -113,6 +136,11 @@ void *tab5_ui_host_get_lv_obj(tab5_ui_obj_t handle);
 void tab5_ui_host_clear_handles(void);
 
 /**
+ * @brief Encaminha eventos de widgets para o ciclo de vida do app.
+ */
+void tab5_ui_host_generic_widget_event_cb(lv_event_t *event);
+
+/**
  * @brief Cria contêiner genérico.
  */
 tab5_ui_obj_t tab5_ui_host_container_create(tab5_ui_obj_t parent_handle);
@@ -121,6 +149,21 @@ tab5_ui_obj_t tab5_ui_host_container_create(tab5_ui_obj_t parent_handle);
  * @brief Define tamanho de objeto de UI.
  */
 tab5_err_t tab5_ui_host_obj_set_size(tab5_ui_obj_t obj_handle, int32_t w, int32_t h);
+
+/**
+ * @brief Habilita ou desabilita a rolagem e a barra de rolagem de um objeto.
+ */
+tab5_err_t tab5_ui_host_obj_set_scrollable(tab5_ui_obj_t obj_handle, bool scrollable);
+
+/**
+ * @brief Rola um contêiner para a parte inferior (útil para chats).
+ */
+tab5_err_t tab5_ui_host_obj_scroll_to_bottom(tab5_ui_obj_t obj_handle, bool animated);
+
+/**
+ * @brief Rola um contêiner para o topo.
+ */
+tab5_err_t tab5_ui_host_obj_scroll_to_top(tab5_ui_obj_t obj_handle, bool animated);
 
 /**
  * @brief Define alinhamento de objeto de UI.
@@ -151,6 +194,11 @@ tab5_ui_obj_t tab5_ui_host_label_create(tab5_ui_obj_t parent_handle, const char 
  * @brief Altera texto do Label.
  */
 tab5_err_t tab5_ui_host_label_set_text(tab5_ui_obj_t obj_handle, const char *text);
+
+/**
+ * @brief Ativa/desativa a quebra de linha de um widget label (ou do primeiro label filho).
+ */
+tab5_err_t tab5_ui_host_label_set_wrap(tab5_ui_obj_t obj_handle, bool wrap);
 
 /**
  * @brief Cria Botão interativo.
@@ -203,6 +251,11 @@ tab5_ui_obj_t tab5_ui_host_list_add_btn(tab5_ui_obj_t list_handle, const char *s
 tab5_err_t tab5_ui_host_obj_clean(tab5_ui_obj_t obj_handle);
 
 /**
+ * @brief Limpa os filhos após o callback de evento atual.
+ */
+tab5_err_t tab5_ui_host_obj_clean_deferred(tab5_ui_obj_t obj_handle);
+
+/**
  * @brief Remove os widgets do app da tela raiz, preservando a app bar e a
  *        área de conteúdo padrão do host (usado na reconstrução de tema).
  */
@@ -227,6 +280,11 @@ tab5_err_t tab5_ui_host_obj_set_style_border(tab5_ui_obj_t obj_handle, uint32_t 
  * @brief Define cor e opacidade do texto de um objeto UI.
  */
 tab5_err_t tab5_ui_host_obj_set_style_text_color(tab5_ui_obj_t obj_handle, uint32_t color_hex, uint8_t opa);
+
+/**
+ * @brief Define o tamanho da fonte de texto de um objeto.
+ */
+tab5_err_t tab5_ui_host_obj_set_style_text_size(tab5_ui_obj_t obj_handle, int32_t size_px);
 
 /**
  * @brief Define raio dos cantos de um objeto UI.

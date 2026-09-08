@@ -10,6 +10,7 @@ extern "C" {
 #endif
 
 typedef struct _lv_obj_t lv_obj_t;
+typedef struct _lv_event_t lv_event_t;
 
 typedef enum {
     LV_DISPLAY_ROTATION_0 = 0,

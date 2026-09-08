@@ -2,7 +2,6 @@
 #include "ui_bar.h"
 #include "ui_keyboard.h"
 #include "ui_desktop.h"
-#include "ui_chat_view.h"
 #include "ui_screensaver.h"
 #include "ui_screen_off.h"
 #include "ui_theme.h"
@@ -17,8 +16,6 @@
 namespace {
 
 lv_obj_t *desktop_scr = nullptr;
-lv_obj_t *chat_scr = nullptr;
-lv_obj_t *chat_caller_scr = nullptr;
 lv_obj_t *storage_scr = nullptr;
 lv_obj_t *storage_caller_scr = nullptr;
 lv_obj_t *splash = nullptr;
@@ -63,15 +60,6 @@ void splash_start(void)
     lv_timer_create(splash_timer_cb, 1500, nullptr);
 }
 
-/* Dispara o on_close do app cuja tela esta saindo. Apps sem recurso pesado
- * (notas, wifi, files, bluetooth) nao possuem on_close e sao ignorados. */
-void notify_app_closed(lv_obj_t *scr)
-{
-    if (scr == chat_scr) {
-        ui_chat_on_close();
-    }
-}
-
 /* Unica porta de troca de tela: notifica o app ativo antes de carregar outra
  * tela, cobrindo navegacao via botao fechar, icones de status e with_file. */
 void shell_load_scr(lv_obj_t *target)
@@ -79,14 +67,15 @@ void shell_load_scr(lv_obj_t *target)
     if (target == nullptr) {
         target = desktop_scr;
     }
-    lv_obj_t *act = lv_disp_get_scr_act(NULL);
-    if (act != nullptr && act != target) {
-        notify_app_closed(act);
-    }
     lv_disp_load_scr(target);
 }
 
 } // namespace
+
+lv_obj_t *ui_shell_get_desktop_screen(void)
+{
+    return desktop_scr;
+}
 
 void ui_shell_init(void)
 {
@@ -113,7 +102,6 @@ void ui_shell_init(void)
 
     /* Cria a area de trabalho dinamicamente a partir dos apps registrados */
     ui_desktop_create(desktop_scr);
-    chat_scr = ui_chat_create();
     storage_scr = ui_storage_view_create();
     ui_screensaver_init();
     ui_screen_off_init();
@@ -121,22 +109,6 @@ void ui_shell_init(void)
     lv_timer_create(inactivity_timer_cb, 1000, nullptr);
 
     splash_start();
-}
-
-void ui_shell_open_chat(void)
-{
-    ui_keyboard_hide();
-    chat_caller_scr = desktop_scr;
-    shell_load_scr(chat_scr);
-    ui_chat_on_open();
-}
-
-void ui_shell_close_chat(void)
-{
-    ui_keyboard_hide();
-    lv_obj_t *target = (chat_caller_scr != nullptr) ? chat_caller_scr : desktop_scr;
-    chat_caller_scr = nullptr;
-    shell_load_scr(target);
 }
 
 void ui_shell_open_storage(void)
@@ -158,7 +130,6 @@ void ui_shell_close_storage(void)
 void ui_shell_refresh_theme(void)
 {
     ui_desktop_refresh_theme();
-    ui_chat_refresh_theme();
     ui_storage_view_refresh_theme();
     tab5_ui_host_refresh_theme();
 

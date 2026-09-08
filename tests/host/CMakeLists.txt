@@ -38,6 +38,8 @@ add_executable(tab5_host_tests
     src/test_storage_sandbox.cpp
     src/test_host_abi.cpp
     src/test_wasm_runtime.cpp
+    src/test_wasm_unload_contract.cpp
+    src/test_async_dispatcher_contract.cpp
     src/test_manifest.cpp
     src/test_package_mgr.cpp
     src/test_storage_mgr.cpp
@@ -63,6 +65,7 @@ add_executable(tab5_host_tests
     ${REPO_ROOT}/components/os/runtime/tab5_lifecycle_host.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_host_abi.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_wasm_runtime.cpp
+    ${REPO_ROOT}/components/os/runtime/tab5_wasm_dispatcher.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_manifest.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_package_mgr.cpp
     ${REPO_ROOT}/components/os/core/ai_storage.cpp
@@ -103,3 +106,15 @@ target_link_options(tab5_host_tests PRIVATE
 enable_testing()
 include(GoogleTest)
 gtest_discover_tests(tab5_host_tests)
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(NAME runtime_rollback_static
+         COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_runtime_rollback.py)
+add_test(NAME runtime_entrypoint_cleanup_contracts
+         COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_runtime_entrypoint_cleanup_contracts.py)
+add_test(NAME sdk_export_contract
+         COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_sdk_export_contract.py)
+add_test(NAME wasm_unload_callback_contract
+         COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_wasm_unload_callback_contract.py)
+add_test(NAME async_dispatcher_contract
+         COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_async_dispatcher_contract.py)

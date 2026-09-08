@@ -34,3 +34,16 @@ TEST(WasmRuntimeTest, LoadFromBytesValidation)
     EXPECT_FALSE(inst.is_running);
     EXPECT_EQ(inst.wasm_buf, nullptr);
 }
+
+TEST(WasmRuntimeTest, SelectEntrypointDoesNotExecute)
+{
+    tab5_wasm_app_instance_t inst = {};
+    uint8_t dummy_wasm[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00};
+    ASSERT_EQ(tab5_wasm_load_from_bytes(dummy_wasm, sizeof(dummy_wasm), 0, 0, nullptr, &inst), TAB5_OK);
+
+    const char *entrypoint = nullptr;
+    EXPECT_EQ(tab5_wasm_select_entrypoint(&inst, &entrypoint), TAB5_OK);
+    EXPECT_STREQ(entrypoint, "app_main");
+    EXPECT_TRUE(inst.is_running);
+    EXPECT_EQ(tab5_wasm_unload(&inst), TAB5_OK);
+}

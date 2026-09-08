@@ -6,6 +6,7 @@
 #include "tab5_ui_host.h"
 #include "tab5_lifecycle_host.h"
 #include "tab5_package_mgr.h"
+#include "tab5_wasm_dispatcher.h"
 #include <cstring>
 
 #if defined(ESP_PLATFORM) || defined(LV_LVGL_H_INCLUDE_SIMPLE) || defined(LV_CONF_INCLUDE_SIMPLE) ||                   \
@@ -17,31 +18,201 @@
 #include "ui_bar.h"
 #include "ui_font.h"
 #include "ui_keyboard.h"
-#include "ui_files_view.h"
 #include "ui_camera_view.h"
 #include "ui_gallery_view.h"
-#include "ui_chat_view.h"
 #define HAVE_LVGL 1
 #else
 #define HAVE_LVGL 0
 #endif
 
+#if HAVE_LVGL
+#define LV_LOCK() bsp_display_lock(pdMS_TO_TICKS(500))
+#define LV_UNLOCK() bsp_display_unlock()
+#else
 #define LV_LOCK() (void)0
 #define LV_UNLOCK() (void)0
+#endif
+#define MAX_UI_HANDLES 128
 
 #if HAVE_LVGL
+#include "ui_shell.h"
 static lv_obj_t *s_previous_screen = nullptr;
-static ui_files_view_t *s_active_files_view = nullptr;
+static lv_obj_t *s_handle_table[MAX_UI_HANDLES];
+static uint32_t s_next_handle = 1;
+static lv_obj_t *s_previous_handle_table[MAX_UI_HANDLES];
+static uint32_t s_previous_next_handle = 1;
+static bool s_has_previous_handles = false;
 static ui_camera_view_t *s_active_camera_view = nullptr;
 static ui_gallery_view_t *s_active_gallery_view = nullptr;
-static ui_chat_view_t *s_active_chat_view = nullptr;
+static tab5_app_context_t *s_active_camera_owner = nullptr;
+static tab5_app_context_t *s_active_gallery_owner = nullptr;
+static ui_camera_view_t *s_previous_camera_view = nullptr;
+static ui_gallery_view_t *s_previous_gallery_view = nullptr;
+static tab5_app_context_t *s_previous_camera_owner = nullptr;
+static tab5_app_context_t *s_previous_gallery_owner = nullptr;
+static bool s_has_previous_views = false;
+static lv_timer_t *s_wasm_poll_timer = nullptr;
+static tab5_app_context_t *s_wasm_poll_owner = nullptr;
 
-static void on_generic_widget_event_cb(lv_event_t *e);
+static void tab5_ui_host_apply_layout_locked(void)
+{
+    tab5_app_context_t *ctx = tab5_host_get_active_app();
+    if (ctx == nullptr || ctx->root_screen == nullptr) {
+        return;
+    }
+
+    int32_t w = lv_display_get_horizontal_resolution(NULL);
+    int32_t h = lv_display_get_vertical_resolution(NULL);
+    int32_t kb_h = ui_keyboard_is_visible() ? ui_keyboard_get_height() : 0;
+
+    if (ctx->app_bar != nullptr) {
+        lv_obj_set_width((lv_obj_t *)ctx->app_bar, w);
+    }
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.camera") == 0 || strcmp(ctx->app_id, "camera") == 0)) {
+        if (s_active_camera_view != nullptr) {
+            ui_camera_view_apply_layout(s_active_camera_view);
+        }
+        return;
+    }
+    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.gallery") == 0 || strcmp(ctx->app_id, "gallery") == 0)) {
+        if (s_active_gallery_view != nullptr) {
+            ui_gallery_view_apply_layout(s_active_gallery_view);
+        }
+        return;
+    }
+
+    lv_obj_t *ta = (lv_obj_t *)ctx->content_area;
+    if (ta == nullptr) {
+        return;
+    }
+    lv_obj_set_width(ta, w);
+    int32_t available_h = h - 2 * UI_BAR_HEIGHT - kb_h - 8;
+    if (available_h < 40) {
+        available_h = 40;
+    }
+    lv_obj_set_height(ta, available_h);
+    if (ui_keyboard_is_visible()) {
+        lv_obj_scroll_to_view(ta, LV_ANIM_OFF);
+    }
+}
+
+static tab5_err_t call_wasm_callback(tab5_wasm_app_instance_t *wasm_inst, const char *primary, const char *alias,
+                                     uint32_t argc, uint32_t *argv)
+{
+    tab5_err_t err = tab5_wasm_call_function(wasm_inst, primary, argc, argv);
+    if (err == TAB5_ERR_NOT_FOUND) {
+        err = tab5_wasm_call_function(wasm_inst, alias, argc, argv);
+    }
+    return err;
+}
+
+static bool is_descendant_of(lv_obj_t *obj, lv_obj_t *ancestor)
+{
+    while (obj != nullptr) {
+        if (obj == ancestor) {
+            return true;
+        }
+        obj = lv_obj_get_parent(obj);
+    }
+    return false;
+}
+
+static void clear_handles_for_screen(lv_obj_t *screen)
+{
+    if (screen == nullptr) {
+        return;
+    }
+    for (uint32_t i = 1; i < MAX_UI_HANDLES; ++i) {
+        if (s_handle_table[i] != nullptr && is_descendant_of(s_handle_table[i], screen)) {
+            s_handle_table[i] = nullptr;
+        }
+    }
+}
+
+static void destroy_owned_views(tab5_app_context_t *owner)
+{
+    if (s_active_camera_view != nullptr && s_active_camera_owner == owner) {
+        ui_camera_view_destroy(s_active_camera_view);
+        s_active_camera_view = nullptr;
+        s_active_camera_owner = nullptr;
+    }
+    if (s_active_gallery_view != nullptr && s_active_gallery_owner == owner) {
+        ui_gallery_view_destroy(s_active_gallery_view);
+        s_active_gallery_view = nullptr;
+        s_active_gallery_owner = nullptr;
+    }
+}
+
+static void destroy_snapshot_owned_views(tab5_app_context_t *owner)
+{
+    if (s_previous_camera_view != nullptr && s_previous_camera_owner == owner) {
+        if (s_previous_camera_view != s_active_camera_view) {
+            ui_camera_view_destroy(s_previous_camera_view);
+        }
+        s_previous_camera_view = nullptr;
+        s_previous_camera_owner = nullptr;
+    }
+    if (s_previous_gallery_view != nullptr && s_previous_gallery_owner == owner) {
+        if (s_previous_gallery_view != s_active_gallery_view) {
+            ui_gallery_view_destroy(s_previous_gallery_view);
+        }
+        s_previous_gallery_view = nullptr;
+        s_previous_gallery_owner = nullptr;
+    }
+}
+
+void tab5_ui_host_generic_widget_event_cb(lv_event_t *e);
 
 static void on_app_bar_close_clicked(lv_event_t *e)
 {
     (void)e;
     tab5_package_mgr_close_active();
+}
+
+static bool is_chat_app_id(const char *app_id)
+{
+    return app_id != nullptr && app_id[0] != '\0' &&
+           (strcmp(app_id, "com.tab5.chat") == 0 || strcmp(app_id, "chat") == 0);
+}
+
+static void on_wasm_poll_timer(lv_timer_t *timer)
+{
+    (void)timer;
+    tab5_app_context_t *app_ctx = tab5_host_get_active_app();
+    if (app_ctx != s_wasm_poll_owner) {
+        return;
+    }
+    if (app_ctx == nullptr || !app_ctx->is_wasm || app_ctx->wasm_instance == nullptr ||
+        !is_chat_app_id(app_ctx->app_id)) {
+        return;
+    }
+    tab5_wasm_app_instance_t *wasm_inst = (tab5_wasm_app_instance_t *)app_ctx->wasm_instance;
+    uint32_t argv[3] = {0u, 0u, 0u};
+    // dispatch post: never execute WASM on the LVGL callback stack.
+    (void)tab5_wasm_dispatch_post_call(wasm_inst, "tab5_app_on_ui_event", "on_ui_event", 3, argv);
+}
+
+static void delete_wasm_poll_timer()
+{
+    if (s_wasm_poll_timer != nullptr) {
+        lv_timer_delete(s_wasm_poll_timer);
+        s_wasm_poll_timer = nullptr;
+    }
+    s_wasm_poll_owner = nullptr;
+}
+
+static void sync_wasm_poll_timer_to_active_app()
+{
+    tab5_app_context_t *active_ctx = tab5_host_get_active_app();
+    if (active_ctx == nullptr || !active_ctx->is_wasm || !is_chat_app_id(active_ctx->app_id)) {
+        delete_wasm_poll_timer();
+        return;
+    }
+
+    if (s_wasm_poll_timer == nullptr) {
+        s_wasm_poll_timer = lv_timer_create(on_wasm_poll_timer, 200, nullptr);
+    }
+    s_wasm_poll_owner = s_wasm_poll_timer != nullptr ? active_ctx : nullptr;
 }
 #endif
 
@@ -52,9 +223,21 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
     }
 
 #if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
+    }
+    memcpy(s_previous_handle_table, s_handle_table, sizeof(s_handle_table));
+    s_previous_next_handle = s_next_handle;
+    s_has_previous_handles = true;
+    s_previous_camera_view = s_active_camera_view;
+    s_previous_gallery_view = s_active_gallery_view;
+    s_previous_camera_owner = s_active_camera_owner;
+    s_previous_gallery_owner = s_active_gallery_owner;
+    s_has_previous_views = true;
     s_previous_screen = lv_disp_get_scr_act(NULL);
     lv_obj_t *scr = lv_obj_create(NULL);
     if (scr == nullptr) {
+        LV_UNLOCK();
         return TAB5_ERR_NO_MEM;
     }
 
@@ -95,37 +278,28 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
         LV_EVENT_CLICKED, nullptr);
 
     tab5_ui_host_register_obj(ta);
-    lv_obj_add_event_cb(ta, on_generic_widget_event_cb, LV_EVENT_ALL, nullptr);
+    lv_obj_add_event_cb(ta, tab5_ui_host_generic_widget_event_cb, LV_EVENT_ALL, nullptr);
 
-    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.files") == 0 || strcmp(ctx->app_id, "files") == 0)) {
+    bool is_camera =
+        ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.camera") == 0 || strcmp(ctx->app_id, "camera") == 0);
+    bool is_files = ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.files") == 0 || strcmp(ctx->app_id, "files") == 0);
+    if (is_camera || is_files) {
         lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
-        if (s_active_files_view != nullptr) {
-            ui_files_view_destroy(s_active_files_view);
-            s_active_files_view = nullptr;
+    }
+    if (is_camera) {
+        ui_camera_view_t *candidate_view = ui_camera_view_create(scr, bar);
+        if (candidate_view != nullptr) {
+            s_active_camera_view = candidate_view;
+            s_active_camera_owner = ctx;
         }
-        s_active_files_view = ui_files_view_create(scr, bar);
-    } else if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.camera") == 0 || strcmp(ctx->app_id, "camera") == 0)) {
-        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
-        if (s_active_camera_view != nullptr) {
-            ui_camera_view_destroy(s_active_camera_view);
-            s_active_camera_view = nullptr;
-        }
-        s_active_camera_view = ui_camera_view_create(scr, bar);
     } else if (ctx->app_id[0] &&
                (strcmp(ctx->app_id, "com.tab5.gallery") == 0 || strcmp(ctx->app_id, "gallery") == 0)) {
         lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
-        if (s_active_gallery_view != nullptr) {
-            ui_gallery_view_destroy(s_active_gallery_view);
-            s_active_gallery_view = nullptr;
+        ui_gallery_view_t *candidate_view = ui_gallery_view_create(scr, bar);
+        if (candidate_view != nullptr) {
+            s_active_gallery_view = candidate_view;
+            s_active_gallery_owner = ctx;
         }
-        s_active_gallery_view = ui_gallery_view_create(scr, bar);
-    } else if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.chat") == 0 || strcmp(ctx->app_id, "chat") == 0)) {
-        lv_obj_add_flag(ta, LV_OBJ_FLAG_HIDDEN);
-        if (s_active_chat_view != nullptr) {
-            ui_chat_view_destroy(s_active_chat_view);
-            s_active_chat_view = nullptr;
-        }
-        s_active_chat_view = ui_chat_view_create(scr, bar);
     }
 
     ctx->root_screen = (void *)scr;
@@ -133,8 +307,14 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
     ctx->app_bar_handle = new ui_app_bar_t(bar);
     ctx->content_area = (void *)ta;
 
+    if (ctx->is_wasm && is_chat_app_id(ctx->app_id) && s_wasm_poll_timer == nullptr) {
+        s_wasm_poll_timer = lv_timer_create(on_wasm_poll_timer, 200, nullptr);
+        s_wasm_poll_owner = s_wasm_poll_timer != nullptr ? ctx : nullptr;
+    }
+
     lv_disp_load_scr(scr);
-    tab5_ui_host_apply_layout();
+    tab5_ui_host_apply_layout_locked();
+    LV_UNLOCK();
     return TAB5_OK;
 #else
     (void)app_name;
@@ -153,51 +333,139 @@ tab5_err_t tab5_ui_host_destroy_app_screen(tab5_app_context_t *ctx)
     }
 
 #if HAVE_LVGL
-    if (s_active_files_view != nullptr) {
-        ui_files_view_destroy(s_active_files_view);
-        s_active_files_view = nullptr;
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
     }
-    if (s_active_camera_view != nullptr) {
-        ui_camera_view_destroy(s_active_camera_view);
-        s_active_camera_view = nullptr;
-    }
-    if (s_active_gallery_view != nullptr) {
-        ui_gallery_view_destroy(s_active_gallery_view);
-        s_active_gallery_view = nullptr;
-    }
-    if (s_active_chat_view != nullptr) {
-        ui_chat_view_destroy(s_active_chat_view);
-        s_active_chat_view = nullptr;
-    }
+    // Durante uma troca bem-sucedida, o contexto novo já é o ativo quando o
+    // contexto antigo chega aqui. Recursos globais de UI pertencem à tela
+    // ativa, portanto não podem ser limpos ao destruir a tela antiga.
+    const bool destroying_active = tab5_host_get_active_app() == ctx;
+    if (destroying_active) {
+        delete_wasm_poll_timer();
 
-    tab5_ui_host_clear_handles();
+        destroy_owned_views(ctx);
+        // A final close cannot leave a view owned by a context that is no
+        // longer active, even if a malformed caller supplied stale ownership.
+        if (s_active_camera_view != nullptr) {
+            ui_camera_view_destroy(s_active_camera_view);
+            s_active_camera_view = nullptr;
+            s_active_camera_owner = nullptr;
+        }
+        if (s_active_gallery_view != nullptr) {
+            ui_gallery_view_destroy(s_active_gallery_view);
+            s_active_gallery_view = nullptr;
+            s_active_gallery_owner = nullptr;
+        }
+
+        tab5_ui_host_clear_handles();
+    }
 
     if (ctx->root_screen != nullptr) {
         lv_obj_t *scr = (lv_obj_t *)ctx->root_screen;
+        if (!destroying_active) {
+            clear_handles_for_screen(scr);
+            destroy_snapshot_owned_views(ctx);
+            destroy_owned_views(ctx);
+            sync_wasm_poll_timer_to_active_app();
+        }
         ctx->root_screen = nullptr;
         ctx->app_bar = nullptr;
+        ctx->content_area = nullptr;
         if (ctx->app_bar_handle != nullptr) {
             delete (ui_app_bar_t *)ctx->app_bar_handle;
             ctx->app_bar_handle = nullptr;
         }
 
-        ui_keyboard_hide();
+        if (destroying_active) {
+            ui_keyboard_hide();
+        }
         lv_obj_t *act = lv_disp_get_scr_act(NULL);
         if (act == scr) {
-            lv_obj_t *target =
-                (s_previous_screen != nullptr && s_previous_screen != scr) ? s_previous_screen : lv_screen_active();
+            lv_obj_t *target = (s_previous_screen != nullptr && s_previous_screen != scr)
+                                   ? s_previous_screen
+                                   : ui_shell_get_desktop_screen();
             if (target != nullptr && target != scr) {
                 lv_disp_load_scr(target);
             }
         }
-        s_previous_screen = nullptr;
-        lv_obj_delete_async(scr);
+        // A successful replacement leaves the old screen in this slot. It is
+        // being deleted now, so never let a later close target that stale
+        // pointer.
+        if (s_previous_screen == scr || destroying_active) {
+            s_previous_screen = nullptr;
+        }
+        s_has_previous_handles = false;
+        s_has_previous_views = false;
+        // A screen owns all of its children.  Delete it synchronously while
+        // the display lock is held; deferred deletion leaves stale pointers
+        // reachable by the next app switch.
+        lv_obj_delete(scr);
     }
+    LV_UNLOCK();
 #else
     ctx->root_screen = nullptr;
     ctx->app_bar = nullptr;
 #endif
 
+    return TAB5_OK;
+}
+
+tab5_err_t tab5_ui_host_abort_app_screen(tab5_app_context_t *ctx)
+{
+    if (ctx == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+
+#if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
+    }
+    if (s_wasm_poll_timer != nullptr && s_wasm_poll_owner == ctx) {
+        delete_wasm_poll_timer();
+    }
+    destroy_owned_views(ctx);
+
+    lv_obj_t *scr = (lv_obj_t *)ctx->root_screen;
+    ctx->root_screen = nullptr;
+    ctx->app_bar = nullptr;
+    ctx->content_area = nullptr;
+    if (ctx->app_bar_handle != nullptr) {
+        delete (ui_app_bar_t *)ctx->app_bar_handle;
+        ctx->app_bar_handle = nullptr;
+    }
+    ui_keyboard_hide();
+
+    // Remove a tela candidata de forma síncrona antes de restaurar qualquer
+    // handle/view pertencente ao contexto anterior.
+    if (scr != nullptr) {
+        lv_obj_delete(scr);
+    }
+
+    if (s_previous_screen != nullptr && s_previous_screen != scr) {
+        lv_disp_load_scr(s_previous_screen);
+    }
+
+    if (s_has_previous_handles) {
+        memcpy(s_handle_table, s_previous_handle_table, sizeof(s_handle_table));
+        s_next_handle = s_previous_next_handle;
+    } else {
+        tab5_ui_host_clear_handles();
+    }
+    if (s_has_previous_views) {
+        s_active_camera_view = s_previous_camera_view;
+        s_active_gallery_view = s_previous_gallery_view;
+        s_active_camera_owner = s_previous_camera_owner;
+        s_active_gallery_owner = s_previous_gallery_owner;
+    }
+    s_previous_screen = nullptr;
+    s_has_previous_handles = false;
+    s_has_previous_views = false;
+    LV_UNLOCK();
+#else
+    ctx->root_screen = nullptr;
+    ctx->app_bar = nullptr;
+    ctx->app_bar_handle = nullptr;
+#endif
     return TAB5_OK;
 }
 
@@ -234,6 +502,96 @@ bool tab5_ui_host_keyboard_is_visible(void)
 #endif
 }
 
+int32_t tab5_ui_host_keyboard_get_height(void)
+{
+#if HAVE_LVGL
+    return ui_keyboard_is_visible() ? ui_keyboard_get_height() : 0;
+#else
+    return 0;
+#endif
+}
+
+void tab5_ui_host_get_display_size(int32_t *out_w, int32_t *out_h)
+{
+    if (out_w == nullptr && out_h == nullptr) {
+        return;
+    }
+#if HAVE_LVGL
+    int32_t w = lv_display_get_horizontal_resolution(NULL);
+    int32_t h = lv_display_get_vertical_resolution(NULL);
+    if (out_w != nullptr) {
+        *out_w = w;
+    }
+    if (out_h != nullptr) {
+        *out_h = h;
+    }
+#else
+    if (out_w != nullptr) {
+        *out_w = 720;
+    }
+    if (out_h != nullptr) {
+        *out_h = 1280;
+    }
+#endif
+}
+
+tab5_ui_obj_t tab5_ui_host_textarea_create(tab5_ui_obj_t parent_handle)
+{
+#if HAVE_LVGL
+    LV_LOCK();
+    lv_obj_t *parent = (lv_obj_t *)tab5_ui_host_get_lv_obj(parent_handle);
+    if (parent == nullptr) {
+        tab5_app_context_t *ctx = tab5_host_get_active_app();
+        if (ctx != nullptr) {
+            parent = (lv_obj_t *)ctx->root_screen;
+        }
+    }
+    if (parent == nullptr) {
+        LV_UNLOCK();
+        return TAB5_UI_INVALID_OBJ;
+    }
+
+    const ui_palette_t *palette = ui_theme_get();
+    lv_obj_t *ta = lv_textarea_create(parent);
+    if (ta == nullptr) {
+        LV_UNLOCK();
+        return TAB5_UI_INVALID_OBJ;
+    }
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_cursor_click_pos(ta, true);
+    lv_obj_set_style_anim_duration(ta, 0, LV_PART_CURSOR);
+    lv_obj_set_style_text_font(ta, &lv_font_montserrat_18_latin1, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(ta, lv_color_hex(palette->surface_alt), 0);
+    lv_obj_set_style_text_color(ta, lv_color_hex(palette->text), 0);
+    lv_obj_set_style_border_color(ta, lv_color_hex(palette->border), 0);
+    lv_obj_set_style_border_width(ta, 1, 0);
+    lv_obj_set_style_radius(ta, 8, 0);
+    lv_obj_set_style_pad_hor(ta, 12, 0);
+    lv_obj_set_style_text_color(ta, lv_color_hex(palette->text_muted), LV_PART_TEXTAREA_PLACEHOLDER);
+    lv_obj_set_style_bg_color(ta, lv_color_hex(palette->accent), LV_PART_CURSOR);
+    lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, LV_PART_CURSOR);
+
+    lv_obj_add_event_cb(
+        ta,
+        [](lv_event_t *e) {
+            lv_obj_t *target_ta = (lv_obj_t *)lv_event_get_target(e);
+            if (target_ta != nullptr) {
+                lv_group_focus_obj(target_ta);
+                ui_keyboard_attach(target_ta);
+            }
+        },
+        LV_EVENT_CLICKED, nullptr);
+
+    tab5_ui_obj_t res = tab5_ui_host_register_obj(ta);
+    lv_obj_add_event_cb(ta, tab5_ui_host_generic_widget_event_cb, LV_EVENT_ALL, nullptr);
+    LV_UNLOCK();
+    return res;
+#else
+    (void)parent_handle;
+    return 1;
+#endif
+}
+
 tab5_err_t tab5_ui_host_show_toast(const char *message, uint32_t duration_ms)
 {
     if (message == nullptr) {
@@ -241,14 +599,22 @@ tab5_err_t tab5_ui_host_show_toast(const char *message, uint32_t duration_ms)
     }
 
 #if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
+    }
     lv_obj_t *top_layer = lv_layer_top();
     if (top_layer == nullptr) {
+        LV_UNLOCK();
         return TAB5_ERR_FAIL;
     }
 
     const ui_palette_t *palette = ui_theme_get();
 
     lv_obj_t *toast = lv_obj_create(top_layer);
+    if (toast == nullptr) {
+        LV_UNLOCK();
+        return TAB5_ERR_NO_MEM;
+    }
     lv_obj_set_size(toast, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(toast, lv_color_hex(palette->surface), 0);
     lv_obj_set_style_border_color(toast, lv_color_hex(palette->accent), 0);
@@ -258,13 +624,16 @@ tab5_err_t tab5_ui_host_show_toast(const char *message, uint32_t duration_ms)
     lv_obj_align(toast, LV_ALIGN_TOP_MID, 0, 70);
 
     lv_obj_t *lbl = lv_label_create(toast);
-    lv_label_set_text(lbl, message);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(palette->text), 0);
+    if (lbl != nullptr) {
+        lv_label_set_text(lbl, message);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(palette->text), 0);
+    }
 
     // Auto-delete toast após a duração
     if (duration_ms > 0) {
         lv_obj_delete_delayed(toast, duration_ms);
     }
+    LV_UNLOCK();
     return TAB5_OK;
 #else
     (void)duration_ms;
@@ -360,69 +729,19 @@ tab5_err_t tab5_ui_host_textarea_set_password_mode(void *ta, bool password_mode)
 void tab5_ui_host_apply_layout(void)
 {
 #if HAVE_LVGL
-    tab5_app_context_t *ctx = tab5_host_get_active_app();
-    if (ctx == nullptr || ctx->root_screen == nullptr) {
+    if (!LV_LOCK()) {
         return;
     }
-
-    int32_t w = lv_display_get_horizontal_resolution(NULL);
-    int32_t h = lv_display_get_vertical_resolution(NULL);
-    int32_t kb_h = ui_keyboard_is_visible() ? ui_keyboard_get_height() : 0;
-
-    if (ctx->app_bar != nullptr) {
-        lv_obj_set_width((lv_obj_t *)ctx->app_bar, w);
-    }
-
-    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.files") == 0 || strcmp(ctx->app_id, "files") == 0)) {
-        if (s_active_files_view != nullptr) {
-            ui_files_view_apply_layout(s_active_files_view);
-        }
-        return;
-    }
-
-    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.camera") == 0 || strcmp(ctx->app_id, "camera") == 0)) {
-        if (s_active_camera_view != nullptr) {
-            ui_camera_view_apply_layout(s_active_camera_view);
-        }
-        return;
-    }
-
-    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.gallery") == 0 || strcmp(ctx->app_id, "gallery") == 0)) {
-        if (s_active_gallery_view != nullptr) {
-            ui_gallery_view_apply_layout(s_active_gallery_view);
-        }
-        return;
-    }
-
-    if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.chat") == 0 || strcmp(ctx->app_id, "chat") == 0)) {
-        if (s_active_chat_view != nullptr) {
-            ui_chat_view_apply_layout(s_active_chat_view);
-        }
-        return;
-    }
-
-    lv_obj_t *ta = (lv_obj_t *)ctx->content_area;
-    if (ta == nullptr) {
-        return;
-    }
-
-    lv_obj_set_width(ta, w);
-    int32_t available_h = h - 2 * UI_BAR_HEIGHT - kb_h - 8;
-    if (available_h < 40) {
-        available_h = 40;
-    }
-    lv_obj_set_height(ta, available_h);
-    if (ui_keyboard_is_visible()) {
-        lv_obj_scroll_to_view(ta, LV_ANIM_OFF);
-    }
+    tab5_ui_host_apply_layout_locked();
+    LV_UNLOCK();
 #endif
 }
 
 void tab5_ui_host_refresh_theme(void)
 {
 #if HAVE_LVGL
-    if (s_active_files_view != nullptr) {
-        ui_files_view_refresh_theme(s_active_files_view);
+    if (!LV_LOCK()) {
+        return;
     }
     if (s_active_camera_view != nullptr) {
         ui_camera_view_refresh_theme(s_active_camera_view);
@@ -430,23 +749,25 @@ void tab5_ui_host_refresh_theme(void)
     if (s_active_gallery_view != nullptr) {
         ui_gallery_view_refresh_theme(s_active_gallery_view);
     }
-    if (s_active_chat_view != nullptr) {
-        ui_chat_view_refresh_theme(s_active_chat_view);
-    }
 
     tab5_app_context_t *ctx = tab5_host_get_active_app();
     if (ctx == nullptr) {
+        LV_UNLOCK();
         return;
     }
     if (ctx->app_bar_handle != nullptr) {
         ui_app_bar_refresh_theme((ui_app_bar_t *)ctx->app_bar_handle);
     }
+    tab5_wasm_app_instance_t *wasm_inst = nullptr;
     if (ctx->is_wasm && ctx->wasm_instance != nullptr) {
-        tab5_wasm_app_instance_t *wasm_inst = (tab5_wasm_app_instance_t *)ctx->wasm_instance;
-        uint32_t argc = 1;
-        uint32_t argv[1] = {ui_theme_is_dark() ? 1u : 0u};
-        tab5_wasm_call_function(wasm_inst, "tab5_app_on_theme_changed", argc, argv);
-        tab5_wasm_call_function(wasm_inst, "on_theme_changed", argc, argv);
+        wasm_inst = (tab5_wasm_app_instance_t *)ctx->wasm_instance;
+    }
+    uint32_t theme_arg = ui_theme_is_dark() ? 1u : 0u;
+    LV_UNLOCK();
+
+    if (wasm_inst != nullptr) {
+        // dispatch post: return immediately after releasing the display lock.
+        (void)tab5_wasm_dispatch_post_call(wasm_inst, "tab5_app_on_theme_changed", "on_theme_changed", 1, &theme_arg);
     }
 #endif
 }
@@ -455,6 +776,9 @@ void tab5_ui_host_resume_app(tab5_app_context_t *ctx)
 {
 #if HAVE_LVGL
     if (ctx == nullptr) {
+        return;
+    }
+    if (!LV_LOCK()) {
         return;
     }
     if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.camera") == 0 || strcmp(ctx->app_id, "camera") == 0)) {
@@ -467,6 +791,7 @@ void tab5_ui_host_resume_app(tab5_app_context_t *ctx)
             ui_gallery_view_start(s_active_gallery_view);
         }
     }
+    LV_UNLOCK();
 #else
     (void)ctx;
 #endif
@@ -478,11 +803,15 @@ void tab5_ui_host_open_file(tab5_app_context_t *ctx, const char *path)
     if (ctx == nullptr || path == nullptr) {
         return;
     }
+    if (!LV_LOCK()) {
+        return;
+    }
     if (ctx->app_id[0] && (strcmp(ctx->app_id, "com.tab5.gallery") == 0 || strcmp(ctx->app_id, "gallery") == 0)) {
         if (s_active_gallery_view != nullptr) {
             ui_gallery_view_open_file(s_active_gallery_view, path);
         }
     }
+    LV_UNLOCK();
 #else
     (void)ctx;
     (void)path;
@@ -493,13 +822,8 @@ void tab5_ui_host_open_file(tab5_app_context_t *ctx, const char *path)
 /* Manipulação de Handles de UI e Widgets Genéricos                          */
 /* ========================================================================= */
 
-#define MAX_UI_HANDLES 128
-
 #if HAVE_LVGL
-static lv_obj_t *s_handle_table[MAX_UI_HANDLES];
-static uint32_t s_next_handle = 1;
-
-static void on_generic_widget_event_cb(lv_event_t *e)
+void tab5_ui_host_generic_widget_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t *target = (lv_obj_t *)lv_event_get_target(e);
@@ -512,10 +836,13 @@ static void on_generic_widget_event_cb(lv_event_t *e)
     }
 
     tab5_ui_obj_t handle = TAB5_UI_INVALID_OBJ;
-    for (uint32_t i = 1; i < MAX_UI_HANDLES; ++i) {
-        if (s_handle_table[i] == target) {
-            handle = i;
-            break;
+    for (lv_obj_t *candidate = target; candidate != nullptr && handle == TAB5_UI_INVALID_OBJ;
+         candidate = lv_obj_get_parent(candidate)) {
+        for (uint32_t i = 1; i < MAX_UI_HANDLES; ++i) {
+            if (s_handle_table[i] == candidate) {
+                handle = i;
+                break;
+            }
         }
     }
 
@@ -547,8 +874,8 @@ static void on_generic_widget_event_cb(lv_event_t *e)
         if (app_ctx->is_wasm && app_ctx->wasm_instance != nullptr) {
             tab5_wasm_app_instance_t *wasm_inst = (tab5_wasm_app_instance_t *)app_ctx->wasm_instance;
             uint32_t argv[3] = {(uint32_t)handle, (uint32_t)event_type, (uint32_t)event_val};
-            tab5_wasm_call_function(wasm_inst, "tab5_app_on_ui_event", 3, argv);
-            tab5_wasm_call_function(wasm_inst, "on_ui_event", 3, argv);
+            // dispatch post: argv is copied into the bounded job.
+            (void)tab5_wasm_dispatch_post_call(wasm_inst, "tab5_app_on_ui_event", "on_ui_event", 3, argv);
         } else if (app_ctx->lifecycle.on_ui_event != nullptr) {
             app_ctx->lifecycle.on_ui_event(handle, event_type, event_val);
         }
@@ -638,6 +965,7 @@ tab5_ui_obj_t tab5_ui_host_container_create(tab5_ui_obj_t parent_handle)
     lv_obj_set_style_border_width(cont, 0, 0);
     lv_obj_set_style_radius(cont, 8, 0);
     lv_obj_set_style_pad_all(cont, 8, 0);
+    lv_obj_add_flag(cont, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLL_CHAIN_VER | LV_OBJ_FLAG_SCROLL_CHAIN_HOR));
 
     tab5_ui_obj_t res = tab5_ui_host_register_obj(cont);
     LV_UNLOCK();
@@ -680,6 +1008,69 @@ tab5_err_t tab5_ui_host_obj_set_size(tab5_ui_obj_t obj_handle, int32_t w, int32_
     (void)obj_handle;
     (void)w;
     (void)h;
+    return TAB5_OK;
+#endif
+}
+
+tab5_err_t tab5_ui_host_obj_set_scrollable(tab5_ui_obj_t obj_handle, bool scrollable)
+{
+#if HAVE_LVGL
+    LV_LOCK();
+    lv_obj_t *obj = (lv_obj_t *)tab5_ui_host_get_lv_obj(obj_handle);
+    if (obj == nullptr) {
+        LV_UNLOCK();
+        return TAB5_ERR_INVALID_ARG;
+    }
+    if (scrollable) {
+        lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_AUTO);
+    } else {
+        lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+    }
+    LV_UNLOCK();
+    return TAB5_OK;
+#else
+    (void)obj_handle;
+    (void)scrollable;
+    return TAB5_OK;
+#endif
+}
+
+tab5_err_t tab5_ui_host_obj_scroll_to_bottom(tab5_ui_obj_t obj_handle, bool animated)
+{
+#if HAVE_LVGL
+    LV_LOCK();
+    lv_obj_t *obj = (lv_obj_t *)tab5_ui_host_get_lv_obj(obj_handle);
+    if (obj == nullptr) {
+        LV_UNLOCK();
+        return TAB5_ERR_INVALID_ARG;
+    }
+    lv_obj_scroll_to_y(obj, LV_COORD_MAX, animated ? LV_ANIM_ON : LV_ANIM_OFF);
+    LV_UNLOCK();
+    return TAB5_OK;
+#else
+    (void)obj_handle;
+    (void)animated;
+    return TAB5_OK;
+#endif
+}
+
+tab5_err_t tab5_ui_host_obj_scroll_to_top(tab5_ui_obj_t obj_handle, bool animated)
+{
+#if HAVE_LVGL
+    LV_LOCK();
+    lv_obj_t *obj = (lv_obj_t *)tab5_ui_host_get_lv_obj(obj_handle);
+    if (obj == nullptr) {
+        LV_UNLOCK();
+        return TAB5_ERR_INVALID_ARG;
+    }
+    lv_obj_scroll_to_y(obj, 0, animated ? LV_ANIM_ON : LV_ANIM_OFF);
+    LV_UNLOCK();
+    return TAB5_OK;
+#else
+    (void)obj_handle;
+    (void)animated;
     return TAB5_OK;
 #endif
 }
@@ -854,12 +1245,18 @@ tab5_err_t tab5_ui_host_label_set_text(tab5_ui_obj_t obj_handle, const char *tex
         LV_UNLOCK();
         return TAB5_ERR_INVALID_ARG;
     }
+    const char *resolved_text = text != nullptr ? text : "";
+    if (strcmp(resolved_text, "LV_SYMBOL_LIST") == 0) {
+        resolved_text = LV_SYMBOL_LIST;
+    } else if (strcmp(resolved_text, "LV_SYMBOL_IMAGE") == 0) {
+        resolved_text = LV_SYMBOL_IMAGE;
+    }
     if (lv_obj_check_type(obj, &lv_label_class)) {
-        lv_label_set_text(obj, text != nullptr ? text : "");
+        lv_label_set_text(obj, resolved_text);
     } else if (lv_obj_get_child_cnt(obj) > 0) {
         lv_obj_t *child = lv_obj_get_child(obj, 0);
         if (child != nullptr && lv_obj_check_type(child, &lv_label_class)) {
-            lv_label_set_text(child, text != nullptr ? text : "");
+            lv_label_set_text(child, resolved_text);
         }
     }
     LV_UNLOCK();
@@ -867,6 +1264,33 @@ tab5_err_t tab5_ui_host_label_set_text(tab5_ui_obj_t obj_handle, const char *tex
 #else
     (void)obj_handle;
     (void)text;
+    return TAB5_OK;
+#endif
+}
+
+tab5_err_t tab5_ui_host_label_set_wrap(tab5_ui_obj_t obj_handle, bool wrap)
+{
+#if HAVE_LVGL
+    LV_LOCK();
+    lv_obj_t *obj = (lv_obj_t *)tab5_ui_host_get_lv_obj(obj_handle);
+    if (obj == nullptr) {
+        LV_UNLOCK();
+        return TAB5_ERR_INVALID_ARG;
+    }
+    lv_label_long_mode_t mode = wrap ? LV_LABEL_LONG_WRAP : LV_LABEL_LONG_CLIP;
+    if (lv_obj_check_type(obj, &lv_label_class)) {
+        lv_label_set_long_mode(obj, mode);
+    } else if (lv_obj_get_child_cnt(obj) > 0) {
+        lv_obj_t *child = lv_obj_get_child(obj, 0);
+        if (child != nullptr && lv_obj_check_type(child, &lv_label_class)) {
+            lv_label_set_long_mode(child, mode);
+        }
+    }
+    LV_UNLOCK();
+    return TAB5_OK;
+#else
+    (void)obj_handle;
+    (void)wrap;
     return TAB5_OK;
 #endif
 }
@@ -904,7 +1328,7 @@ tab5_ui_obj_t tab5_ui_host_btn_create(tab5_ui_obj_t parent_handle, const char *l
         lv_obj_center(lbl);
     }
 
-    lv_obj_add_event_cb(btn, on_generic_widget_event_cb, LV_EVENT_ALL, nullptr);
+    lv_obj_add_event_cb(btn, tab5_ui_host_generic_widget_event_cb, LV_EVENT_ALL, nullptr);
     tab5_ui_obj_t res = tab5_ui_host_register_obj(btn);
     LV_UNLOCK();
     return res;
@@ -938,7 +1362,7 @@ tab5_ui_obj_t tab5_ui_host_switch_create(tab5_ui_obj_t parent_handle)
         return TAB5_UI_INVALID_OBJ;
     }
     lv_obj_set_style_bg_color(sw, lv_color_hex(palette->accent), LV_PART_INDICATOR);
-    lv_obj_add_event_cb(sw, on_generic_widget_event_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(sw, tab5_ui_host_generic_widget_event_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
     tab5_ui_obj_t res = tab5_ui_host_register_obj(sw);
     LV_UNLOCK();
@@ -1016,7 +1440,7 @@ tab5_ui_obj_t tab5_ui_host_slider_create(tab5_ui_obj_t parent_handle, int32_t mi
     lv_obj_set_style_bg_color(slider, lv_color_hex(palette->text_muted), LV_PART_MAIN);
     lv_obj_set_style_bg_color(slider, lv_color_hex(palette->accent), LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(slider, lv_color_hex(palette->accent), LV_PART_KNOB);
-    lv_obj_add_event_cb(slider, on_generic_widget_event_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(slider, tab5_ui_host_generic_widget_event_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
     tab5_ui_obj_t res = tab5_ui_host_register_obj(slider);
     LV_UNLOCK();
@@ -1119,7 +1543,7 @@ tab5_ui_obj_t tab5_ui_host_list_add_btn(tab5_ui_obj_t list_handle, const char *s
     }
     lv_obj_set_style_bg_color(btn, lv_color_hex(palette->surface), 0);
     lv_obj_set_style_text_color(btn, lv_color_hex(palette->text), 0);
-    lv_obj_add_event_cb(btn, on_generic_widget_event_cb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(btn, tab5_ui_host_generic_widget_event_cb, LV_EVENT_CLICKED, nullptr);
 
     tab5_ui_obj_t res = tab5_ui_host_register_obj(btn);
     LV_UNLOCK();
@@ -1142,6 +1566,37 @@ tab5_err_t tab5_ui_host_obj_clean(tab5_ui_obj_t obj_handle)
         return TAB5_ERR_INVALID_ARG;
     }
     lv_obj_clean(obj);
+    LV_UNLOCK();
+    return TAB5_OK;
+#else
+    (void)obj_handle;
+    return TAB5_OK;
+#endif
+}
+
+tab5_err_t tab5_ui_host_obj_clean_deferred(tab5_ui_obj_t obj_handle)
+{
+#if HAVE_LVGL
+    LV_LOCK();
+    lv_obj_t *obj = (lv_obj_t *)tab5_ui_host_get_lv_obj(obj_handle);
+    if (obj == nullptr) {
+        LV_UNLOCK();
+        return TAB5_ERR_INVALID_ARG;
+    }
+    for (uint32_t i = 1; i < MAX_UI_HANDLES; i++) {
+        if (s_handle_table[i] != nullptr && s_handle_table[i] != obj && is_descendant_of(s_handle_table[i], obj)) {
+            s_handle_table[i] = nullptr;
+        }
+    }
+    uint32_t child_count = lv_obj_get_child_count(obj);
+    for (uint32_t i = child_count; i > 0; i--) {
+        lv_obj_t *child = lv_obj_get_child(obj, i - 1);
+        if (child == nullptr) {
+            continue;
+        }
+        lv_obj_add_flag(child, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_delete_async(child);
+    }
     LV_UNLOCK();
     return TAB5_OK;
 #else
@@ -1281,6 +1736,38 @@ tab5_err_t tab5_ui_host_obj_set_style_text_color(tab5_ui_obj_t obj_handle, uint3
 #endif
 }
 
+tab5_err_t tab5_ui_host_obj_set_style_text_size(tab5_ui_obj_t obj_handle, int32_t size_px)
+{
+#if HAVE_LVGL
+    const lv_font_t *font = nullptr;
+    if (size_px == 14) {
+        font = &lv_font_montserrat_14_latin1;
+    } else if (size_px == 18) {
+        font = &lv_font_montserrat_18_latin1;
+    } else if (size_px == 28) {
+        font = &lv_font_montserrat_28_latin1;
+    } else if (size_px == 56) {
+        font = &lv_font_montserrat_56_latin1;
+    } else {
+        return TAB5_ERR_INVALID_ARG;
+    }
+
+    LV_LOCK();
+    lv_obj_t *obj = (lv_obj_t *)tab5_ui_host_get_lv_obj(obj_handle);
+    if (obj == nullptr) {
+        LV_UNLOCK();
+        return TAB5_ERR_INVALID_ARG;
+    }
+    lv_obj_set_style_text_font(obj, font, 0);
+    LV_UNLOCK();
+    return TAB5_OK;
+#else
+    (void)obj_handle;
+    (void)size_px;
+    return TAB5_OK;
+#endif
+}
+
 tab5_err_t tab5_ui_host_obj_set_style_radius(tab5_ui_obj_t obj_handle, int32_t radius)
 {
 #if HAVE_LVGL
@@ -1330,7 +1817,7 @@ tab5_err_t tab5_ui_host_obj_set_clickable(tab5_ui_obj_t obj_handle, bool clickab
     }
     if (clickable) {
         lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(obj, on_generic_widget_event_cb, LV_EVENT_ALL, nullptr);
+        lv_obj_add_event_cb(obj, tab5_ui_host_generic_widget_event_cb, LV_EVENT_ALL, nullptr);
     } else {
         lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
     }

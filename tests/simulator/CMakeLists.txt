@@ -69,18 +69,10 @@ add_executable(tab5_sim
     ${OS}/shell/ui_status.cpp
     ${OS}/shell/ui_theme.cpp
     ${OS}/shell/ui_calendar_view.cpp
-    ${OS}/shell/ui_files_view.cpp
     ${OS}/shell/ui_camera_view.cpp
     ${OS}/shell/ui_gallery_view.cpp
     ${OS}/shell/ui_installer.cpp
     ${OS}/shell/ui_storage_view.cpp
-    ${OS}/shell/ui_bluetooth_view.cpp
-    ${OS}/shell/ui_chat_view.cpp
-    ${OS}/shell/ui_fileserver_view.cpp
-    ${OS}/shell/ui_music_view.cpp
-    ${OS}/shell/ui_recorder_view.cpp
-    ${OS}/shell/ui_terminal_view.cpp
-    ${OS}/shell/ui_wifi_view.cpp
     ${OS}/core/storage_mgr.cpp
     ${OS}/runtime/tab5_package_mgr.cpp
     ${OS}/runtime/tab5_manifest.cpp

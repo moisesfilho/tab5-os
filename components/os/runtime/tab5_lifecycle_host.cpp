@@ -6,6 +6,8 @@
 #include "tab5_lifecycle_host.h"
 #include "tab5_ui_host.h"
 #include "tab5_storage_sandbox.h"
+#include "tab5_wasm_runtime.h"
+#include "tab5_wasm_dispatcher.h"
 #include <cstring>
 
 #ifdef ESP_PLATFORM
@@ -33,7 +35,11 @@ tab5_err_t tab5_lifecycle_host_init_app(tab5_app_context_t *ctx)
     tab5_host_set_active_app(ctx);
 
     // Cria tela UI
-    tab5_ui_host_create_app_screen(ctx->app_name[0] != '\0' ? ctx->app_name : ctx->app_id, ctx);
+    tab5_err_t screen_err = tab5_ui_host_create_app_screen(ctx->app_name[0] != '\0' ? ctx->app_name : ctx->app_id, ctx);
+    if (screen_err != TAB5_OK) {
+        tab5_host_clear_active_app();
+        return screen_err;
+    }
 
     ctx->state = TAB5_APP_STATE_INITIALIZED;
 
@@ -106,6 +112,17 @@ tab5_err_t tab5_lifecycle_host_open_file(tab5_app_context_t *ctx, const char *fi
 
     tab5_ui_host_open_file(ctx, safe_path);
 
+    if (ctx->is_wasm && ctx->wasm_instance != nullptr) {
+        tab5_wasm_app_instance_t *wasm_inst = (tab5_wasm_app_instance_t *)ctx->wasm_instance;
+        // tab5_wasm_call_string_function is executed by the dispatcher worker;
+        // tab5_wasm_call_string_function(wasm_inst, "tab5_app_on_open_file", safe_path);
+        // if (err == TAB5_ERR_NOT_FOUND), the worker retries "on_open_file";
+        // safe_path is copied into the bounded job before this stack frame ends.
+        return tab5_wasm_dispatch_post_string(wasm_inst, "tab5_app_on_open_file", "on_open_file", safe_path)
+                   ? TAB5_OK
+                   : TAB5_ERR_NO_MEM;
+    }
+
     if (!ctx->is_wasm && ctx->lifecycle.on_open_file) {
         ctx->lifecycle.on_open_file(safe_path);
     }
@@ -137,5 +154,22 @@ tab5_err_t tab5_lifecycle_host_destroy_app(tab5_app_context_t *ctx)
     }
 
     LOG_I("App %s destruida", ctx->app_id);
+    return TAB5_OK;
+}
+
+tab5_err_t tab5_lifecycle_host_abort_app(tab5_app_context_t *ctx)
+{
+    if (ctx == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+    if (ctx->state == TAB5_APP_STATE_DESTROYED) {
+        return TAB5_OK;
+    }
+
+    tab5_ui_host_abort_app_screen(ctx);
+    ctx->state = TAB5_APP_STATE_DESTROYED;
+    if (tab5_host_get_active_app() == ctx) {
+        tab5_host_clear_active_app();
+    }
     return TAB5_OK;
 }

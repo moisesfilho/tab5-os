@@ -147,6 +147,28 @@ TEST_F(HostAbiTest, LifecycleTransitions)
     EXPECT_EQ(tab5_host_get_active_app(), nullptr);
 }
 
+TEST_F(HostAbiTest, FailedLifecycleTransitionDoesNotInvokeCallbacks)
+{
+    tab5_app_context_t ctx = {};
+    strncpy(ctx.app_id, "com.tab5.failed-transition", sizeof(ctx.app_id) - 1);
+    ctx.state = TAB5_APP_STATE_UNINITIALIZED;
+    ctx.lifecycle.on_resume = dummy_resume;
+    ctx.lifecycle.on_open_file = dummy_open_file;
+
+    EXPECT_EQ(tab5_lifecycle_host_resume_app(&ctx), TAB5_ERR_INVALID_STATE);
+    EXPECT_FALSE(s_resume_called);
+    EXPECT_EQ(ctx.state, TAB5_APP_STATE_UNINITIALIZED);
+
+    EXPECT_EQ(tab5_lifecycle_host_open_file(&ctx, "pending.txt"), TAB5_ERR_INVALID_STATE);
+    EXPECT_TRUE(s_opened_file.empty());
+
+    ctx.state = TAB5_APP_STATE_DESTROYED;
+    EXPECT_EQ(tab5_lifecycle_host_resume_app(&ctx), TAB5_ERR_INVALID_STATE);
+    EXPECT_EQ(tab5_lifecycle_host_open_file(&ctx, "pending.txt"), TAB5_ERR_INVALID_STATE);
+    EXPECT_FALSE(s_resume_called);
+    EXPECT_TRUE(s_opened_file.empty());
+}
+
 TEST_F(HostAbiTest, SystemAndHardwareApis)
 {
     tab5_battery_info_t bat = {};
@@ -215,10 +237,23 @@ TEST_F(HostAbiTest, UiAndStorageSdkFunctions)
     EXPECT_EQ(tab5_ui_obj_set_flex_flow(cont, TAB5_UI_FLEX_FLOW_ROW), TAB5_OK);
     EXPECT_EQ(tab5_ui_obj_set_pad(cont, 10), TAB5_OK);
     EXPECT_EQ(tab5_ui_obj_set_gap(cont, 5), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_scroll_to_bottom(cont, false), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_scroll_to_bottom(cont, true), TAB5_OK);
+
+    tab5_ui_obj_t ta = tab5_ui_textarea_create(cont);
+    EXPECT_NE(ta, TAB5_UI_INVALID_OBJ);
+
+    int32_t disp_w = 0, disp_h = 0;
+    tab5_ui_get_display_size(&disp_w, &disp_h);
+    EXPECT_GT(disp_w, 0);
+    EXPECT_GT(disp_h, 0);
+    EXPECT_GE(tab5_ui_keyboard_get_height(), 0);
 
     tab5_ui_obj_t lbl = tab5_ui_label_create(cont, "Label Test");
     EXPECT_NE(lbl, TAB5_UI_INVALID_OBJ);
     EXPECT_EQ(tab5_ui_label_set_text(lbl, "Updated Text"), TAB5_OK);
+    EXPECT_EQ(tab5_ui_label_set_wrap(lbl, true), TAB5_OK);
+    EXPECT_EQ(tab5_ui_label_set_wrap(lbl, false), TAB5_OK);
 
     tab5_ui_obj_t btn = tab5_ui_btn_create(cont, "Click Me");
     EXPECT_NE(btn, TAB5_UI_INVALID_OBJ);
@@ -314,4 +349,140 @@ TEST_F(HostAbiTest, UiAndStorageSdkFunctions)
     EXPECT_EQ(tab5_ui_textarea_set_password_mode(main_ta, true), TAB5_OK);
 
     tab5_lifecycle_host_destroy_app(&ctx);
+}
+
+TEST_F(HostAbiTest, AiClientApi)
+{
+    tab5_ai_config_t cfg = {};
+    EXPECT_EQ(tab5_ai_config_load(&cfg), TAB5_OK);
+    EXPECT_EQ(tab5_ai_config_load(nullptr), TAB5_ERR_INVALID_ARG);
+
+    cfg.base_url[0] = '\0';
+    cfg.token[0] = '\0';
+    cfg.model[0] = '\0';
+    cfg.max_tokens = 2048;
+    EXPECT_EQ(tab5_ai_config_save(&cfg), TAB5_OK);
+    EXPECT_EQ(tab5_ai_config_save(nullptr), TAB5_ERR_INVALID_ARG);
+
+    EXPECT_FALSE(tab5_ai_is_busy());
+    EXPECT_EQ(tab5_ai_get_state(), 0);
+    EXPECT_EQ(tab5_ai_get_response(), nullptr);
+    EXPECT_EQ(tab5_ai_get_error(), nullptr);
+    tab5_ai_consume_response();
+
+    EXPECT_EQ(tab5_ai_send("ola"), TAB5_OK);
+    EXPECT_EQ(tab5_ai_cancel(), TAB5_OK);
+}
+
+TEST_F(HostAbiTest, FileAssocAndNvsApi)
+{
+    EXPECT_EQ(tab5_file_assoc_open("/sdcard/test.txt"), TAB5_OK);
+    EXPECT_EQ(tab5_file_assoc_open(nullptr), TAB5_ERR_INVALID_ARG);
+
+    uint8_t val = 0;
+    EXPECT_EQ(tab5_nvs_get_u8("tab5", "files_hidden", &val), TAB5_ERR_NOT_FOUND);
+    EXPECT_EQ(val, 0);
+    EXPECT_EQ(tab5_nvs_get_u8(nullptr, "files_hidden", &val), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_nvs_get_u8("tab5", nullptr, &val), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_nvs_get_u8("tab5", "files_hidden", nullptr), TAB5_ERR_INVALID_ARG);
+
+    EXPECT_EQ(tab5_nvs_set_u8("tab5", "files_hidden", 1), TAB5_OK);
+    EXPECT_EQ(tab5_nvs_set_u8(nullptr, "files_hidden", 1), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_nvs_set_u8("tab5", nullptr, 1), TAB5_ERR_INVALID_ARG);
+}
+
+TEST_F(HostAbiTest, NewNativeSymbolsRegistered)
+{
+    uint32_t count = 0;
+    const tab5_native_symbol_t *symbols = tab5_host_abi_get_symbols(&count);
+
+    ASSERT_NE(symbols, nullptr);
+
+    const char *expected[] = {"tab5_ai_send",         "tab5_ai_cancel",      "tab5_ai_is_busy",
+                              "tab5_ai_config_load",  "tab5_ai_config_save", "tab5_ai_get_state",
+                              "tab5_ai_get_response", "tab5_ai_get_error",   "tab5_ai_consume_response",
+                              "tab5_file_assoc_open", "tab5_nvs_get_u8",     "tab5_nvs_set_u8"};
+
+    for (const char *name : expected) {
+        bool found = false;
+        int idx = -1;
+        for (uint32_t i = 0; i < count; ++i) {
+            if (strcmp(symbols[i].symbol_name, name) == 0) {
+                found = true;
+                idx = (int)i;
+                break;
+            }
+        }
+        ASSERT_TRUE(found) << "Simbolo ausente: " << name;
+        EXPECT_NE(symbols[idx].func_ptr, nullptr);
+        EXPECT_NE(symbols[idx].signature, nullptr);
+    }
+}
+
+typedef tab5_err_t (*fn_ai_send_t)(void *, const char *);
+typedef tab5_err_t (*fn_ai_cancel_t)(void *);
+typedef bool (*fn_ai_busy_t)(void *);
+typedef tab5_err_t (*fn_ai_cfg_load_t)(void *, tab5_ai_config_t *);
+typedef tab5_err_t (*fn_ai_cfg_save_t)(void *, const tab5_ai_config_t *);
+typedef int32_t (*fn_ai_state_t)(void *);
+typedef uint32_t (*fn_ai_str_t)(void *);
+typedef void (*fn_ai_consume_t)(void *);
+typedef tab5_err_t (*fn_assoc_t)(void *, const char *);
+typedef tab5_err_t (*fn_nvs_get_t)(void *, const char *, const char *, uint8_t *);
+typedef tab5_err_t (*fn_nvs_set_t)(void *, const char *, const char *, uint8_t);
+
+static void *lookup_symbol(const char *name)
+{
+    uint32_t count = 0;
+    const tab5_native_symbol_t *symbols = tab5_host_abi_get_symbols(&count);
+    for (uint32_t i = 0; i < count; ++i) {
+        if (strcmp(symbols[i].symbol_name, name) == 0) {
+            return symbols[i].func_ptr;
+        }
+    }
+    return nullptr;
+}
+
+TEST_F(HostAbiTest, AiWasmWrappersThroughSymbolTable)
+{
+    fn_ai_cfg_load_t load = (fn_ai_cfg_load_t)lookup_symbol("tab5_ai_config_load");
+    fn_ai_cfg_save_t save = (fn_ai_cfg_save_t)lookup_symbol("tab5_ai_config_save");
+    fn_ai_send_t send = (fn_ai_send_t)lookup_symbol("tab5_ai_send");
+    fn_ai_cancel_t cancel = (fn_ai_cancel_t)lookup_symbol("tab5_ai_cancel");
+    fn_ai_busy_t busy = (fn_ai_busy_t)lookup_symbol("tab5_ai_is_busy");
+    fn_ai_state_t state = (fn_ai_state_t)lookup_symbol("tab5_ai_get_state");
+    fn_ai_str_t response = (fn_ai_str_t)lookup_symbol("tab5_ai_get_response");
+    fn_ai_str_t error = (fn_ai_str_t)lookup_symbol("tab5_ai_get_error");
+    fn_ai_consume_t consume = (fn_ai_consume_t)lookup_symbol("tab5_ai_consume_response");
+    fn_assoc_t assoc = (fn_assoc_t)lookup_symbol("tab5_file_assoc_open");
+    fn_nvs_get_t nvs_get = (fn_nvs_get_t)lookup_symbol("tab5_nvs_get_u8");
+    fn_nvs_set_t nvs_set = (fn_nvs_set_t)lookup_symbol("tab5_nvs_set_u8");
+
+    ASSERT_NE(load, nullptr);
+    ASSERT_NE(save, nullptr);
+    ASSERT_NE(send, nullptr);
+    ASSERT_NE(cancel, nullptr);
+    ASSERT_NE(busy, nullptr);
+    ASSERT_NE(state, nullptr);
+    ASSERT_NE(response, nullptr);
+    ASSERT_NE(error, nullptr);
+    ASSERT_NE(consume, nullptr);
+    ASSERT_NE(assoc, nullptr);
+    ASSERT_NE(nvs_get, nullptr);
+    ASSERT_NE(nvs_set, nullptr);
+
+    tab5_ai_config_t cfg = {};
+    EXPECT_EQ(load(nullptr, &cfg), TAB5_OK);
+    EXPECT_EQ(save(nullptr, &cfg), TAB5_OK);
+    EXPECT_EQ(send(nullptr, "teste"), TAB5_OK);
+    EXPECT_EQ(cancel(nullptr), TAB5_OK);
+    EXPECT_FALSE(busy(nullptr));
+    EXPECT_EQ(state(nullptr), 0);
+    EXPECT_EQ(response(nullptr), 0u);
+    EXPECT_EQ(error(nullptr), 0u);
+    consume(nullptr);
+    EXPECT_EQ(assoc(nullptr, "/sdcard/x.txt"), TAB5_OK);
+    uint8_t v = 0;
+    EXPECT_EQ(nvs_get(nullptr, "tab5", "k", &v), TAB5_ERR_NOT_FOUND);
+    EXPECT_EQ(nvs_set(nullptr, "tab5", "k", 1), TAB5_OK);
 }
