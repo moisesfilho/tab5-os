@@ -38,8 +38,15 @@ CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# Console via USB-Serial-JTAG (Tab5 nao tem ponte USB-UART; UART fisico GPIO 38/37 nao conectado)
+# O console e o bridge usam o USB-Serial-JTAG por default, permitindo a
+# validacao pelo /dev/ttyACM0. A escolha UART preserva a configuracao abaixo.
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_TAB5_SERIAL_BRIDGE_ENABLED=y
+CONFIG_TAB5_SERIAL_BRIDGE_TRANSPORT_USB_SERIAL_JTAG=y
+# CONFIG_TAB5_SERIAL_BRIDGE_TRANSPORT_UART is not set
+# UART_NUM/BAUD/RX_PIN/TX_PIN intentionally have no defaults here: these
+# symbols are hidden while USB-Serial-JTAG is selected.  Their selectable
+# defaults live in Kconfig and apply when the UART transport is chosen.
 
 # FreeRTOS tick 1kHz: esp_hosted recomenda 1000 (com 100 o SDIO fica com jitter e o
 # C6 fica sem resposta no send_op_cond 0x107). Mesmo valor do firmware de fabrica da M5Stack.

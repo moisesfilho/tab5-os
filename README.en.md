@@ -102,6 +102,16 @@ idf.py -p /dev/ttyACM0 monitor --no-reset
 
 > **Cold boot required**: unplug and replug the USB cable after flashing — a warm reset leaves the DSI display without image.
 
+## Serial automation bridge
+
+The NDJSON bridge is enabled by default on the USB-C **USB-Serial-JTAG**
+interface (`/dev/ttyACM0`), shared with the firmware console. Console logs may
+therefore be interleaved with NDJSON; the CLI ignores non-JSON lines and still
+requires a valid response. The preserved dedicated-UART option is **UART1**,
+**115200 baud**, **8N1**, **RX on GPIO37** and **TX on GPIO38**. Select the
+transport in `menuconfig` (`Component config → tab5 Serial Automation Bridge`)
+or override it in `sdkconfig`.
+
 ## Code quality & CI
 
 Automated checks keep the firmware consistent and secure:

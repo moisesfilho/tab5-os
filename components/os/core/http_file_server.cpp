@@ -1788,6 +1788,7 @@ esp_err_t http_file_server_start(void)
     config.server_port = 8080;
     config.max_uri_handlers = 20;
     config.stack_size = 12288;
+    config.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
     config.recv_wait_timeout = 10;
     config.send_wait_timeout = 10;
 
@@ -1804,73 +1805,99 @@ esp_err_t http_file_server_start(void)
         return ret;
     }
 
+    auto register_route = [](const httpd_uri_t *uri) -> esp_err_t { return httpd_register_uri_handler(s_server, uri); };
+    auto register_or_stop = [&](const httpd_uri_t *uri) -> esp_err_t {
+        esp_err_t route_err = register_route(uri);
+        if (route_err != ESP_OK) {
+            ESP_LOGE(TAG, "falha ao registrar rota %s (%s)", uri->uri, esp_err_to_name(route_err));
+            httpd_stop(s_server);
+            s_server = nullptr;
+        }
+        return route_err;
+    };
+
     /* Rotas Web & Arquivos */
     httpd_uri_t uri_index = {.uri = "/", .method = HTTP_GET, .handler = index_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_index);
+    if ((ret = register_or_stop(&uri_index)) != ESP_OK)
+        return ret;
 
     httpd_uri_t uri_download = {
         .uri = "/download", .method = HTTP_GET, .handler = download_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_download);
+    if ((ret = register_or_stop(&uri_download)) != ESP_OK)
+        return ret;
 
     httpd_uri_t uri_api_files = {
         .uri = "/api/files", .method = HTTP_GET, .handler = api_files_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_api_files);
+    if ((ret = register_or_stop(&uri_api_files)) != ESP_OK)
+        return ret;
 
     httpd_uri_t uri_upload = {
         .uri = "/api/upload", .method = HTTP_POST, .handler = upload_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_upload);
+    if ((ret = register_or_stop(&uri_upload)) != ESP_OK)
+        return ret;
 
     httpd_uri_t uri_delete = {
         .uri = "/api/delete", .method = HTTP_POST, .handler = api_delete_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_delete);
+    if ((ret = register_or_stop(&uri_delete)) != ESP_OK)
+        return ret;
 
     httpd_uri_t uri_mkdir = {
         .uri = "/api/mkdir", .method = HTTP_POST, .handler = api_mkdir_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_mkdir);
+    if ((ret = register_or_stop(&uri_mkdir)) != ESP_OK)
+        return ret;
 
     /* Rotas de Status & Configurações do Sistema */
     httpd_uri_t uri_sys_status = {
         .uri = "/api/system/status", .method = HTTP_GET, .handler = api_system_status_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_sys_status);
+    if ((ret = register_or_stop(&uri_sys_status)) != ESP_OK)
+        return ret;
 
     httpd_uri_t uri_set_display = {.uri = "/api/settings/display",
                                    .method = HTTP_POST,
                                    .handler = api_settings_display_handler,
                                    .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_set_display);
+    if ((ret = register_or_stop(&uri_set_display)) != ESP_OK)
+        return ret;
 
     httpd_uri_t uri_set_tz = {.uri = "/api/settings/timezone",
                               .method = HTTP_POST,
                               .handler = api_settings_timezone_handler,
                               .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_set_tz);
+    if ((ret = register_or_stop(&uri_set_tz)) != ESP_OK)
+        return ret;
 
     /* Rotas Wi-Fi */
     httpd_uri_t uri_wifi_scan = {
         .uri = "/api/wifi/scan", .method = HTTP_GET, .handler = api_wifi_scan_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_wifi_scan);
+    if ((ret = register_or_stop(&uri_wifi_scan)) != ESP_OK)
+        return ret;
 
     httpd_uri_t uri_set_wifi = {
         .uri = "/api/settings/wifi", .method = HTTP_POST, .handler = api_settings_wifi_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_set_wifi);
+    if ((ret = register_or_stop(&uri_set_wifi)) != ESP_OK)
+        return ret;
 
     /* Rotas Bluetooth */
     httpd_uri_t uri_bt_scan = {
         .uri = "/api/bluetooth/scan", .method = HTTP_GET, .handler = api_bluetooth_scan_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_bt_scan);
+    if ((ret = register_or_stop(&uri_bt_scan)) != ESP_OK)
+        return ret;
 
     httpd_uri_t uri_set_bt = {.uri = "/api/settings/bluetooth",
                               .method = HTTP_POST,
                               .handler = api_settings_bluetooth_handler,
                               .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_set_bt);
+    if ((ret = register_or_stop(&uri_set_bt)) != ESP_OK)
+        return ret;
 
     /* Rotas Chat IA */
     httpd_uri_t uri_ai_save = {.uri = "/ai/save", .method = HTTP_POST, .handler = ai_save_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_ai_save);
+    if ((ret = register_or_stop(&uri_ai_save)) != ESP_OK)
+        return ret;
 
     httpd_uri_t uri_api_ai = {.uri = "/api/ai", .method = HTTP_GET, .handler = api_ai_get_handler, .user_ctx = nullptr};
-    httpd_register_uri_handler(s_server, &uri_api_ai);
+    if ((ret = register_or_stop(&uri_api_ai)) != ESP_OK)
+        return ret;
 
     ESP_LOGI(TAG, "servidor HTTP ativo em http://<IP>:8080/");
     return ESP_OK;

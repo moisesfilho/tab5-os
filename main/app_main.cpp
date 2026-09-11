@@ -23,6 +23,7 @@
 #include "ui_font.h"
 #include "driver/i2s_std.h"
 #include "esp_heap_caps.h"
+#include "serial_bridge.h"
 
 static const char *TAG = "tab5_poc";
 
@@ -124,4 +125,5 @@ extern "C" void app_main(void)
     bsp_display_brightness_set(brightness);
 
     ESP_LOGI(TAG, "UI iniciada");
+    serial_bridge_start();
 }

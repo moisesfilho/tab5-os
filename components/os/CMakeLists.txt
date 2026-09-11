@@ -27,6 +27,7 @@ idf_component_register(
         "core/ai_storage.cpp"
         "core/ssh_client.cpp"
         "core/terminal_cmd.cpp"
+        "core/serial_bridge.cpp"
         "runtime/tab5_storage_sandbox.cpp"
         "runtime/tab5_ui_host.cpp"
         "runtime/tab5_sys_host.cpp"
@@ -63,5 +64,6 @@ idf_component_register(
             espressif__wasm-micro-runtime
             esp_video espressif__esp_cam_sensor
             esp_http_server esp_codec_dev esp_http_client esp-tls
+            esp_driver_usb_serial_jtag
             mbedtls esp_audio_codec libssh
 )

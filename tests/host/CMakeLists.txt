@@ -22,6 +22,15 @@ find_package(Threads REQUIRED)
 
 set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
+# "Boneco de Lata" (serial_bridge): o teste de contrato JSON->JSON compila
+# sempre, mas só linka o módulo quando components/os/core/serial_bridge.cpp
+# existir (fase vermelha do TDD: a suíte roda em SKIP documentado enquanto a
+# implementação não chega). Ver tests/host/src/test_serial_bridge_dispatch.cpp.
+set(SERIAL_BRIDGE_SRC "")
+if(EXISTS ${REPO_ROOT}/components/os/core/serial_bridge.cpp)
+  set(SERIAL_BRIDGE_SRC ${REPO_ROOT}/components/os/core/serial_bridge.cpp)
+endif()
+
 add_executable(tab5_host_tests
     src/test_infra.cpp
     src/test_orientation.cpp
@@ -44,11 +53,13 @@ add_executable(tab5_host_tests
     src/test_package_mgr.cpp
     src/test_storage_mgr.cpp
     src/test_sdk_integration.cpp
+    src/test_serial_bridge_dispatch.cpp
     stubs/cJSON.c
     mocks/path_redirect.cpp
     mocks/link_wrappers.cpp
     mocks/nvs_mock.cpp
     mocks/bsp_mock.cpp
+    mocks/serial_bridge_subsystem_mocks.cpp
     ${REPO_ROOT}/components/os/core/orientation.cpp
     ${REPO_ROOT}/components/os/core/file_assoc.cpp
     ${REPO_ROOT}/components/os/core/app_registry.cpp
@@ -70,6 +81,7 @@ add_executable(tab5_host_tests
     ${REPO_ROOT}/components/os/runtime/tab5_package_mgr.cpp
     ${REPO_ROOT}/components/os/core/ai_storage.cpp
     ${REPO_ROOT}/components/os/core/terminal_cmd.cpp
+    ${SERIAL_BRIDGE_SRC}
 )
 
 target_include_directories(tab5_host_tests PRIVATE
@@ -109,12 +121,23 @@ gtest_discover_tests(tab5_host_tests)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME runtime_rollback_static
-         COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_runtime_rollback.py)
+  COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_runtime_rollback.py)
 add_test(NAME runtime_entrypoint_cleanup_contracts
-         COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_runtime_entrypoint_cleanup_contracts.py)
+  COMMAND ${Python3_EXECUTABLE}
+          ${REPO_ROOT}/tests/test_runtime_entrypoint_cleanup_contracts.py)
 add_test(NAME sdk_export_contract
-         COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_sdk_export_contract.py)
+  COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_sdk_export_contract.py)
 add_test(NAME wasm_unload_callback_contract
-         COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_wasm_unload_callback_contract.py)
+  COMMAND ${Python3_EXECUTABLE}
+          ${REPO_ROOT}/tests/test_wasm_unload_callback_contract.py)
 add_test(NAME async_dispatcher_contract
-         COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_async_dispatcher_contract.py)
+  COMMAND ${Python3_EXECUTABLE}
+          ${REPO_ROOT}/tests/test_async_dispatcher_contract.py)
+add_test(NAME tab5_cli_contract
+  COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_tab5_cli_contract.py)
+add_test(NAME serial_bridge_kconfig_contract
+  COMMAND ${Python3_EXECUTABLE}
+          ${REPO_ROOT}/tests/test_serial_bridge_kconfig_contract.py)
+add_test(NAME serial_bridge_stack_contract
+  COMMAND ${Python3_EXECUTABLE}
+          ${REPO_ROOT}/tests/test_serial_bridge_stack_contract.py)

@@ -10,6 +10,7 @@
 #include "tab5_lifecycle_host.h"
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 
 #if defined(ESP_PLATFORM) || defined(LV_LVGL_H_INCLUDE_SIMPLE) || defined(LV_CONF_INCLUDE_SIMPLE) ||                   \
     defined(TAB5_SIMULATOR)
@@ -17,6 +18,7 @@
 #include "bsp/m5stack_tab5.h"
 #include "ui_app_bar.h"
 #include "ui_font.h"
+#include "ui_theme.h"
 #define HAVE_LVGL 1
 #else
 #define HAVE_LVGL 0
@@ -48,27 +50,48 @@
 #endif
 
 static tab5_app_context_t *s_active_app_ctx = nullptr;
+static std::mutex s_active_app_mutex;
 
 tab5_err_t tab5_host_abi_init(void)
 {
+    std::lock_guard<std::mutex> lock(s_active_app_mutex);
     s_active_app_ctx = nullptr;
     return TAB5_OK;
 }
 
 tab5_err_t tab5_host_set_active_app(tab5_app_context_t *ctx)
 {
+    std::lock_guard<std::mutex> lock(s_active_app_mutex);
     s_active_app_ctx = ctx;
     return TAB5_OK;
 }
 
 tab5_app_context_t *tab5_host_get_active_app(void)
 {
+    std::lock_guard<std::mutex> lock(s_active_app_mutex);
     return s_active_app_ctx;
 }
 
 void tab5_host_clear_active_app(void)
 {
+    std::lock_guard<std::mutex> lock(s_active_app_mutex);
     s_active_app_ctx = nullptr;
+}
+
+bool tab5_host_get_active_app_snapshot(tab5_active_app_snapshot_t *out_snapshot)
+{
+    if (out_snapshot == nullptr)
+        return false;
+    std::lock_guard<std::mutex> lock(s_active_app_mutex);
+    memset(out_snapshot, 0, sizeof(*out_snapshot));
+    if (s_active_app_ctx == nullptr)
+        return false;
+    out_snapshot->active = true;
+    strncpy(out_snapshot->app_id, s_active_app_ctx->app_id, sizeof(out_snapshot->app_id) - 1);
+    strncpy(out_snapshot->app_name, s_active_app_ctx->app_name, sizeof(out_snapshot->app_name) - 1);
+    out_snapshot->is_wasm = s_active_app_ctx->is_wasm;
+    out_snapshot->state = s_active_app_ctx->state;
+    return true;
 }
 
 bool tab5_host_has_permission(uint32_t permission_flag)
@@ -219,6 +242,11 @@ tab5_ui_obj_t tab5_ui_app_bar_add_action_button(const char *symbol_or_text, void
         lv_obj_set_style_border_width(btn, 1, 0);
         lv_obj_set_style_shadow_width(btn, 0, 0);
         lv_obj_set_style_pad_all(btn, 0, 0);
+        const ui_palette_t *pal = ui_theme_get();
+        lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(pal->surface), 0);
+        lv_obj_set_style_border_color(btn, lv_color_hex(pal->border), 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(pal->accent_soft), LV_STATE_PRESSED);
         lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
 
         struct action_cb_data_t {
@@ -243,6 +271,7 @@ tab5_ui_obj_t tab5_ui_app_bar_add_action_button(const char *symbol_or_text, void
         lv_obj_t *lbl = lv_label_create(btn);
         lv_label_set_text(lbl, sym != nullptr ? sym : "");
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18_latin1, 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(pal->text), 0);
         lv_obj_center(lbl);
         tab5_ui_obj_t handle = tab5_ui_host_register_obj(btn);
         LV_UNLOCK();

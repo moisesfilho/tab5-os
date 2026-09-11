@@ -78,6 +78,19 @@ TEST_F(HostAbiTest, NativeSymbolsTableExported)
     EXPECT_TRUE(found_battery);
 }
 
+TEST_F(HostAbiTest, UiInvalidHandlesReturnErrorsWithoutCreatingWidgets)
+{
+    EXPECT_EQ(tab5_ui_host_get_lv_obj(0), nullptr);
+    EXPECT_EQ(tab5_ui_host_obj_set_size(0, 10, 10), TAB5_OK);
+    EXPECT_EQ(tab5_ui_host_obj_set_scrollable(0, true), TAB5_OK);
+    EXPECT_EQ(tab5_ui_host_obj_scroll_to_bottom(0, false), TAB5_OK);
+    EXPECT_EQ(tab5_ui_host_obj_scroll_to_top(0, false), TAB5_OK);
+    EXPECT_EQ(tab5_ui_host_label_set_text(0, "x"), TAB5_OK);
+    EXPECT_EQ(tab5_ui_host_textarea_set_text(nullptr, "x"), TAB5_ERR_INVALID_ARG);
+    EXPECT_NE(tab5_ui_host_textarea_get_text(nullptr), nullptr);
+    tab5_ui_host_clear_handles();
+}
+
 TEST_F(HostAbiTest, ContextAndPermissionsManagement)
 {
     EXPECT_EQ(tab5_host_get_active_app(), nullptr);

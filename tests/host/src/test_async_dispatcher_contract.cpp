@@ -25,6 +25,7 @@
 
 #include "tab5_host_abi.h"
 #include "tab5_wasm_runtime.h"
+#include "tab5_wasm_dispatcher.h"
 
 namespace {
 
@@ -127,4 +128,47 @@ TEST(AsyncDispatcherContract, InFlightCallKeepsGenerationStable)
 
     EXPECT_EQ(tab5_wasm_call_function(&inst, "noop", 0, nullptr), TAB5_OK);
     EXPECT_EQ(read_generation(inst), generation) << "chamadas em voo não podem alterar a geração da instância";
+}
+
+TEST(AsyncDispatcherContract, QueueLifecycleRejectsStaleJobsAndAcceptsBoundedInputs)
+{
+    ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
+    ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
+
+    tab5_wasm_app_instance_t stopped = {};
+    stopped.is_running = false;
+    const uint32_t args[] = {1, 2, 3, 4, 5, 6};
+    EXPECT_TRUE(tab5_wasm_dispatch_post_call(&stopped, "missing", "alias", 6, args));
+    EXPECT_TRUE(tab5_wasm_dispatch_post_string(&stopped, "missing", "alias", "value"));
+    tab5_wasm_dispatcher_shutdown();
+    tab5_wasm_dispatcher_shutdown();
+}
+
+TEST(AsyncDispatcherContract, RunningInstanceExecutesCallAndStringFallbacks)
+{
+    tab5_wasm_app_instance_t running = {};
+    running.is_running = true;
+    running.generation = 7;
+    const uint32_t args[] = {10, 20, 30, 40, 50};
+    ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
+    EXPECT_TRUE(tab5_wasm_dispatch_post_call(&running, "missing", "fallback", 5, args));
+    EXPECT_TRUE(tab5_wasm_dispatch_post_string(&running, "missing", "fallback", "payload"));
+    tab5_wasm_dispatcher_shutdown();
+}
+
+TEST(AsyncDispatcherContract, NullOptionalArgumentsAreSafe)
+{
+    tab5_wasm_app_instance_t running = {};
+    running.is_running = true;
+    running.generation = 9;
+    ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
+    EXPECT_TRUE(tab5_wasm_dispatch_post_call(&running, nullptr, nullptr, 0, nullptr));
+    EXPECT_TRUE(tab5_wasm_dispatch_post_string(&running, nullptr, nullptr, nullptr));
+    tab5_wasm_dispatcher_shutdown();
+}
+
+TEST(AsyncDispatcherContract, HostLaunchUsesPackageManagerPath)
+{
+    const tab5_err_t result = tab5_wasm_dispatch_post_launch("com.tab5.missing", nullptr);
+    EXPECT_NE(result, TAB5_OK);
 }

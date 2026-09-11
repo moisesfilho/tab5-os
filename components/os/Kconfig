@@ -1,0 +1,42 @@
+menu "tab5 Serial Automation Bridge"
+
+config TAB5_SERIAL_BRIDGE_ENABLED
+    bool "Enable serial automation bridge"
+    default y
+
+choice TAB5_SERIAL_BRIDGE_TRANSPORT
+    prompt "Serial bridge transport"
+    default TAB5_SERIAL_BRIDGE_TRANSPORT_USB_SERIAL_JTAG
+
+config TAB5_SERIAL_BRIDGE_TRANSPORT_UART
+    bool "Dedicated physical UART"
+
+config TAB5_SERIAL_BRIDGE_TRANSPORT_USB_SERIAL_JTAG
+    bool "USB Serial-JTAG (shared console)"
+
+endchoice
+
+config TAB5_SERIAL_BRIDGE_UART_NUM
+    int "Dedicated UART peripheral number"
+    depends on TAB5_SERIAL_BRIDGE_TRANSPORT_UART
+    range 0 2
+    default 1
+
+config TAB5_SERIAL_BRIDGE_UART_BAUD
+    int "Dedicated UART baud rate"
+    depends on TAB5_SERIAL_BRIDGE_TRANSPORT_UART
+    default 115200
+
+config TAB5_SERIAL_BRIDGE_UART_RX_PIN
+    int "Dedicated UART RX GPIO (physical header)"
+    depends on TAB5_SERIAL_BRIDGE_TRANSPORT_UART
+    range 0 54
+    default 37
+
+config TAB5_SERIAL_BRIDGE_UART_TX_PIN
+    int "Dedicated UART TX GPIO (physical header)"
+    depends on TAB5_SERIAL_BRIDGE_TRANSPORT_UART
+    range 0 54
+    default 38
+
+endmenu

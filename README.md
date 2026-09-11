@@ -103,6 +103,15 @@ idf.py -p /dev/ttyACM0 monitor --no-reset
 
 > **Cold boot obrigatório**: desplugue e replugue o cabo USB após o flash — um reset quente deixa o display DSI sem imagem.
 
+## Bridge de automação serial
+
+O bridge NDJSON fica habilitado por padrão e usa a **UART física dedicada** do
+header do Tab5, sem compartilhar o console USB: **UART1**, **115200 baud, 8N1**,
+**RX em GPIO37** e **TX em GPIO38**. O console de logs permanece no
+**USB-Serial-JTAG** do USB-C; ele não é o transporte do bridge. Os valores podem
+ser ajustados em `menuconfig` (`Component config → tab5 Serial Automation
+Bridge`) ou sobrescritos em `sdkconfig`.
+
 ## Qualidade de código & CI
 
 Validações automáticas garantem consistência de estilo e segurança no firmware:

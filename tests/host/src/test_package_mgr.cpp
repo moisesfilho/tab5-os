@@ -219,3 +219,15 @@ TEST_F(PackageMgrTest, SingleFileTarPackageInstall)
     // Desinstala
     EXPECT_EQ(tab5_package_mgr_uninstall("com.tab5.tartest", true), TAB5_OK);
 }
+
+TEST_F(PackageMgrTest, InvalidPackageOperationsReturnErrors)
+{
+    char installed_id[64] = {};
+    EXPECT_NE(tab5_package_mgr_install("/tmp/tab5/no-such-package", installed_id, sizeof(installed_id)), TAB5_OK);
+    EXPECT_NE(tab5_package_mgr_launch("com.tab5.no-such-app", nullptr), TAB5_OK);
+    EXPECT_EQ(tab5_package_mgr_uninstall("com.tab5.no-such-app", true), TAB5_OK)
+        << "uninstall is intentionally idempotent for an absent app";
+
+    tab5_installed_app_info_t info = {};
+    EXPECT_NE(tab5_package_mgr_get_app_info("com.tab5.no-such-app", &info), TAB5_OK);
+}

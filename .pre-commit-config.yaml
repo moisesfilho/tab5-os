@@ -54,7 +54,7 @@ repos:
     rev: v2.3.0
     hooks:
       - id: codespell
-        args: ["--skip=*build*,*managed_components*,*m5stack_tab5*", "-L", "dout"]
+        args: ["--skip=*build*,*managed_components*,*m5stack_tab5*", "-L", "dout,assertin,excede,saem"]
         additional_dependencies:
           - tomli
 

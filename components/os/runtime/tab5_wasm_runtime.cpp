@@ -405,7 +405,14 @@ tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *f
     }
 
 #if HAVE_WAMR
-    tab5_err_t res = tab5_wasm_call_function_direct(inst, func_name, argc, argv);
+    WasmCallInternalArgs call = {inst, func_name, argc, argv, TAB5_ERR_FAIL};
+    pthread_t thread;
+    int rc = pthread_create(&thread, nullptr, wasm_call_pthread_worker, &call);
+    if (rc != 0) {
+        return TAB5_ERR_FAIL;
+    }
+    pthread_join(thread, nullptr);
+    tab5_err_t res = call.result;
     if (inst->call_depth == 0 && inst->unload_pending) {
         (void)tab5_wasm_unload(inst);
     }

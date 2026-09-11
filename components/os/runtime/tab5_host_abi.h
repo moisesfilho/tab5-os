@@ -58,6 +58,14 @@ typedef struct {
     void *user_data;                      /**< Ponteiro genérico do runtime/instância */
 } tab5_app_context_t;
 
+typedef struct {
+    bool active;
+    char app_id[64];
+    char app_name[64];
+    bool is_wasm;
+    tab5_app_state_t state;
+} tab5_active_app_snapshot_t;
+
 /**
  * @brief Inicializa a infraestrutura de Host ABI.
  */
@@ -84,6 +92,9 @@ tab5_app_context_t *tab5_host_get_active_app(void);
  * @brief Limpa o contexto da aplicação ativa.
  */
 void tab5_host_clear_active_app(void);
+
+/** Copies the active identity while holding the host lifecycle mutex. */
+bool tab5_host_get_active_app_snapshot(tab5_active_app_snapshot_t *out_snapshot);
 
 /**
  * @brief Verifica se a aplicação ativa possui uma determinada permissão.

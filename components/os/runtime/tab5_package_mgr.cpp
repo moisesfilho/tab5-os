@@ -592,6 +592,7 @@ extern "C" tab5_err_t tab5_package_mgr_launch_direct(const char *app_id, const c
 
     // A relaunch of the already active entry must not overwrite its instance
     // or context.  It is still valid to deliver a file request to it.
+    /* Same-entry fast path: if (s_running_dynamic_app == entry || active_ctx == &entry->host_ctx). */
     if ((s_running_dynamic_app == entry || active_ctx == &entry->host_ctx) && entry->wasm_inst.is_running) {
         if (open_file_path != nullptr) {
             return tab5_lifecycle_host_open_file(active_ctx != nullptr ? active_ctx : &entry->host_ctx, open_file_path);

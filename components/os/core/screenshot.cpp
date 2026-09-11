@@ -9,6 +9,7 @@
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/portmacro.h"
 #include "lvgl.h"
 #include "bsp/esp-bsp.h"
 #include "timezone_mgr.h"
@@ -19,8 +20,11 @@
 
 static const char *TAG = "screenshot";
 
-static bool s_busy = false;
+static volatile bool s_busy = false;
+static volatile screenshot_result_t s_result = SCREENSHOT_RESULT_ERROR;
+static portMUX_TYPE s_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint16_t *s_shot_buf = nullptr;
+static char s_last_path[96] = "/sdcard/screenshots/print_latest.bmp";
 
 static lv_obj_t *s_flash = nullptr;
 static lv_obj_t *s_toast_label = nullptr;
@@ -120,6 +124,7 @@ struct shot_job_t {
     uint16_t *buf;
     int w;
     int h;
+    char path[96];
 };
 
 static void writer_task(void *arg)
@@ -132,12 +137,8 @@ static void writer_task(void *arg)
     char path[96];
     char *msg = nullptr;
 
-    struct tm tmbuf;
-    if (timezone_mgr_get_localtime(&tmbuf) != nullptr) {
-        strftime(path, sizeof(path), "/sdcard/screenshots/print_%Y%m%d_%H%M%S.bmp", &tmbuf);
-    } else {
-        snprintf(path, sizeof(path), "/sdcard/screenshots/print_sem_data.bmp");
-    }
+    strncpy(path, job->path, sizeof(path) - 1);
+    path[sizeof(path) - 1] = '\0';
 
     mkdir("/sdcard/screenshots", 0755);
 
@@ -195,7 +196,10 @@ static void writer_task(void *arg)
     heap_caps_free(buf);
     heap_caps_free(job);
     s_shot_buf = nullptr;
+    taskENTER_CRITICAL(&s_state_lock);
+    s_result = ok ? SCREENSHOT_RESULT_OK : SCREENSHOT_RESULT_ERROR;
     s_busy = false;
+    taskEXIT_CRITICAL(&s_state_lock);
 
     if (ok) {
         ESP_LOGI(TAG, "Print salvo em %s", path);
@@ -213,9 +217,13 @@ static void writer_task(void *arg)
     }
 
     if (msg != nullptr) {
-        bsp_display_lock(0);
-        lv_async_call(notify_ui, msg);
-        bsp_display_unlock();
+        if (bsp_display_lock(pdMS_TO_TICKS(500))) {
+            lv_async_call(notify_ui, msg);
+            bsp_display_unlock();
+        } else {
+            lv_free(msg);
+            ESP_LOGW(TAG, "Nao foi possivel adquirir o lock para notificar screenshot");
+        }
     }
 
     vTaskDelete(nullptr);
@@ -260,10 +268,26 @@ static void blend_top_layer(uint16_t *dst, const lv_draw_buf_t *top, int w, int 
     }
 }
 
-void screenshot_take(void)
+screenshot_result_t screenshot_take(void)
 {
-    if (s_busy) {
-        return;
+    if (!bsp_display_lock(pdMS_TO_TICKS(500))) {
+        ESP_LOGW(TAG, "Nao foi possivel adquirir o lock do display");
+        taskENTER_CRITICAL(&s_state_lock);
+        s_result = SCREENSHOT_RESULT_ERROR;
+        taskEXIT_CRITICAL(&s_state_lock);
+        return SCREENSHOT_RESULT_ERROR;
+    }
+
+    taskENTER_CRITICAL(&s_state_lock);
+    const bool busy = s_busy;
+    if (!busy) {
+        s_busy = true;
+        s_result = SCREENSHOT_RESULT_ERROR;
+    }
+    taskEXIT_CRITICAL(&s_state_lock);
+    if (busy) {
+        bsp_display_unlock();
+        return SCREENSHOT_RESULT_BUSY;
     }
 
     /* Captura na orientacao logica: tela ativa + layer_top (barra, teclado,
@@ -271,7 +295,11 @@ void screenshot_take(void)
     lv_draw_buf_t *base = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB565);
     if (base == nullptr) {
         ESP_LOGE(TAG, "Snapshot da tela falhou");
-        return;
+        taskENTER_CRITICAL(&s_state_lock);
+        s_busy = false;
+        taskEXIT_CRITICAL(&s_state_lock);
+        bsp_display_unlock();
+        return SCREENSHOT_RESULT_ERROR;
     }
 
     lv_draw_buf_t *top = lv_snapshot_take(lv_layer_top(), LV_COLOR_FORMAT_ARGB8888);
@@ -289,7 +317,11 @@ void screenshot_take(void)
         if (top != nullptr) {
             lv_draw_buf_destroy(top);
         }
-        return;
+        taskENTER_CRITICAL(&s_state_lock);
+        s_busy = false;
+        taskEXIT_CRITICAL(&s_state_lock);
+        bsp_display_unlock();
+        return SCREENSHOT_RESULT_ERROR;
     }
 
     memcpy(s_shot_buf, base->data, (size_t)w * h * 2);
@@ -310,13 +342,24 @@ void screenshot_take(void)
         ESP_LOGE(TAG, "Sem memoria para a gravacao");
         heap_caps_free(s_shot_buf);
         s_shot_buf = nullptr;
-        return;
+        taskENTER_CRITICAL(&s_state_lock);
+        s_busy = false;
+        taskEXIT_CRITICAL(&s_state_lock);
+        bsp_display_unlock();
+        return SCREENSHOT_RESULT_ERROR;
     }
     job->buf = s_shot_buf;
     job->w = w;
     job->h = h;
+    struct tm tmbuf;
+    if (timezone_mgr_get_localtime(&tmbuf) != nullptr) {
+        strftime(job->path, sizeof(job->path), "/sdcard/screenshots/print_%Y%m%d_%H%M%S.bmp", &tmbuf);
+    } else {
+        snprintf(job->path, sizeof(job->path), "/sdcard/screenshots/print_sem_data.bmp");
+    }
+    strncpy(s_last_path, job->path, sizeof(s_last_path) - 1);
+    s_last_path[sizeof(s_last_path) - 1] = '\0';
 
-    s_busy = true;
     show_flash();
 
     if (xTaskCreate(writer_task, "shot_wr", 6144, job, 5, nullptr) != pdPASS) {
@@ -324,6 +367,36 @@ void screenshot_take(void)
         heap_caps_free(job);
         heap_caps_free(s_shot_buf);
         s_shot_buf = nullptr;
+        taskENTER_CRITICAL(&s_state_lock);
         s_busy = false;
+        taskEXIT_CRITICAL(&s_state_lock);
+        bsp_display_unlock();
+        return SCREENSHOT_RESULT_ERROR;
+    }
+
+    bsp_display_unlock();
+    return SCREENSHOT_RESULT_OK;
+}
+
+const char *screenshot_get_last_path(void)
+{
+    return s_last_path;
+}
+
+screenshot_result_t screenshot_wait_for_completion(uint32_t timeout_ms)
+{
+    const TickType_t start = xTaskGetTickCount();
+    const TickType_t timeout = pdMS_TO_TICKS(timeout_ms);
+    for (;;) {
+        taskENTER_CRITICAL(&s_state_lock);
+        const bool busy = s_busy;
+        const screenshot_result_t result = s_result;
+        taskEXIT_CRITICAL(&s_state_lock);
+        if (!busy)
+            return result;
+        if ((xTaskGetTickCount() - start) >= timeout) {
+            return SCREENSHOT_RESULT_TIMEOUT;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

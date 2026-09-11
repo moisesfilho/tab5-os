@@ -9,6 +9,10 @@
 #include "tab5_wasm_dispatcher.h"
 #include <cstring>
 
+#if defined(ESP_PLATFORM)
+#include "esp_log.h"
+#endif
+
 #if defined(ESP_PLATFORM) || defined(LV_LVGL_H_INCLUDE_SIMPLE) || defined(LV_CONF_INCLUDE_SIMPLE) ||                   \
     defined(TAB5_SIMULATOR)
 #include "lvgl.h"
@@ -33,6 +37,11 @@
 #define LV_UNLOCK() (void)0
 #endif
 #define MAX_UI_HANDLES 128
+
+#if defined(ESP_PLATFORM)
+static const char *TAG = "tab5_ui_host";
+static bool s_display_size_diagnostic_logged = false;
+#endif
 
 #if HAVE_LVGL
 #include "ui_shell.h"
@@ -213,6 +222,19 @@ static void sync_wasm_poll_timer_to_active_app()
         s_wasm_poll_timer = lv_timer_create(on_wasm_poll_timer, 200, nullptr);
     }
     s_wasm_poll_owner = s_wasm_poll_timer != nullptr ? active_ctx : nullptr;
+}
+#endif
+
+#if defined(ESP_PLATFORM)
+static void tab5_ui_host_log_display_diagnostic(int32_t physical_w, int32_t physical_h)
+{
+    if (s_display_size_diagnostic_logged) {
+        return;
+    }
+    s_display_size_diagnostic_logged = true;
+    ESP_LOGI(TAG, "display size diagnostic: logical=%ldx%ld physical=%ldx%ld rotation=%d",
+             (long)lv_display_get_horizontal_resolution(nullptr), (long)lv_display_get_vertical_resolution(nullptr),
+             (long)physical_w, (long)physical_h, (int)lv_display_get_rotation(nullptr));
 }
 #endif
 
@@ -517,8 +539,11 @@ void tab5_ui_host_get_display_size(int32_t *out_w, int32_t *out_h)
         return;
     }
 #if HAVE_LVGL
-    int32_t w = lv_display_get_horizontal_resolution(NULL);
-    int32_t h = lv_display_get_vertical_resolution(NULL);
+    int32_t w = lv_display_get_physical_horizontal_resolution(nullptr);
+    int32_t h = lv_display_get_physical_vertical_resolution(nullptr);
+#if defined(ESP_PLATFORM)
+    tab5_ui_host_log_display_diagnostic(w, h);
+#endif
     if (out_w != nullptr) {
         *out_w = w;
     }

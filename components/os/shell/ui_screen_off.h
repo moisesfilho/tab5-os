@@ -23,6 +23,9 @@ bool ui_screen_off_is_active(void);
 /* Configura o timeout de inatividade em segundos (0 = desativado) */
 void ui_screen_off_set_timeout(uint32_t seconds);
 
+/* Ajuste transitório usado por automação; não grava NVS. */
+void ui_screen_off_set_timeout_volatile(uint32_t seconds);
+
 /* Retorna o timeout de inatividade configurado em segundos (0 = desativado) */
 uint32_t ui_screen_off_get_timeout(void);
 

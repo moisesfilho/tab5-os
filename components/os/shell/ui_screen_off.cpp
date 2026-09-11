@@ -149,6 +149,12 @@ void ui_screen_off_set_timeout(uint32_t seconds)
     lv_display_trigger_activity(NULL);
 }
 
+void ui_screen_off_set_timeout_volatile(uint32_t seconds)
+{
+    s_timeout_sec = seconds;
+    lv_display_trigger_activity(NULL);
+}
+
 uint32_t ui_screen_off_get_timeout(void)
 {
     return s_timeout_sec;
