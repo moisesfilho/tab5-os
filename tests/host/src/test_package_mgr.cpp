@@ -88,12 +88,21 @@ TEST_F(PackageMgrTest, ScanInstalledApps)
         fputs("{\"id\": \"com.tab5.app1\", \"name\": \"App 1\"}", f1);
         fclose(f1);
     }
+    FILE *w1 = fopen((app1_dir + "/app.wasm").c_str(), "wb");
+    ASSERT_NE(w1, nullptr);
+    uint8_t magic1[] = {0, 'a', 's', 'm', 1, 0, 0, 0};
+    ASSERT_EQ(fwrite(magic1, 1, sizeof(magic1), w1), sizeof(magic1));
+    fclose(w1);
 
     FILE *f2 = fopen((app2_dir + "/manifest.json").c_str(), "w");
     if (f2) {
         fputs("{\"id\": \"com.tab5.app2\", \"name\": \"App 2\"}", f2);
         fclose(f2);
     }
+    FILE *w2 = fopen((app2_dir + "/app.wasm").c_str(), "wb");
+    ASSERT_NE(w2, nullptr);
+    ASSERT_EQ(fwrite(magic1, 1, sizeof(magic1), w2), sizeof(magic1));
+    fclose(w2);
 
     int registered = tab5_package_mgr_scan_and_register_all();
     EXPECT_GE(registered, 2);
@@ -106,6 +115,10 @@ TEST_F(PackageMgrTest, ScanInstalledApps)
 
 TEST_F(PackageMgrTest, MissingWasmLaunchFailsWithoutActivation)
 {
+    // Pacote sem app.wasm válido: o entry "missing.wasm" não existe no pacote.
+    // A validação de manifest/entry/app.wasm rejeita a instalação na origem, de
+    // modo que o pacote jamais chega ao registry nem a um launch capaz de
+    // roubar o foco da app atualmente ativa.
     const std::string app_dir = hostmock::tmp_root() + "/previous_app";
     ASSERT_EQ(mkdir(app_dir.c_str(), 0755), 0);
 
@@ -117,7 +130,13 @@ TEST_F(PackageMgrTest, MissingWasmLaunchFailsWithoutActivation)
     fclose(manifest);
 
     char app_id[64] = {};
-    ASSERT_EQ(tab5_package_mgr_install(app_dir.c_str(), app_id, sizeof(app_id)), TAB5_OK);
+    // Instalação é rejeitada pela validação de entry/app.wasm.
+    EXPECT_EQ(tab5_package_mgr_install(app_dir.c_str(), app_id, sizeof(app_id)), TAB5_ERR_INVALID_ARG);
+    // O pacote inválido não vaza para o desktop: nada foi registrado.
+    EXPECT_EQ(app_registry_find_by_id("com.tab5.previous"), nullptr);
+
+    // Launch de uma app cujo pacote foi rejeitado falha SEM ativar/alterar a
+    // app atualmente em foco.
     tab5_app_context_t previous = {};
     previous.state = TAB5_APP_STATE_RESUMED;
     strcpy(previous.app_id, "com.tab5.native");
@@ -126,11 +145,13 @@ TEST_F(PackageMgrTest, MissingWasmLaunchFailsWithoutActivation)
     EXPECT_EQ(tab5_host_get_active_app(), &previous);
     tab5_host_clear_active_app();
 
+    // Uninstall de um pacote rejeitado é um no-op idempotente.
     EXPECT_EQ(tab5_package_mgr_uninstall("com.tab5.previous", true), TAB5_OK);
 }
 
 TEST_F(PackageMgrTest, EmbeddedAppPrecedence)
 {
+    const uint8_t wasm_magic[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00};
     // 1. Cria app embutida v1.0.0
     std::string emb_dir = std::string(TAB5_APPS_EMBEDDED_DIR) + "/com.tab5.calc";
     mkdir(TAB5_APPS_EMBEDDED_DIR, 0755);
@@ -140,6 +161,10 @@ TEST_F(PackageMgrTest, EmbeddedAppPrecedence)
     ASSERT_NE(f_emb, nullptr);
     fputs("{\"id\": \"com.tab5.calc\", \"name\": \"Calc Embutida\", \"version\": \"1.0.0\"}", f_emb);
     fclose(f_emb);
+    FILE *w_emb = fopen((emb_dir + "/app.wasm").c_str(), "wb");
+    ASSERT_NE(w_emb, nullptr);
+    ASSERT_EQ(fwrite(wasm_magic, 1, sizeof(wasm_magic), w_emb), sizeof(wasm_magic));
+    fclose(w_emb);
 
     // 2. Cria app no SD v1.1.0
     std::string sd_dir = std::string(TAB5_APPS_INSTALLED_DIR) + "/com.tab5.calc";
@@ -149,6 +174,10 @@ TEST_F(PackageMgrTest, EmbeddedAppPrecedence)
     ASSERT_NE(f_sd, nullptr);
     fputs("{\"id\": \"com.tab5.calc\", \"name\": \"Calc Atualizada SD\", \"version\": \"1.1.0\"}", f_sd);
     fclose(f_sd);
+    FILE *w_sd = fopen((sd_dir + "/app.wasm").c_str(), "wb");
+    ASSERT_NE(w_sd, nullptr);
+    ASSERT_EQ(fwrite(wasm_magic, 1, sizeof(wasm_magic), w_sd), sizeof(wasm_magic));
+    fclose(w_sd);
 
     tab5_package_mgr_scan_and_register_all();
 

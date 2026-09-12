@@ -136,10 +136,13 @@ TEST(AsyncDispatcherContract, QueueLifecycleRejectsStaleJobsAndAcceptsBoundedInp
     ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
 
     tab5_wasm_app_instance_t stopped = {};
-    stopped.is_running = false;
+    load_sample(stopped);
+    ASSERT_EQ(tab5_wasm_unload(&stopped), TAB5_OK);
     const uint32_t args[] = {1, 2, 3, 4, 5, 6};
-    EXPECT_TRUE(tab5_wasm_dispatch_post_call(&stopped, "missing", "alias", 6, args));
-    EXPECT_TRUE(tab5_wasm_dispatch_post_string(&stopped, "missing", "alias", "value"));
+    // Admission is performed before enqueue. A stopped/unmanaged instance is
+    // rejected rather than leaving a stale raw pointer in the worker queue.
+    EXPECT_FALSE(tab5_wasm_dispatch_post_call(&stopped, "missing", "alias", 6, args));
+    EXPECT_FALSE(tab5_wasm_dispatch_post_string(&stopped, "missing", "alias", "value"));
     tab5_wasm_dispatcher_shutdown();
     tab5_wasm_dispatcher_shutdown();
 }
@@ -147,8 +150,7 @@ TEST(AsyncDispatcherContract, QueueLifecycleRejectsStaleJobsAndAcceptsBoundedInp
 TEST(AsyncDispatcherContract, RunningInstanceExecutesCallAndStringFallbacks)
 {
     tab5_wasm_app_instance_t running = {};
-    running.is_running = true;
-    running.generation = 7;
+    load_sample(running);
     const uint32_t args[] = {10, 20, 30, 40, 50};
     ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
     EXPECT_TRUE(tab5_wasm_dispatch_post_call(&running, "missing", "fallback", 5, args));
@@ -159,8 +161,7 @@ TEST(AsyncDispatcherContract, RunningInstanceExecutesCallAndStringFallbacks)
 TEST(AsyncDispatcherContract, NullOptionalArgumentsAreSafe)
 {
     tab5_wasm_app_instance_t running = {};
-    running.is_running = true;
-    running.generation = 9;
+    load_sample(running);
     ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
     EXPECT_TRUE(tab5_wasm_dispatch_post_call(&running, nullptr, nullptr, 0, nullptr));
     EXPECT_TRUE(tab5_wasm_dispatch_post_string(&running, nullptr, nullptr, nullptr));

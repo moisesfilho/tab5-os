@@ -11,6 +11,18 @@ set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 find_package(SDL2 REQUIRED)
 
+# O simulador usa o mesmo backend WAMR do firmware.  O componente fornece o
+# alvo ``vmlib`` (iwasm) quando construído fora do ESP-IDF; mantê-lo como uma
+# dependência CMake, em vez de copiar fontes do runtime, também garante que os
+# headers e as opções de ABI sejam sempre os da versão vendorizada.
+set(WAMR_BUILD_PLATFORM "linux" CACHE STRING "WAMR host platform" FORCE)
+set(WAMR_BUILD_TARGET "X86_64" CACHE STRING "WAMR host target" FORCE)
+set(WAMR_BUILD_INTERP 1 CACHE BOOL "" FORCE)
+set(WAMR_BUILD_AOT 1 CACHE BOOL "" FORCE)
+set(WAMR_BUILD_JIT 0 CACHE BOOL "" FORCE)
+add_subdirectory(${REPO_ROOT}/managed_components/espressif__wasm-micro-runtime
+    ${CMAKE_CURRENT_BINARY_DIR}/wasm-micro-runtime)
+
 # LVGL do proprio repo (mesma versao do firmware) com o lv_conf.h do sim.
 set(LV_BUILD_CONF_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lv_conf.h
     CACHE PATH "" FORCE)
@@ -82,6 +94,7 @@ add_executable(tab5_sim
     ${OS}/runtime/tab5_host_abi.cpp
     ${OS}/runtime/tab5_storage_sandbox.cpp
     ${OS}/runtime/tab5_wasm_runtime.cpp
+    ${OS}/runtime/tab5_wasm_dispatcher.cpp
     shims/cJSON/cJSON.c
 )
 
@@ -95,18 +108,22 @@ target_include_directories(tab5_sim PRIVATE
     ${OS}/runtime/include
 )
 
+target_compile_definitions(tab5_sim PRIVATE TAB5_SIM=1)
+
 target_compile_options(tab5_sim PRIVATE -Wall -Wextra -Wno-unused-parameter)
 
-# fopen/open/mkdir/opendir/stat -> /sdcard no tmpdir; time/localtime_r ->
+# fopen/open/mkdir/opendir/stat/lstat -> /sdcard/apps no tmpdir; time/localtime_r ->
 # relogio congelavel no modo cenario.
-target_link_libraries(tab5_sim PRIVATE lvgl
+target_link_libraries(tab5_sim PRIVATE lvgl vmlib
     -Wl,--wrap=fopen
     -Wl,--wrap=open
     -Wl,--wrap=mkdir
     -Wl,--wrap=opendir
     -Wl,--wrap=stat
+    -Wl,--wrap=lstat
     -Wl,--wrap=time
     -Wl,--wrap=localtime_r
+    -Wl,--wrap=gettimeofday
 )
 
 # bt_storage usa atoi() sem incluir <stdlib.h> (mesma correcao dos testes host)

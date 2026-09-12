@@ -41,8 +41,7 @@ echo "==> Compilando simulador ($BUILD_DIR)"
 cmake -S "$ROOT/tests/simulator" -B "$BUILD_DIR" >/dev/null
 cmake --build "$BUILD_DIR" -j "$(nproc)"
 
-# O simulador abre uma janela real (driver SDL) e nao responde a SIGTERM
-# em loop de render; usa gnutimeout com SIGKILL e limpa o processo no final.
+# O simulador roda cenários headless por padrão e termina por conta própria.
 if [[ "$SCENARIO" != "" ]]; then
     SCENARIOS=("$SCENARIO")
 else
@@ -58,8 +57,7 @@ if [[ "$UPDATE_GOLDENS" -eq 1 ]]; then
     echo "==> Regenerando goldens ($GOLDENS)"
     for sc in "${SCENARIOS[@]}"; do
         echo "    $sc"
-        /usr/bin/gnutimeout -k 2 120 "$SIM_BIN" --scenario "$sc" --update-goldens >/dev/null
-        pkill -9 -x tab5_sim 2>/dev/null || true
+        "$SIM_BIN" --scenario "$sc" --update-goldens --silent >/dev/null
     done
     echo "==> Goldens atualizados. Verifique visualmente antes de commitar."
     exit 0
@@ -70,8 +68,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 for sc in "${SCENARIOS[@]}"; do
     echo "    $sc"
-    /usr/bin/gnutimeout -k 2 120 "$SIM_BIN" --scenario "$sc" >/dev/null
-    pkill -9 -x tab5_sim 2>/dev/null || true
+    "$SIM_BIN" --scenario "$sc" --silent >/dev/null
 done
 
 echo "==> Comparando contra goldens"

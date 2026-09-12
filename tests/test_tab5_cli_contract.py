@@ -70,6 +70,26 @@ class FakeTransport:
         return b""
 
 
+class FloodAwareFakeTransport(FakeTransport):
+    """Transport seam that exposes the pre-command cleanup operations."""
+
+    def __init__(self, responses):
+        super().__init__(responses)
+        self.reset_count = 0
+        self.flush_count = 0
+        self.readline_count = 0
+
+    def reset_input_buffer(self):
+        self.reset_count += 1
+
+    def flush(self):
+        self.flush_count += 1
+
+    def readline(self):
+        self.readline_count += 1
+        return super().readline()
+
+
 def make_payload(size=60_000):
     """Conteúdo determinístico estilo BMP (2 bytes 'BM' + padrão)."""
     payload = bytearray(b"BM")
@@ -366,6 +386,26 @@ class CliConsoleLogToleranceContract(unittest.TestCase):
         self.assertEqual(reassembled, payload)
         self.assertEqual(hashlib.sha256(reassembled).hexdigest(),
                          hashlib.sha256(payload).hexdigest())
+
+
+@unittest.skipUnless(HAS_CLI, MISSING_CLI_REASON)
+class CliFloodResilienceContract(unittest.TestCase):
+    """Flood/log frames cannot become the response of the next command."""
+
+    def test_resets_before_write_filters_stale_json_and_stops_early(self):
+        transport = FloodAwareFakeTransport([
+            '{"status":"ok","action":"app.close"}\n',
+            '{"status":"ok","action":"app.list","data":{"apps":[]}}\n',
+            'I (999) later log\n',
+        ])
+        session = open_session(transport)
+        frames = session.exchange('{"cmd":"app.list"}')
+
+        self.assertEqual(frames, [{"status": "ok", "action": "app.list", "data": {"apps": []}}])
+        self.assertEqual(transport.reset_count, 1)
+        self.assertEqual(transport.flush_count, 1)
+        self.assertEqual(transport.readline_count, 2,
+                         "exchange termina no frame válido, sem aguardar a janela")
 
 
 @unittest.skipUnless(HAS_CLI, MISSING_CLI_REASON)

@@ -59,7 +59,10 @@ static void execute_job(const tab5_wasm_dispatch_job &job)
     }
 
     tab5_wasm_app_instance_t *inst = job.instance;
-    if (inst == nullptr || !inst->is_running || inst->generation != job.generation) {
+    bool running = false;
+    uint32_t generation = 0;
+    if (inst == nullptr || !tab5_wasm_instance_snapshot(inst, &running, &generation) || !running ||
+        generation != job.generation) {
         LOG_W("discarding stale WASM dispatch job");
         return;
     }
@@ -69,11 +72,13 @@ static void execute_job(const tab5_wasm_dispatch_job &job)
     } else {
         err = tab5_wasm_call_function(inst, job.primary, job.argc, const_cast<uint32_t *>(job.args));
     }
-    if (err == TAB5_ERR_NOT_FOUND && job.alias[0] != '\0' && inst->is_running && inst->generation == job.generation) {
-        if (job.kind == JOB_STRING) {
-            (void)tab5_wasm_call_string_function(inst, job.alias, job.value);
-        } else {
-            (void)tab5_wasm_call_function(inst, job.alias, job.argc, const_cast<uint32_t *>(job.args));
+    if (err == TAB5_ERR_NOT_FOUND && job.alias[0] != '\0') {
+        if (tab5_wasm_instance_snapshot(inst, &running, &generation) && running && generation == job.generation) {
+            if (job.kind == JOB_STRING) {
+                (void)tab5_wasm_call_string_function(inst, job.alias, job.value);
+            } else {
+                (void)tab5_wasm_call_function(inst, job.alias, job.argc, const_cast<uint32_t *>(job.args));
+            }
         }
     }
 }
@@ -135,6 +140,19 @@ extern "C" void tab5_wasm_dispatcher_shutdown(void)
     s_started = false;
 }
 
+extern "C" void tab5_wasm_dispatcher_cancel_instance(tab5_wasm_app_instance_t *inst)
+{
+    if (inst == nullptr)
+        return;
+    std::lock_guard<std::mutex> lock(s_mutex);
+    for (auto it = s_jobs.begin(); it != s_jobs.end();) {
+        if (it->instance == inst)
+            it = s_jobs.erase(it);
+        else
+            ++it;
+    }
+}
+
 static bool enqueue(const tab5_wasm_dispatch_job &job)
 {
 #ifndef ESP_PLATFORM
@@ -185,7 +203,9 @@ extern "C" bool tab5_wasm_dispatch_post_call(tab5_wasm_app_instance_t *inst, con
     tab5_wasm_dispatch_job job = {};
     job.kind = JOB_CALL;
     job.instance = inst;
-    job.generation = inst != nullptr ? inst->generation : 0;
+    bool running = false;
+    if (inst == nullptr || !tab5_wasm_instance_snapshot(inst, &running, &job.generation) || !running)
+        return false;
     job.argc = argc > 4 ? 4 : argc;
     for (uint32_t i = 0; i < job.argc; ++i)
         job.args[i] = argv != nullptr ? argv[i] : 0;
@@ -200,7 +220,9 @@ extern "C" bool tab5_wasm_dispatch_post_string(tab5_wasm_app_instance_t *inst, c
     tab5_wasm_dispatch_job job = {};
     job.kind = JOB_STRING;
     job.instance = inst;
-    job.generation = inst != nullptr ? inst->generation : 0;
+    bool running = false;
+    if (inst == nullptr || !tab5_wasm_instance_snapshot(inst, &running, &job.generation) || !running)
+        return false;
     copy_text(job.primary, sizeof(job.primary), primary);
     copy_text(job.alias, sizeof(job.alias), alias);
     copy_text(job.value, sizeof(job.value), value);

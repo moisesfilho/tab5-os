@@ -68,6 +68,10 @@ class SerialTransport:
         t0 = time.monotonic()
         buf = bytearray()
         frames = []
+        request = json.loads(command)
+        expected_action = request.get("cmd") if isinstance(request, dict) else None
+        expected_rid = request.get("rid") if isinstance(request, dict) else None
+        got_response = False
         deadline = t0 + timeout_s
         while time.monotonic() < deadline:
             data = self.ser.read(65536)
@@ -88,6 +92,12 @@ class SerialTransport:
                         continue
                     if isinstance(obj, dict):
                         frames.append(obj)
+                        if (obj.get("action") in (None, expected_action)
+                                and ("rid" not in request or obj.get("rid") == expected_rid)):
+                            got_response = True
+                            break
+            if got_response:
+                break
         elapsed = time.monotonic() - t0
         self.transcript.write(
             json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),

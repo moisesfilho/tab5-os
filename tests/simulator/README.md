@@ -9,8 +9,8 @@ capturas contra imagens douradas (`goldens/`). Reproduz o fluxo do firmware
 
 - SDL2 (`libsdl2-dev`)
 - Python 3 + Pillow (só para o comparador de imagens)
-- `gnutimeout` (pacote `gnu-coreutils`): o simulador não responde a SIGTERM em
-  loop de render; o script usa `-k 2` para forçar SIGKILL.
+- um servidor X/Wayland somente para o modo interativo (`--interactive` ou
+  `--window`); cenários são headless por padrão.
 
 ## Compilação
 
@@ -39,7 +39,8 @@ tools/ci/run_sim_tests.sh --scenario shell_desktop
 | Modo | Uso | Descrição |
 |------|-----|-----------|
 | `--interactive [DIR]` | janela SDL | teclas abaixo; `S` salva captura em DIR |
-| `--scenario NOME [--out DIR] [--update-goldens]` | headless-ish | executa as ações do cenário e captura em `tests/simulator/out/<NOME>` (ou nos goldens com `--update-goldens`) |
+| `--scenario NOME [--out DIR] [--update-goldens]` | headless | executa as ações do cenário sem X/Wayland e captura em `tests/simulator/out/<NOME>` (ou nos goldens com `--update-goldens`) |
+| `--scenario NOME --window` | janela SDL | executa o cenário com janela visível (requer DISPLAY/Wayland) |
 | `--list` | lista cenários | imprime nome + descrição |
 
 No modo cenário o relógio é congelado (`--wrap=time`/`localtime_r`,

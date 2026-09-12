@@ -302,7 +302,7 @@ int32_t tab5_ui_keyboard_get_height(void);
 void tab5_ui_get_display_size(int32_t *out_w, int32_t *out_h);
 
 /**
- * @brief Exibe uma notificação rápida (toast) na interface do usuário.
+ * @brief Exibe uma notificação rápida (toast) não rolável na interface do usuário.
  * @param message Mensagem a ser exibida.
  * @param duration_ms Duração em milissegundos.
  */
@@ -314,6 +314,9 @@ tab5_err_t tab5_ui_show_toast(const char *message, uint32_t duration_ms);
 
 /**
  * @brief Cria um contêiner genérico para agrupamento de widgets.
+ *
+ * O contêiner é criado sem rolagem e sem scrollbar por padrão. Habilite a
+ * rolagem explicitamente com tab5_ui_obj_set_scrollable(obj, true).
  */
 tab5_ui_obj_t tab5_ui_container_create(tab5_ui_obj_t parent);
 
@@ -324,6 +327,11 @@ tab5_err_t tab5_ui_obj_set_size(tab5_ui_obj_t obj, int32_t w, int32_t h);
 
 /**
  * @brief Habilita ou desabilita a rolagem e a barra de rolagem de um objeto.
+ *
+ * Objetos genéricos (incluindo a tela, contêineres, labels, botões, switches e
+ * sliders) não são roláveis por padrão. Listas e textareas mantêm sua rolagem
+ * nativa. true habilita a rolagem com scrollbar automática; false limpa a
+ * rolagem e desliga a scrollbar.
  */
 tab5_err_t tab5_ui_obj_set_scrollable(tab5_ui_obj_t obj, bool scrollable);
 
@@ -358,7 +366,7 @@ tab5_err_t tab5_ui_obj_set_pad(tab5_ui_obj_t obj, int32_t pad_all);
 tab5_err_t tab5_ui_obj_set_gap(tab5_ui_obj_t obj, int32_t gap);
 
 /**
- * @brief Cria um widget de texto (Label).
+ * @brief Cria um widget de texto (Label), não rolável por padrão.
  */
 tab5_ui_obj_t tab5_ui_label_create(tab5_ui_obj_t parent, const char *text);
 

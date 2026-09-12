@@ -7,6 +7,7 @@ import sys
 import itertools
 import binascii
 import zlib
+import time
 
 
 class Tab5Session:
@@ -14,6 +15,56 @@ class Tab5Session:
 
     def __init__(self, transport):
         self.transport = transport
+
+    def _discard_input(self):
+        """Remove bytes that belong to the console, not to the next command.
+
+        USB Serial-JTAG carries ESP_LOG and the bridge on the same stream.  Do
+        not use ``readline`` here: a duck-typed test transport (and a serial
+        transport whose timeout is non-zero) may block, and draining its
+        scripted response would make the subsequent command lose its reply.
+        """
+        reset = getattr(self.transport, "reset_input_buffer", None)
+        if callable(reset):
+            reset()
+        else:
+            flush_input = getattr(self.transport, "flushInput", None)
+            if callable(flush_input):
+                flush_input()
+
+        # reset_input_buffer is sufficient for pyserial, but bytes can arrive
+        # between reset and write while ESP_LOG is flooding the console.
+        read = getattr(self.transport, "read", None)
+        if not callable(read) or not hasattr(self.transport, "in_waiting"):
+            return
+        deadline = time.monotonic() + 0.05
+        while time.monotonic() < deadline:
+            count = getattr(self.transport, "in_waiting", 0)
+            if callable(count):
+                count = count()
+            if not count:
+                break
+            read(count)
+
+    @staticmethod
+    def _matches(frame, request, expected_command=None):
+        """Return whether a JSON object can be the response to *request*.
+
+        ``action`` and ``rid`` are correlation fields when supplied by the
+        bridge.  Older valid responses (notably sys.info) omit ``action``, so
+        absence remains accepted for ABI compatibility; a present mismatch is
+        never accepted as the current response.
+        """
+        if not isinstance(frame, dict):
+            return False
+        if not isinstance(request, dict):
+            return True
+        command = expected_command or request.get("cmd")
+        if frame.get("action") is not None and frame.get("action") != command:
+            return False
+        if "rid" in request and frame.get("rid") != request["rid"]:
+            return False
+        return True
 
     def exchange(self, command_line):
         if isinstance(command_line, str):
@@ -27,7 +78,6 @@ class Tab5Session:
             request = json.loads(payload.decode().strip())
         except (ValueError, TypeError, UnicodeDecodeError):
             pass
-        self.transport.write(payload)
         frames = []
         is_dump = isinstance(request, dict) and request.get("cmd") in {
             "screen.dump", "screen.dump.retry", "screen.dump.resume"
@@ -35,6 +85,11 @@ class Tab5Session:
         expected = None
         chunks = {}
         got_end = False
+        self._discard_input()
+        self.transport.write(payload)
+        flush = getattr(self.transport, "flush", None)
+        if callable(flush):
+            flush()
         while True:
             raw = self.transport.readline()
             if not raw:
@@ -49,6 +104,8 @@ class Tab5Session:
                 continue
             if not isinstance(frame, dict):
                 continue
+            if not self._matches(frame, request):
+                continue
             frames.append(frame)
             if is_dump and frame.get("event") == "start":
                 expected = frame.get("chunks")
@@ -56,9 +113,9 @@ class Tab5Session:
                 self._merge_chunk(chunks, frame, "")
             if is_dump and frame.get("event") == "end":
                 got_end = True
-            if frame.get("event") == "end":
+            if is_dump and frame.get("event") == "end":
                 break
-            if len(frames) == 1 and frame.get("event") != "start":
+            if not is_dump:
                 break
         if not frames:
             raise RuntimeError("nenhuma resposta do dispositivo")
@@ -141,7 +198,11 @@ class Tab5Session:
         for key in ("path", "rid"):
             if key in request:
                 retry[key] = request[key]
+        self._discard_input()
         self.transport.write((json.dumps(retry, separators=(",", ":")) + "\n").encode())
+        flush = getattr(self.transport, "flush", None)
+        if callable(flush):
+            flush()
         result = []
         while True:
             raw = self.transport.readline()
@@ -151,7 +212,7 @@ class Tab5Session:
                 frame = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
             except (TypeError, ValueError, UnicodeDecodeError):
                 continue
-            if isinstance(frame, dict):
+            if isinstance(frame, dict) and self._matches(frame, retry):
                 result.append(frame)
                 if frame.get("event") == "end":
                     break

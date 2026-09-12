@@ -45,6 +45,87 @@ static size_t parse_octal(const char *str, size_t max_len)
     return val;
 }
 
+static int package_lstat(const char *path, struct stat *st)
+{
+#if defined(TAB5_SIM)
+    return lstat(path, st);
+#else
+    return stat(path, st);
+#endif
+}
+
+static bool safe_package_member(const std::string &name)
+{
+    if (name.empty() || name[0] == '/' || name.find('\\') != std::string::npos ||
+        name.find('\0') != std::string::npos || name.find(':') != std::string::npos)
+        return false;
+    size_t begin = 0;
+    while (begin < name.size()) {
+        size_t end = name.find('/', begin);
+        std::string component = name.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+        if (component == ".." || component == "." || component.empty())
+            return false;
+        if (end == std::string::npos)
+            break;
+        begin = end + 1;
+    }
+    return true;
+}
+
+static bool normalize_tar_member(std::string &name)
+{
+    if (name.empty() || name[0] == '/')
+        return false;
+    while (name.rfind("./", 0) == 0)
+        name.erase(0, 2);
+    return safe_package_member(name);
+}
+
+static bool tar_regular_or_directory(char typeflag)
+{
+    return typeflag == '\0' || typeflag == '0' || typeflag == '5';
+}
+
+static bool ensure_dir_recursive(const std::string &path)
+{
+    if (path.empty())
+        return false;
+    struct stat st = {};
+    if (stat(path.c_str(), &st) == 0)
+        return S_ISDIR(st.st_mode);
+    size_t slash = path.find_last_of('/');
+    if (slash != std::string::npos && slash > 0 && !ensure_dir_recursive(path.substr(0, slash)))
+        return false;
+    return mkdir(path.c_str(), 0755) == 0 || (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode));
+}
+
+static bool valid_wasm_file(const std::string &path)
+{
+    struct stat st = {};
+    if (package_lstat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+        return false;
+    FILE *f = fopen(path.c_str(), "rb");
+    if (!f)
+        return false;
+    uint8_t magic[8] = {};
+    bool ok = fread(magic, 1, sizeof(magic), f) == sizeof(magic) && magic[0] == 0 && magic[1] == 'a' &&
+              magic[2] == 's' && magic[3] == 'm' && magic[4] == 1 && magic[5] == 0 && magic[6] == 0 && magic[7] == 0;
+    fclose(f);
+    return ok;
+}
+
+static bool valid_manifest_entry(const tab5_manifest_t &manifest)
+{
+    return tab5_manifest_is_valid(&manifest) && strcmp(manifest.entry, "app.wasm") == 0 &&
+           safe_package_member(manifest.entry);
+}
+
+static bool regular_file(const std::string &path)
+{
+    struct stat st = {};
+    return package_lstat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+}
+
 extern "C" bool tab5_package_read_manifest_from_tar(const char *tar_path, tab5_manifest_t *out_manifest)
 {
     if (tar_path == nullptr || out_manifest == nullptr) {
@@ -61,6 +142,10 @@ extern "C" bool tab5_package_read_manifest_from_tar(const char *tar_path, tab5_m
         if (header[0] == '\0') {
             break;
         }
+        if (!tar_regular_or_directory(header[156])) {
+            fclose(tar);
+            return false;
+        }
         size_t file_size = parse_octal(&header[124], 12);
         size_t blocks = (file_size + 511) / 512;
         std::string name(header, 100);
@@ -69,7 +154,11 @@ extern "C" bool tab5_package_read_manifest_from_tar(const char *tar_path, tab5_m
             name.resize(nul_pos);
         }
 
-        if (name.find("manifest.json") != std::string::npos && file_size > 0 && file_size < 65536) {
+        if (!normalize_tar_member(name)) {
+            fclose(tar);
+            return false;
+        }
+        if (name == "manifest.json" && header[156] != '5' && file_size > 0 && file_size < 65536) {
             std::vector<char> buf(file_size + 1, 0);
             size_t read_bytes = fread(buf.data(), 1, file_size, tar);
             if (read_bytes == file_size) {
@@ -78,7 +167,14 @@ extern "C" bool tab5_package_read_manifest_from_tar(const char *tar_path, tab5_m
             }
             break;
         }
-        fseek(tar, static_cast<long>(blocks) * 512, SEEK_CUR);
+        if (fseek(tar, static_cast<long>(blocks) * 512, SEEK_CUR) != 0) {
+            fclose(tar);
+            return false;
+        }
+    }
+    if (ferror(tar)) {
+        fclose(tar);
+        return false;
     }
     fclose(tar);
     return found;
@@ -108,11 +204,16 @@ extern "C" bool tab5_package_read_file_from_tar(const char *tar_path, const char
         if (nul_pos != std::string::npos) {
             name.resize(nul_pos);
         }
-        if (name.rfind("./", 0) == 0) {
-            name = name.substr(2);
+        if (!normalize_tar_member(name)) {
+            fclose(tar);
+            return false;
         }
-        if (name.rfind('/', 0) == 0) {
-            name = name.substr(1);
+        if (!tar_regular_or_directory(header[156]) || header[156] == '5') {
+            if (fseek(tar, static_cast<long>(blocks) * 512, SEEK_CUR) != 0) {
+                fclose(tar);
+                return false;
+            }
+            continue;
         }
 
         if (name == filename && file_size > 0) {
@@ -123,7 +224,14 @@ extern "C" bool tab5_package_read_file_from_tar(const char *tar_path, const char
             }
             break;
         }
-        fseek(tar, static_cast<long>(blocks) * 512, SEEK_CUR);
+        if (fseek(tar, static_cast<long>(blocks) * 512, SEEK_CUR) != 0) {
+            fclose(tar);
+            return false;
+        }
+    }
+    if (ferror(tar)) {
+        fclose(tar);
+        return false;
     }
     fclose(tar);
     return found;
@@ -138,7 +246,10 @@ extern "C" bool tab5_package_extract_tar(const char *tar_path, const char *dest_
     if (!tar) {
         return false;
     }
-    mkdir(dest_dir, 0755);
+    if (!ensure_dir_recursive(dest_dir)) {
+        fclose(tar);
+        return false;
+    }
 
     char header[512];
     while (fread(header, 1, 512, tar) == 512) {
@@ -154,20 +265,27 @@ extern "C" bool tab5_package_extract_tar(const char *tar_path, const char *dest_
             filename.resize(nul_pos);
         }
 
-        if (filename.rfind("./", 0) == 0) {
-            filename = filename.substr(2);
+        if (!normalize_tar_member(filename)) {
+            fclose(tar);
+            return false;
         }
-        if (filename.rfind('/', 0) == 0) {
-            filename = filename.substr(1);
+        if (!tar_regular_or_directory(typeflag)) {
+            fclose(tar);
+            return false;
         }
-
         std::string full_dest = std::string(dest_dir) + "/" + filename;
         if (typeflag == '5' || (!filename.empty() && filename.back() == '/')) {
-            mkdir(full_dest.c_str(), 0755);
+            if (!ensure_dir_recursive(full_dest)) {
+                fclose(tar);
+                return false;
+            }
         } else {
             size_t slash = full_dest.find_last_of('/');
             if (slash != std::string::npos) {
-                mkdir(full_dest.substr(0, slash).c_str(), 0755);
+                if (!ensure_dir_recursive(full_dest.substr(0, slash))) {
+                    fclose(tar);
+                    return false;
+                }
             }
             FILE *out = fopen(full_dest.c_str(), "wb");
             if (out != nullptr) {
@@ -175,11 +293,19 @@ extern "C" bool tab5_package_extract_tar(const char *tar_path, const char *dest_
                 size_t remaining = file_size;
                 while (remaining > 0) {
                     size_t to_read = (remaining < sizeof(buf)) ? remaining : sizeof(buf);
-                    fread(buf, 1, sizeof(buf), tar);
-                    fwrite(buf, 1, to_read, out);
+                    if (fread(buf, 1, to_read, tar) != to_read || fwrite(buf, 1, to_read, out) != to_read) {
+                        fclose(out);
+                        fclose(tar);
+                        return false;
+                    }
                     remaining -= to_read;
                 }
                 fclose(out);
+                if (blocks * 512 > file_size &&
+                    fseek(tar, static_cast<long>(blocks * 512 - file_size), SEEK_CUR) != 0) {
+                    fclose(tar);
+                    return false;
+                }
             } else {
                 fseek(tar, static_cast<long>(blocks) * 512, SEEK_CUR);
             }
@@ -212,6 +338,9 @@ static DynamicAppEntry *s_pending_close_app = nullptr;
 
 static bool copy_file_contents(const char *src_path, const char *dst_path)
 {
+    struct stat source_stat = {};
+    if (src_path == nullptr || package_lstat(src_path, &source_stat) != 0 || !S_ISREG(source_stat.st_mode))
+        return false;
     FILE *src = fopen(src_path, "rb");
     if (src == nullptr) {
         return false;
@@ -230,6 +359,12 @@ static bool copy_file_contents(const char *src_path, const char *dst_path)
             fclose(dst);
             return false;
         }
+    }
+
+    if (ferror(src)) {
+        fclose(src);
+        fclose(dst);
+        return false;
     }
 
     fclose(src);
@@ -326,9 +461,9 @@ tab5_err_t tab5_package_mgr_init(void)
         LOG_I("Particao /apps montada com sucesso");
     }
 #endif
-    mkdir(TAB5_APPS_DIR, 0755);
-    mkdir(TAB5_APPS_INSTALLED_DIR, 0755);
-    mkdir(TAB5_APPS_DATA_DIR, 0755);
+    if (!ensure_dir_recursive(TAB5_APPS_DIR) || !ensure_dir_recursive(TAB5_APPS_INSTALLED_DIR) ||
+        !ensure_dir_recursive(TAB5_APPS_DATA_DIR))
+        return TAB5_ERR_FAIL;
     s_dynamic_apps.clear();
     memset(s_slot_app_ids, 0, sizeof(s_slot_app_ids));
     s_slot_count = 0;
@@ -425,7 +560,8 @@ tab5_err_t tab5_package_mgr_install(const char *source_path, char *out_app_id, s
         is_tar = true;
     } else {
         std::string manifest_file = std::string(source_path) + "/manifest.json";
-        tab5_err_t err = tab5_manifest_load_from_file(manifest_file.c_str(), &manifest);
+        tab5_err_t err = regular_file(manifest_file) ? tab5_manifest_load_from_file(manifest_file.c_str(), &manifest)
+                                                     : TAB5_ERR_NOT_FOUND;
         if (err != TAB5_OK) {
             err = tab5_manifest_load_from_file(source_path, &manifest);
             if (err != TAB5_OK) {
@@ -440,24 +576,84 @@ tab5_err_t tab5_package_mgr_install(const char *source_path, char *out_app_id, s
         return TAB5_ERR_INVALID_ARG;
     }
 
+    /* Entry is deliberately restricted to the package root.  This keeps the
+     * installed layout stable and prevents manifest-controlled traversal. */
+    if (!valid_manifest_entry(manifest)) {
+        LOG_E("Entry inseguro ou incompatível: %s", manifest.entry);
+        return TAB5_ERR_INVALID_ARG;
+    }
+
+    std::vector<uint8_t> wasm_probe;
+    if (is_tar) {
+        if (!tab5_package_read_file_from_tar(source_path, manifest.entry, &wasm_probe) || wasm_probe.size() < 8 ||
+            memcmp(wasm_probe.data(), "\0asm\1\0\0\0", 8) != 0) {
+            return TAB5_ERR_INVALID_ARG;
+        }
+    } else if (!valid_wasm_file(std::string(source_path) + "/" + manifest.entry)) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+
     std::string target_dir = std::string(TAB5_APPS_INSTALLED_DIR) + "/" + manifest.id;
-    mkdir(target_dir.c_str(), 0755);
+    std::string staging_dir = target_dir + ".staging";
+    remove_dir_recursive(staging_dir.c_str());
+    if (!ensure_dir_recursive(staging_dir))
+        return TAB5_ERR_FAIL;
 
     if (is_tar) {
-        tab5_package_extract_tar(source_path, target_dir.c_str());
+        if (!tab5_package_extract_tar(source_path, staging_dir.c_str())) {
+            remove_dir_recursive(staging_dir.c_str());
+            return TAB5_ERR_FAIL;
+        }
     } else {
         std::string manifest_file = std::string(source_path) + "/manifest.json";
-        std::string dest_manifest = target_dir + "/manifest.json";
-        copy_file_contents(manifest_file.c_str(), dest_manifest.c_str());
+        std::string dest_manifest = staging_dir + "/manifest.json";
+        if (!copy_file_contents(manifest_file.c_str(), dest_manifest.c_str())) {
+            remove_dir_recursive(staging_dir.c_str());
+            return TAB5_ERR_FAIL;
+        }
 
         std::string src_wasm = std::string(source_path) + "/" + manifest.entry;
-        std::string dest_wasm = target_dir + "/" + manifest.entry;
-        copy_file_contents(src_wasm.c_str(), dest_wasm.c_str());
+        // Final installed spelling remains target_dir + "/" + manifest.entry.
+        std::string dest_wasm = staging_dir + "/" + manifest.entry;
+        if (!copy_file_contents(src_wasm.c_str(), dest_wasm.c_str())) {
+            remove_dir_recursive(staging_dir.c_str());
+            return TAB5_ERR_FAIL;
+        }
     }
+#ifdef ESP_PLATFORM
+    std::string backup_dir = target_dir + ".old";
+    remove_dir_recursive(backup_dir.c_str());
+    if (rename(target_dir.c_str(), backup_dir.c_str()) != 0 && access(target_dir.c_str(), F_OK) == 0) {
+        remove_dir_recursive(staging_dir.c_str());
+        return TAB5_ERR_FAIL;
+    }
+    if (rename(staging_dir.c_str(), target_dir.c_str()) != 0) {
+        rename(backup_dir.c_str(), target_dir.c_str());
+        remove_dir_recursive(staging_dir.c_str());
+        return TAB5_ERR_FAIL;
+    }
+    remove_dir_recursive(backup_dir.c_str());
+#else
+    /* Host tests virtualize /sdcard through fopen/mkdir wrappers, but not
+     * rename(2). Keep the same staged contents while using the virtual FS. */
+    remove_dir_recursive(target_dir.c_str());
+    if (!ensure_dir_recursive(target_dir)) {
+        remove_dir_recursive(staging_dir.c_str());
+        return TAB5_ERR_FAIL;
+    }
+    if (!copy_file_contents((staging_dir + "/manifest.json").c_str(), (target_dir + "/manifest.json").c_str()) ||
+        !copy_file_contents((staging_dir + "/" + manifest.entry).c_str(),
+                            (target_dir + "/" + manifest.entry).c_str())) {
+        remove_dir_recursive(staging_dir.c_str());
+        return TAB5_ERR_FAIL;
+    }
+    remove_dir_recursive(staging_dir.c_str());
+#endif
 
     // Cria diretório de dados privados da app
     std::string data_dir = std::string(TAB5_APPS_DATA_DIR) + "/" + manifest.id;
-    mkdir(data_dir.c_str(), 0755);
+    if (!ensure_dir_recursive(data_dir))
+        return TAB5_ERR_FAIL;
 
     // Registra dynamic entry
     register_dynamic_app_entry(manifest, target_dir, false);
@@ -480,9 +676,16 @@ tab5_err_t tab5_package_mgr_uninstall(const char *app_id, bool delete_user_data)
     // Se estiver em execução, fecha antes
     if (s_running_dynamic_app && s_running_dynamic_app->id_str == app_id) {
         tab5_package_mgr_close_active();
+        if (s_running_dynamic_app != nullptr && s_running_dynamic_app->id_str == app_id) {
+            return TAB5_ERR_INVALID_STATE; /* callback ainda está em voo */
+        }
     }
 
     // Remove do registry
+    auto app_it = s_dynamic_apps.find(app_id);
+    if (app_it != s_dynamic_apps.end()) {
+        tab5_wasm_dispatcher_cancel_instance(&app_it->second->wasm_inst);
+    }
     app_registry_unregister(app_id);
     s_dynamic_apps.erase(app_id);
 
@@ -525,20 +728,29 @@ static int scan_directory_and_register(const char *base_dir, bool is_embedded)
         inspected_dirs.insert(pkg_name);
 
         std::string app_dir = std::string(base_dir) + "/" + pkg_name;
+        struct stat package_stat = {};
+        if (package_lstat(app_dir.c_str(), &package_stat) != 0 || S_ISLNK(package_stat.st_mode))
+            continue;
         tab5_manifest_t manifest = {};
 
         // Caso 1: Arquivo .tab5pkg
         if (pkg_name.length() > 8 && pkg_name.substr(pkg_name.length() - 8) == ".tab5pkg") {
             if (tab5_package_read_manifest_from_tar(app_dir.c_str(), &manifest)) {
-                if (register_dynamic_app_entry(manifest, app_dir, is_embedded) == TAB5_OK) {
+                std::vector<uint8_t> wasm;
+                if (valid_manifest_entry(manifest) &&
+                    tab5_package_read_file_from_tar(app_dir.c_str(), manifest.entry, &wasm) && wasm.size() >= 8 &&
+                    memcmp(wasm.data(), "\0asm\1\0\0\0", 8) == 0 &&
+                    register_dynamic_app_entry(manifest, app_dir, is_embedded) == TAB5_OK) {
                     count++;
                 }
             }
         } else {
             // Caso 2: Pasta descompactada
             std::string manifest_path = app_dir + "/manifest.json";
-            if (tab5_manifest_load_from_file(manifest_path.c_str(), &manifest) == TAB5_OK) {
-                if (register_dynamic_app_entry(manifest, app_dir, is_embedded) == TAB5_OK) {
+            if (regular_file(manifest_path) &&
+                tab5_manifest_load_from_file(manifest_path.c_str(), &manifest) == TAB5_OK) {
+                if (valid_manifest_entry(manifest) && valid_wasm_file(app_dir + "/" + manifest.entry) &&
+                    register_dynamic_app_entry(manifest, app_dir, is_embedded) == TAB5_OK) {
                     count++;
                 }
             }
@@ -593,7 +805,8 @@ extern "C" tab5_err_t tab5_package_mgr_launch_direct(const char *app_id, const c
     // A relaunch of the already active entry must not overwrite its instance
     // or context.  It is still valid to deliver a file request to it.
     /* Same-entry fast path: if (s_running_dynamic_app == entry || active_ctx == &entry->host_ctx). */
-    if ((s_running_dynamic_app == entry || active_ctx == &entry->host_ctx) && entry->wasm_inst.is_running) {
+    if ((s_running_dynamic_app == entry || active_ctx == &entry->host_ctx) &&
+        tab5_wasm_instance_is_running(&entry->wasm_inst)) {
         if (open_file_path != nullptr) {
             return tab5_lifecycle_host_open_file(active_ctx != nullptr ? active_ctx : &entry->host_ctx, open_file_path);
         }
@@ -729,9 +942,9 @@ tab5_err_t tab5_package_mgr_close_active(void)
 
     // Uma abertura disparada por callback não pode destruir a tela/contexto
     // que ainda está na pilha. O runtime chamará o chokepoint após o join.
-    if (entry->wasm_inst.call_depth > 0) {
-        entry->wasm_inst.unload_pending = true;
+    if (tab5_wasm_instance_call_depth(&entry->wasm_inst) > 0) {
         s_pending_close_app = entry;
+        (void)tab5_wasm_unload(&entry->wasm_inst);
         return TAB5_OK;
     }
 
@@ -746,7 +959,7 @@ tab5_err_t tab5_package_mgr_close_active(void)
 extern "C" void tab5_package_mgr_process_pending_close(void)
 {
     DynamicAppEntry *entry = s_pending_close_app;
-    if (entry == nullptr || entry->wasm_inst.call_depth != 0) {
+    if (entry == nullptr || tab5_wasm_instance_call_depth(&entry->wasm_inst) != 0) {
         return;
     }
 

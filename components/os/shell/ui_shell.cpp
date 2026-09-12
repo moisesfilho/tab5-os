@@ -11,6 +11,7 @@
 #include "ui_installer.h"
 #include "ui_storage_view.h"
 #include "tab5_package_mgr.h"
+#include "tab5_wasm_runtime.h"
 #include "tab5_ui_host.h"
 
 namespace {
@@ -89,6 +90,10 @@ void ui_shell_init(void)
     /* Inicializa subsistemas de registro e associacao de arquivos */
     app_registry_init();
     file_assoc_init();
+    if (tab5_wasm_runtime_init() != TAB5_OK) {
+        /* Sem runtime não há caminho seguro para lançar pacotes WASM. */
+        return;
+    }
     tab5_package_mgr_init();
     ui_installer_init();
 

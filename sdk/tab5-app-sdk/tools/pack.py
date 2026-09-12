@@ -77,7 +77,10 @@ def pack_app(app_dir, output_dir=None, package_name=None):
             os.remove(dest_pkg_file)
 
     # Cria o arquivo de pacote único .tab5pkg (formato TAR USTAR)
-    with tarfile.open(dest_pkg_file, "w") as tar:
+    # Use real USTAR headers, not Python's default PAX extended-header
+    # records: the firmware intentionally accepts only regular files and
+    # directories, never metadata/symlink/device entries.
+    with tarfile.open(dest_pkg_file, "w", format=tarfile.USTAR_FORMAT) as tar:
         tar.add(manifest_file, arcname="manifest.json")
         tar.add(entry_file, arcname=entry_name)
         assets_dir = os.path.join(app_dir, "assets")

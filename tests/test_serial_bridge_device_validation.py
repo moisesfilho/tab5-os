@@ -153,12 +153,16 @@ class SerialBridgeTransport:
         self.ser.flush()
 
     def exchange(self, command, timeout_s=10.0, label=""):
-        """Comando de resposta única (1 frame típico); janela fixa."""
+        """Comando de resposta única; termina no frame correspondente."""
         self._drain(0.3)
         self._write(command)
         t0 = time.monotonic()
         buf = bytearray()
         frames = []
+        request = json.loads(command)
+        expected_action = request.get("cmd") if isinstance(request, dict) else None
+        expected_rid = request.get("rid") if isinstance(request, dict) else None
+        got_response = False
         deadline = t0 + timeout_s
         while time.monotonic() < deadline:
             data = self.ser.read(65536)
@@ -179,6 +183,12 @@ class SerialBridgeTransport:
                         continue
                     if isinstance(obj, dict):
                         frames.append(obj)
+                        if (obj.get("action") in (None, expected_action)
+                                and ("rid" not in request or obj.get("rid") == expected_rid)):
+                            got_response = True
+                            break
+            if got_response:
+                break
         elapsed = time.monotonic() - t0
         self._record(command, elapsed, frames, label,
                     raw_bytes=len(buf) + sum(len(json.dumps(f)) for f in frames))

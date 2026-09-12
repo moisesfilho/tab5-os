@@ -10,6 +10,7 @@ extern "C" {
 
 tab5_err_t tab5_wasm_dispatcher_init(void);
 void tab5_wasm_dispatcher_shutdown(void);
+void tab5_wasm_dispatcher_cancel_instance(tab5_wasm_app_instance_t *inst);
 bool tab5_wasm_dispatch_post_call(tab5_wasm_app_instance_t *inst, const char *primary, const char *alias, uint32_t argc,
                                   const uint32_t *argv);
 bool tab5_wasm_dispatch_post_string(tab5_wasm_app_instance_t *inst, const char *primary, const char *alias,

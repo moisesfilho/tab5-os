@@ -606,8 +606,7 @@ extern "C" int serial_bridge_dispatch(const char *json_line, char *out, size_t o
             }
         }
     } else if (!strcmp(cmd, "ui.dump")) {
-        cJSON *d = cJSON_CreateObject();
-        cJSON *items = cJSON_AddArrayToObject(d, "items");
+        auto *d = cJSON_CreateObject(), *items = cJSON_AddArrayToObject(d, "items");
 #ifdef ESP_PLATFORM
         if (!bsp_display_lock(pdMS_TO_TICKS(500)))
             result = error_frame(cmd, "lock do display indisponivel");
@@ -623,7 +622,8 @@ extern "C" int serial_bridge_dispatch(const char *json_line, char *out, size_t o
             result = envelope("ok", cmd, nullptr, d);
         else
             cJSON_Delete(d);
-    } else if (!strcmp(cmd, "server.start") || !strcmp(cmd, "server.stop") || !strcmp(cmd, "server.status")) {
+    } else if (!strncmp(cmd, "server.", 7) &&
+               (!strcmp(cmd + 7, "start") || !strcmp(cmd + 7, "stop") || !strcmp(cmd, "server.status"))) {
         esp_err_t err = ESP_OK;
         if (!strcmp(cmd, "server.start"))
             err = http_file_server_start();

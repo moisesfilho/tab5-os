@@ -411,10 +411,21 @@ TEST_F(HostAbiTest, NewNativeSymbolsRegistered)
 
     ASSERT_NE(symbols, nullptr);
 
-    const char *expected[] = {"tab5_ai_send",         "tab5_ai_cancel",      "tab5_ai_is_busy",
-                              "tab5_ai_config_load",  "tab5_ai_config_save", "tab5_ai_get_state",
-                              "tab5_ai_get_response", "tab5_ai_get_error",   "tab5_ai_consume_response",
-                              "tab5_file_assoc_open", "tab5_nvs_get_u8",     "tab5_nvs_set_u8"};
+    const char *expected[] = {"tab5_ai_send",
+                              "tab5_ai_cancel",
+                              "tab5_ai_is_busy",
+                              "tab5_ai_config_load",
+                              "tab5_ai_config_save",
+                              "tab5_ai_get_state",
+                              "tab5_ai_get_response",
+                              "tab5_ai_get_error",
+                              "tab5_ai_consume_response",
+                              "tab5_file_assoc_open",
+                              "tab5_nvs_get_u8",
+                              "tab5_nvs_set_u8",
+                              "tab5_ui_obj_set_scrollable",
+                              "tab5_ui_obj_scroll_to_bottom",
+                              "tab5_ui_obj_scroll_to_top"};
 
     for (const char *name : expected) {
         bool found = false;
@@ -443,6 +454,8 @@ typedef void (*fn_ai_consume_t)(void *);
 typedef tab5_err_t (*fn_assoc_t)(void *, const char *);
 typedef tab5_err_t (*fn_nvs_get_t)(void *, const char *, const char *, uint8_t *);
 typedef tab5_err_t (*fn_nvs_set_t)(void *, const char *, const char *, uint8_t);
+typedef tab5_err_t (*fn_ui_set_scrollable_t)(void *, tab5_ui_obj_t, bool);
+typedef tab5_err_t (*fn_ui_scroll_to_t)(void *, tab5_ui_obj_t, bool);
 
 static void *lookup_symbol(const char *name)
 {
@@ -498,4 +511,94 @@ TEST_F(HostAbiTest, AiWasmWrappersThroughSymbolTable)
     uint8_t v = 0;
     EXPECT_EQ(nvs_get(nullptr, "tab5", "k", &v), TAB5_ERR_NOT_FOUND);
     EXPECT_EQ(nvs_set(nullptr, "tab5", "k", 1), TAB5_OK);
+}
+
+TEST_F(HostAbiTest, UiScrollWasmWrappersThroughSymbolTable)
+{
+    fn_ui_set_scrollable_t set_scrollable = (fn_ui_set_scrollable_t)lookup_symbol("tab5_ui_obj_set_scrollable");
+    fn_ui_scroll_to_t scroll_bottom = (fn_ui_scroll_to_t)lookup_symbol("tab5_ui_obj_scroll_to_bottom");
+    fn_ui_scroll_to_t scroll_top = (fn_ui_scroll_to_t)lookup_symbol("tab5_ui_obj_scroll_to_top");
+
+    ASSERT_NE(set_scrollable, nullptr);
+    ASSERT_NE(scroll_bottom, nullptr);
+    ASSERT_NE(scroll_top, nullptr);
+
+    // Contrato ABI: ligar/desligar e rolar nunca derrubam o runtime, mesmo
+    // com contexto/env nulo e handle inexistente.
+    EXPECT_EQ(set_scrollable(nullptr, 1, true), TAB5_OK);
+    EXPECT_EQ(set_scrollable(nullptr, 1, false), TAB5_OK);
+    EXPECT_EQ(set_scrollable(nullptr, TAB5_UI_INVALID_OBJ, true), TAB5_OK);
+    EXPECT_EQ(scroll_bottom(nullptr, 1, true), TAB5_OK);
+    EXPECT_EQ(scroll_bottom(nullptr, 1, false), TAB5_OK);
+    EXPECT_EQ(scroll_top(nullptr, 1, true), TAB5_OK);
+    EXPECT_EQ(scroll_top(nullptr, 1, false), TAB5_OK);
+}
+
+TEST_F(HostAbiTest, UiScrollableApiViaSdk)
+{
+    // Sem app ativo, o SDK de rolagem nunca derruba o runtime (no build host
+    // sem LVGL o mutator é no-op e responde TAB5_OK).
+    EXPECT_EQ(tab5_ui_obj_set_scrollable(TAB5_UI_INVALID_OBJ, true), TAB5_OK);
+
+    tab5_app_context_t ctx = {};
+    strncpy(ctx.app_id, "com.tab5.scrolltest", sizeof(ctx.app_id) - 1);
+    ctx.permissions = TAB5_PERM_ALL;
+    tab5_lifecycle_host_init_app(&ctx);
+
+    tab5_ui_obj_t scr = tab5_ui_get_screen();
+    ASSERT_NE(scr, TAB5_UI_INVALID_OBJ);
+
+    tab5_ui_obj_t cont = tab5_ui_container_create(scr);
+    ASSERT_NE(cont, TAB5_UI_INVALID_OBJ);
+    EXPECT_EQ(tab5_ui_obj_set_scrollable(cont, true), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_set_scrollable(cont, false), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_scroll_to_bottom(cont, true), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_scroll_to_top(cont, true), TAB5_OK);
+
+    tab5_ui_obj_t ta = tab5_ui_textarea_create(cont);
+    ASSERT_NE(ta, TAB5_UI_INVALID_OBJ);
+    EXPECT_EQ(tab5_ui_obj_set_scrollable(ta, true), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_scroll_to_bottom(ta, false), TAB5_OK);
+
+    tab5_ui_obj_t list = tab5_ui_list_create(cont);
+    ASSERT_NE(list, TAB5_UI_INVALID_OBJ);
+    EXPECT_EQ(tab5_ui_obj_set_scrollable(list, true), TAB5_OK);
+    EXPECT_EQ(tab5_ui_obj_scroll_to_top(list, false), TAB5_OK);
+
+    tab5_lifecycle_host_destroy_app(&ctx);
+}
+
+TEST_F(HostAbiTest, UiHostRootToastAndWidgetContractsWithoutLvgl)
+{
+    // O build host deliberadamente usa HAVE_LVGL=0. Ainda assim, a ponte de
+    // UI deve preservar o contrato de ciclo de vida e responder de forma
+    // determinística às operações usadas por apps isoladas.
+    EXPECT_EQ(tab5_ui_host_create_app_screen("root-contract", nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_ui_host_destroy_app_screen(nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_ui_host_abort_app_screen(nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_ui_host_show_toast(nullptr, 0), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_ui_host_textarea_set_placeholder(nullptr, "hint"), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_ui_host_textarea_set_cursor_pos(nullptr, 0), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_ui_host_textarea_set_password_mode(nullptr, true), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_ui_host_textarea_get_cursor_pos(nullptr), 0);
+
+    int32_t width = 0;
+    int32_t height = 0;
+    tab5_ui_host_get_display_size(&width, &height);
+    EXPECT_EQ(width, 720);
+    EXPECT_EQ(height, 1280);
+    tab5_ui_host_get_display_size(nullptr, nullptr);
+    tab5_ui_host_apply_layout();
+    tab5_ui_host_refresh_theme();
+    tab5_ui_host_obj_clean_deferred(TAB5_UI_INVALID_OBJ);
+    tab5_ui_host_clear_app_content(nullptr);
+
+    // These setters are intentionally no-op in host mode, but must remain
+    // callable so generic widgets have the same ABI on device and host.
+    EXPECT_EQ(tab5_ui_host_obj_set_style_text_size(1, 14), TAB5_OK);
+    EXPECT_EQ(tab5_ui_host_obj_set_style_text_size(1, 56), TAB5_OK);
+    EXPECT_EQ(tab5_ui_host_obj_set_style_radius(1, 8), TAB5_OK);
+    EXPECT_EQ(tab5_ui_host_obj_set_flex_grow(1, 1), TAB5_OK);
+    EXPECT_EQ(tab5_ui_host_obj_set_clickable(1, true), TAB5_OK);
+    EXPECT_EQ(tab5_ui_host_obj_set_clickable(1, false), TAB5_OK);
 }

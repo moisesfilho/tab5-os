@@ -113,6 +113,7 @@ target_link_options(tab5_host_tests PRIVATE
     -Wl,--wrap=mkdir
     -Wl,--wrap=opendir
     -Wl,--wrap=stat
+    -Wl,--wrap=lstat
 )
 
 enable_testing()
@@ -138,6 +139,12 @@ add_test(NAME tab5_cli_contract
 add_test(NAME serial_bridge_kconfig_contract
   COMMAND ${Python3_EXECUTABLE}
           ${REPO_ROOT}/tests/test_serial_bridge_kconfig_contract.py)
+add_test(NAME ui_scroll_default_contract
+  COMMAND ${Python3_EXECUTABLE}
+          ${REPO_ROOT}/tests/test_ui_scroll_default_contract.py)
+add_test(NAME sim_wamr_contract
+  COMMAND ${Python3_EXECUTABLE}
+          ${REPO_ROOT}/tests/test_sim_wamr_contract.py)
 add_test(NAME serial_bridge_stack_contract
   COMMAND ${Python3_EXECUTABLE}
           ${REPO_ROOT}/tests/test_serial_bridge_stack_contract.py)

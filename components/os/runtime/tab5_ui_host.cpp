@@ -63,6 +63,14 @@ static bool s_has_previous_views = false;
 static lv_timer_t *s_wasm_poll_timer = nullptr;
 static tab5_app_context_t *s_wasm_poll_owner = nullptr;
 
+static void tab5_ui_host_disable_default_scroll(lv_obj_t *obj)
+{
+    if (obj != nullptr) {
+        lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+    }
+}
+
 static void tab5_ui_host_apply_layout_locked(void)
 {
     tab5_app_context_t *ctx = tab5_host_get_active_app();
@@ -262,6 +270,7 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
         LV_UNLOCK();
         return TAB5_ERR_NO_MEM;
     }
+    tab5_ui_host_disable_default_scroll(scr);
 
     const ui_palette_t *palette = ui_theme_get();
     lv_obj_set_style_bg_color(scr, lv_color_hex(palette->background), 0);
@@ -640,6 +649,8 @@ tab5_err_t tab5_ui_host_show_toast(const char *message, uint32_t duration_ms)
         LV_UNLOCK();
         return TAB5_ERR_NO_MEM;
     }
+    lv_obj_clear_flag(toast, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(toast, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_size(toast, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(toast, lv_color_hex(palette->surface), 0);
     lv_obj_set_style_border_color(toast, lv_color_hex(palette->accent), 0);
@@ -650,6 +661,7 @@ tab5_err_t tab5_ui_host_show_toast(const char *message, uint32_t duration_ms)
 
     lv_obj_t *lbl = lv_label_create(toast);
     if (lbl != nullptr) {
+        tab5_ui_host_disable_default_scroll(lbl);
         lv_label_set_text(lbl, message);
         lv_obj_set_style_text_color(lbl, lv_color_hex(palette->text), 0);
     }
@@ -856,6 +868,9 @@ void tab5_ui_host_generic_widget_event_cb(lv_event_t *e)
     if (app_ctx == nullptr) {
         return;
     }
+    if (app_ctx->state != TAB5_APP_STATE_RESUMED) {
+        return;
+    }
     if (!app_ctx->is_wasm && app_ctx->lifecycle.on_ui_event == nullptr) {
         return;
     }
@@ -896,6 +911,12 @@ void tab5_ui_host_generic_widget_event_cb(lv_event_t *e)
     }
 
     if (event_type != 0) {
+        /* LVGL emits an initial focus transition while the screen is being
+         * assembled.  It is not an application interaction and, for WASM,
+         * can race the module's registration of its event state. */
+        if (app_ctx->is_wasm && (event_type == TAB5_UI_EVENT_FOCUSED || event_type == TAB5_UI_EVENT_DEFOCUSED)) {
+            return;
+        }
         if (app_ctx->is_wasm && app_ctx->wasm_instance != nullptr) {
             tab5_wasm_app_instance_t *wasm_inst = (tab5_wasm_app_instance_t *)app_ctx->wasm_instance;
             uint32_t argv[3] = {(uint32_t)handle, (uint32_t)event_type, (uint32_t)event_val};
@@ -985,6 +1006,8 @@ tab5_ui_obj_t tab5_ui_host_container_create(tab5_ui_obj_t parent_handle)
         LV_UNLOCK();
         return TAB5_UI_INVALID_OBJ;
     }
+    lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_bg_color(cont, lv_color_hex(palette->surface), 0);
     lv_obj_set_style_bg_opa(cont, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(cont, 0, 0);
@@ -1248,6 +1271,8 @@ tab5_ui_obj_t tab5_ui_host_label_create(tab5_ui_obj_t parent_handle, const char 
         LV_UNLOCK();
         return TAB5_UI_INVALID_OBJ;
     }
+    lv_obj_clear_flag(lbl, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(lbl, LV_SCROLLBAR_MODE_OFF);
     lv_label_set_text(lbl, text != nullptr ? text : "");
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14_latin1, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(palette->text), 0);
@@ -1342,12 +1367,15 @@ tab5_ui_obj_t tab5_ui_host_btn_create(tab5_ui_obj_t parent_handle, const char *l
         LV_UNLOCK();
         return TAB5_UI_INVALID_OBJ;
     }
+    lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(btn, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_bg_color(btn, lv_color_hex(palette->accent), 0);
     lv_obj_set_style_radius(btn, 8, 0);
     lv_obj_set_style_pad_all(btn, 8, 0);
 
     if (label_or_symbol != nullptr && label_or_symbol[0] != '\0') {
         lv_obj_t *lbl = lv_label_create(btn);
+        tab5_ui_host_disable_default_scroll(lbl);
         lv_label_set_text(lbl, label_or_symbol);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xFFFFFF), 0);
         lv_obj_center(lbl);
@@ -1386,6 +1414,8 @@ tab5_ui_obj_t tab5_ui_host_switch_create(tab5_ui_obj_t parent_handle)
         LV_UNLOCK();
         return TAB5_UI_INVALID_OBJ;
     }
+    lv_obj_clear_flag(sw, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(sw, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_bg_color(sw, lv_color_hex(palette->accent), LV_PART_INDICATOR);
     lv_obj_add_event_cb(sw, tab5_ui_host_generic_widget_event_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
@@ -1461,6 +1491,8 @@ tab5_ui_obj_t tab5_ui_host_slider_create(tab5_ui_obj_t parent_handle, int32_t mi
         LV_UNLOCK();
         return TAB5_UI_INVALID_OBJ;
     }
+    lv_obj_clear_flag(slider, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(slider, LV_SCROLLBAR_MODE_OFF);
     lv_slider_set_range(slider, min, max);
     lv_obj_set_style_bg_color(slider, lv_color_hex(palette->text_muted), LV_PART_MAIN);
     lv_obj_set_style_bg_color(slider, lv_color_hex(palette->accent), LV_PART_INDICATOR);

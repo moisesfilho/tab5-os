@@ -1,6 +1,7 @@
 #include "sim_time.hpp"
 
 #include <ctime>
+#include <sys/time.h>
 
 static bool s_frozen = false;
 
@@ -8,6 +9,7 @@ extern "C" {
 
 time_t __real_time(time_t *t);
 struct tm *__real_localtime_r(const time_t *timep, struct tm *result);
+int __real_gettimeofday(struct timeval *tv, void *tz);
 
 time_t __wrap_time(time_t *t)
 {
@@ -27,6 +29,19 @@ struct tm *__wrap_localtime_r(const time_t *timep, struct tm *result)
         return gmtime_r(&fixed, result);
     }
     return __real_localtime_r(timep, result);
+}
+
+int __wrap_gettimeofday(struct timeval *tv, void *tz)
+{
+    if (s_frozen) {
+        if (tv != nullptr) {
+            tv->tv_sec = simtime::FROZEN_EPOCH;
+            tv->tv_usec = 0;
+        }
+        (void)tz;
+        return 0;
+    }
+    return __real_gettimeofday(tv, tz);
 }
 
 } /* extern "C" */

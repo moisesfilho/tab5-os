@@ -54,10 +54,17 @@ linha inteira representa uma unica acao.
 
 ### Rolagem
 
+Por padrão, a tela raiz, contêineres, toasts, labels, botões, switches e
+sliders são criados sem `LV_OBJ_FLAG_SCROLLABLE` e com a scrollbar desligada.
+Listas e textareas preservam a rolagem nativa. Para tornar um objeto genérico
+rolável, use `tab5_ui_obj_set_scrollable(obj, true)`; para voltar ao estado
+fixo, use `tab5_ui_obj_set_scrollable(obj, false)`. Essas chamadas também
+configuram a scrollbar como `AUTO` e `OFF`, respectivamente.
+
 Uma tela de aplicativo deve permanecer fixa quando a rolagem pertence a uma
 lista. Configure a tela com `tab5_ui_obj_set_scrollable(screen, false)` e o
 contêiner da lista com `tab5_ui_obj_set_scrollable(list, true)`. Reaplique o
-fluxo e a configuracao de rolagem depois de reconstruir os filhos, e use um
+fluxo e a configuração de rolagem depois de reconstruir os filhos, e use um
 contêiner com tamanho definido para que a scrollbar seja calculada no elemento
 correto.
 

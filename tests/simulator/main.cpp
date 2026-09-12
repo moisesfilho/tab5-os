@@ -3,7 +3,7 @@
  *
  * Modos:
  *   tab5_sim --interactive [DIR]      janela interativa (S salva captura)
- *   tab5_sim --scenario NOME [--out DIR] [--update-goldens]
+ *   tab5_sim --scenario NOME [--out DIR] [--update-goldens] [--window]
  *   tab5_sim --list                   lista cenarios
  *
  * No modo cenario o relogio e congelado e os backends respondem sempre
@@ -33,11 +33,13 @@
 #include "ui_font.h"
 #include "app_registry.h"
 #include "tab5_package_mgr.h"
+#include "tab5_wasm_runtime.h"
 
 namespace {
 
 constexpr uint32_t SIM_W = 720;
 constexpr uint32_t SIM_H = 1280;
+bool g_silent = false;
 
 void pump(uint32_t ms)
 {
@@ -146,8 +148,10 @@ int run_interactive(const std::string &out_dir)
     st.out_dir = out_dir.empty() ? "tests/simulator/out/interactive" : out_dir;
     SDL_AddEventWatch(watch_interactive_keys, &st);
 
-    printf("tab5_sim interativo — atalhos: 1-9/0 apps, M musica, D desktop, ");
-    printf("P power, S print, ESC sair\n");
+    if (!g_silent) {
+        printf("tab5_sim interativo — atalhos: 1-9/0 apps, M musica, D desktop, ");
+        printf("P power, S print, ESC sair\n");
+    }
 
     for (;;) {
         pump(50);
@@ -200,7 +204,9 @@ int run_scenario(const std::string &name, const std::string &out_arg, bool updat
         idx++;
     }
 
-    printf("sim: cenario '%s' concluido (%s)\n", name.c_str(), out_dir.c_str());
+    if (!g_silent) {
+        printf("sim: cenario '%s' concluido (%s)\n", name.c_str(), out_dir.c_str());
+    }
     return 0;
 }
 
@@ -222,8 +228,10 @@ void boot_ui()
 {
     srand(42); /* esp_random deterministico */
 
-    printf("[boot] montando sd\n");
-    fflush(stdout);
+    if (!g_silent) {
+        printf("[boot] montando sd\n");
+        fflush(stdout);
+    }
     wifi_storage_mount(); /* /sdcard aponta p/ tmpdir via path_redirect */
     timezone_mgr_init();
 
@@ -282,11 +290,15 @@ int main(int argc, char **argv)
     std::string scenario_name;
     std::string out_dir;
     bool update_goldens = false;
+    bool window_requested = false;
+    bool list_requested = false;
+    bool help_requested = false;
 
     for (int i = 1; i < argc; i++) {
         const std::string arg = argv[i];
         if (arg == "--interactive") {
             mode = "interactive";
+            window_requested = true;
             if (i + 1 < argc && argv[i + 1][0] != '-') {
                 out_dir = argv[++i];
             }
@@ -297,14 +309,41 @@ int main(int argc, char **argv)
             out_dir = argv[++i];
         } else if (arg == "--update-goldens") {
             update_goldens = true;
+        } else if (arg == "--window") {
+            window_requested = true;
+        } else if (arg == "--silent") {
+            g_silent = true;
         } else if (arg == "--list") {
-            list_scenarios();
-            return 0;
+            list_requested = true;
         } else if (arg == "-h" || arg == "--help") {
-            printf("uso: tab5_sim --interactive [DIR] | --scenario NOME [--out DIR] "
-                   "[--update-goldens] | --list\n");
-            return 0;
+            help_requested = true;
+        } else {
+            fprintf(stderr, "sim: flag desconhecida '%s'\n", arg.c_str());
+            return 2;
         }
+    }
+
+    if (g_silent) {
+        /* Também silencia logs dos subsistemas/LVGL que escrevem diretamente
+         * em stdout; erros continuam indo para stderr. */
+        if (freopen("/dev/null", "w", stdout) == nullptr) {
+            fprintf(stderr, "sim: nao foi possivel ativar --silent\n");
+            return 1;
+        }
+    }
+
+    if (list_requested) {
+        if (!g_silent) {
+            list_scenarios();
+        }
+        return 0;
+    }
+    if (help_requested) {
+        if (!g_silent) {
+            printf("uso: tab5_sim --interactive [DIR] | --scenario NOME [--out DIR] "
+                   "[--update-goldens] [--window] | --list\n");
+        }
+        return 0;
     }
 
     if (mode.empty()) {
@@ -312,10 +351,29 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    if (window_requested && getenv("DISPLAY") == nullptr && getenv("WAYLAND_DISPLAY") == nullptr) {
+        fprintf(stderr, "sim: --window/--interactive requer DISPLAY ou WAYLAND_DISPLAY\n");
+        return 1;
+    }
+
+    if (mode == "scenario" && !window_requested) {
+        /* Cenários nunca dependem de X/Wayland; janela visível é opt-in. */
+        SDL_SetHint("SDL_VIDEODRIVER", "dummy");
+        SDL_SetHint("SDL_RENDER_DRIVER", "software");
+    }
+
     boot_ui();
 
     if (mode == "interactive") {
-        return run_interactive(out_dir);
+        int result = run_interactive(out_dir);
+        tab5_package_mgr_close_active();
+        tab5_wasm_runtime_destroy();
+        SDL_Quit();
+        return result;
     }
-    return run_scenario(scenario_name, out_dir, update_goldens);
+    int result = run_scenario(scenario_name, out_dir, update_goldens);
+    tab5_package_mgr_close_active();
+    tab5_wasm_runtime_destroy();
+    SDL_Quit();
+    return result;
 }

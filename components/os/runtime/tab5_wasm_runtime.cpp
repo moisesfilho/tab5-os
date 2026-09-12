@@ -6,6 +6,7 @@
 #include "tab5_wasm_runtime.h"
 #include "tab5_host_abi.h"
 #include "tab5_lifecycle_host.h"
+#include "tab5_wasm_dispatcher.h"
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -17,9 +18,13 @@ static const char *TAG = "tab5_wasm";
 /* Implementado pelo package manager; mantido como chokepoint pós-retorno para
  * que lifecycle/UI de uma app antiga não sejam destruídos no callback. */
 extern "C" void tab5_package_mgr_process_pending_close(void);
+extern "C" tab5_err_t tab5_package_mgr_close_active(void);
 
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM) || defined(TAB5_SIM)
 #include "wasm_export.h"
+#endif
+
+#if defined(ESP_PLATFORM)
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_pthread.h"
@@ -31,10 +36,147 @@ extern "C" void tab5_package_mgr_process_pending_close(void);
 #define LOG_E(fmt, ...) printf("[ERROR] " fmt "\n", ##__VA_ARGS__)
 #define LOG_W(fmt, ...) printf("[WARN] " fmt "\n", ##__VA_ARGS__)
 #define LOG_I(fmt, ...) printf("[INFO] " fmt "\n", ##__VA_ARGS__)
+#if defined(TAB5_SIM)
+#define HAVE_WAMR 1
+#else
 #define HAVE_WAMR 0
+#endif
 #endif
 
 static bool s_runtime_initialized = false;
+
+static pthread_mutex_t *instance_mutex(tab5_wasm_app_instance_t *inst)
+{
+    return inst != nullptr ? static_cast<pthread_mutex_t *>(inst->state_mutex) : nullptr;
+}
+static pthread_cond_t *instance_cond(tab5_wasm_app_instance_t *inst)
+{
+    return inst != nullptr ? static_cast<pthread_cond_t *>(inst->state_cond) : nullptr;
+}
+static void instance_lock(tab5_wasm_app_instance_t *inst)
+{
+    if (instance_mutex(inst) != nullptr)
+        pthread_mutex_lock(instance_mutex(inst));
+}
+static void instance_unlock(tab5_wasm_app_instance_t *inst)
+{
+    if (instance_mutex(inst) != nullptr)
+        pthread_mutex_unlock(instance_mutex(inst));
+}
+static bool init_instance_mutex(tab5_wasm_app_instance_t *inst)
+{
+    auto *mutex = static_cast<pthread_mutex_t *>(malloc(sizeof(pthread_mutex_t)));
+    if (mutex == nullptr || pthread_mutex_init(mutex, nullptr) != 0) {
+        free(mutex);
+        return false;
+    }
+    inst->state_mutex = mutex;
+    auto *cond = static_cast<pthread_cond_t *>(malloc(sizeof(pthread_cond_t)));
+    if (cond == nullptr || pthread_cond_init(cond, nullptr) != 0) {
+        free(cond);
+        pthread_mutex_destroy(mutex);
+        free(mutex);
+        inst->state_mutex = nullptr;
+        return false;
+    }
+    inst->state_cond = cond;
+    return true;
+}
+static void destroy_instance_mutex(tab5_wasm_app_instance_t *inst)
+{
+    auto *cond = instance_cond(inst);
+    if (cond != nullptr) {
+        pthread_cond_destroy(cond);
+        free(cond);
+        inst->state_cond = nullptr;
+    }
+    auto *mutex = instance_mutex(inst);
+    if (mutex != nullptr) {
+        pthread_mutex_destroy(mutex);
+        free(mutex);
+        inst->state_mutex = nullptr;
+    }
+}
+
+static thread_local tab5_wasm_app_instance_t *s_admitted_instance = nullptr;
+static thread_local uint32_t s_admitted_depth = 0;
+
+static bool admit_call(tab5_wasm_app_instance_t *inst, uint32_t expected_generation, void **out_module_inst)
+{
+    if (inst == nullptr || instance_mutex(inst) == nullptr)
+        return false;
+    instance_lock(inst);
+    const bool okay = inst->is_running && !inst->unload_pending &&
+                      (expected_generation == 0 || inst->generation == expected_generation);
+    if (okay) {
+        ++inst->call_depth;
+        ++inst->active_admissions;
+        if (out_module_inst != nullptr)
+            *out_module_inst = inst->module_inst;
+        s_admitted_instance = inst;
+        ++s_admitted_depth;
+    }
+    instance_unlock(inst);
+    return okay;
+}
+
+static void release_call(tab5_wasm_app_instance_t *inst)
+{
+    if (inst == nullptr || instance_mutex(inst) == nullptr)
+        return;
+    instance_lock(inst);
+    if (inst->call_depth > 0)
+        --inst->call_depth;
+    if (inst->active_admissions > 0)
+        --inst->active_admissions;
+    if (inst->call_depth == 0 && instance_cond(inst) != nullptr)
+        pthread_cond_broadcast(instance_cond(inst));
+    instance_unlock(inst);
+    if (s_admitted_instance == inst && s_admitted_depth > 0) {
+        if (--s_admitted_depth == 0)
+            s_admitted_instance = nullptr;
+    }
+}
+
+extern "C" bool tab5_wasm_instance_snapshot(const tab5_wasm_app_instance_t *raw, bool *out_running,
+                                            uint32_t *out_generation)
+{
+    auto *inst = const_cast<tab5_wasm_app_instance_t *>(raw);
+    if (inst == nullptr || instance_mutex(inst) == nullptr)
+        return false;
+    instance_lock(inst);
+    if (out_running)
+        *out_running = inst->is_running && !inst->unload_pending;
+    if (out_generation)
+        *out_generation = inst->generation;
+    instance_unlock(inst);
+    return true;
+}
+extern "C" bool tab5_wasm_instance_is_running(const tab5_wasm_app_instance_t *inst)
+{
+    bool running = false;
+    return tab5_wasm_instance_snapshot(inst, &running, nullptr) && running;
+}
+extern "C" uint32_t tab5_wasm_instance_call_depth(const tab5_wasm_app_instance_t *raw)
+{
+    auto *inst = const_cast<tab5_wasm_app_instance_t *>(raw);
+    if (inst == nullptr || instance_mutex(inst) == nullptr)
+        return 0;
+    instance_lock(inst);
+    uint32_t depth = inst->call_depth;
+    instance_unlock(inst);
+    return depth;
+}
+extern "C" bool tab5_wasm_instance_unload_pending(const tab5_wasm_app_instance_t *raw)
+{
+    auto *inst = const_cast<tab5_wasm_app_instance_t *>(raw);
+    if (inst == nullptr || instance_mutex(inst) == nullptr)
+        return false;
+    instance_lock(inst);
+    bool pending = inst->unload_pending;
+    instance_unlock(inst);
+    return pending;
+}
 
 tab5_err_t tab5_wasm_runtime_init(void)
 {
@@ -47,7 +189,7 @@ tab5_err_t tab5_wasm_runtime_init(void)
     memset(&init_args, 0, sizeof(RuntimeInitArgs));
 
     const uint32_t pool_size = 4 * 1024 * 1024;
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM)
     static uint8_t *s_wamr_pool_buf = (uint8_t *)heap_caps_malloc(pool_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     uint32_t real_pool_size = pool_size;
     if (s_wamr_pool_buf == nullptr) {
@@ -114,7 +256,7 @@ static tab5_err_t tab5_wasm_load_from_bytes_direct(const uint8_t *bytes, size_t 
 
     char error_buf[128] = {0};
 
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM)
     uint8_t *wasm_buf = (uint8_t *)heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (wasm_buf == nullptr) {
         wasm_buf = (uint8_t *)malloc(size);
@@ -148,22 +290,22 @@ static tab5_err_t tab5_wasm_load_from_bytes_direct(const uint8_t *bytes, size_t 
         return TAB5_ERR_FAIL;
     }
 
-    wasm_exec_env_t exec_env = wasm_runtime_create_exec_env(module_inst, real_stack);
-    if (exec_env == nullptr) {
-        LOG_E("Erro ao criar exec_env Wasm");
-        wasm_runtime_deinstantiate(module_inst);
-        wasm_runtime_unload(module);
-        free(wasm_buf);
-        return TAB5_ERR_NO_MEM;
-    }
-
     out_inst->module = (void *)module;
     out_inst->module_inst = (void *)module_inst;
-    out_inst->exec_env = (void *)exec_env;
+    /* WAMR exec_env é thread-affine. É criado e destruído pelo worker de cada
+     * chamada, nunca transportado entre workers. */
+    out_inst->exec_env = nullptr;
     out_inst->wasm_buf = wasm_buf;
     out_inst->wasm_buf_size = size;
     out_inst->is_running = true;
     out_inst->generation = 1;
+    if (!init_instance_mutex(out_inst)) {
+        wasm_runtime_deinstantiate(module_inst);
+        wasm_runtime_unload(module);
+        free(wasm_buf);
+        memset(out_inst, 0, sizeof(*out_inst));
+        return TAB5_ERR_NO_MEM;
+    }
 
     LOG_I("App Wasm %s instanciada com sucesso (Stack=%u, Heap=%u)", out_inst->app_id[0] ? out_inst->app_id : "unnamed",
           (unsigned)real_stack, (unsigned)real_heap);
@@ -183,7 +325,12 @@ struct WasmLoadInternalArgs {
 static void *wasm_load_pthread_worker(void *arg)
 {
     auto *a = (WasmLoadInternalArgs *)arg;
+    if (!wasm_runtime_init_thread_env()) {
+        a->result = TAB5_ERR_FAIL;
+        return nullptr;
+    }
     a->result = tab5_wasm_load_from_bytes_direct(a->bytes, a->size, a->stack_size, a->heap_size, a->ctx, a->out_inst);
+    wasm_runtime_destroy_thread_env();
     return nullptr;
 }
 #endif
@@ -200,7 +347,7 @@ tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t
     memset(out_inst, 0, sizeof(*out_inst));
 
 #if HAVE_WAMR
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM)
     esp_pthread_cfg_t pcfg = esp_pthread_get_default_config();
     pcfg.stack_size = 64 * 1024;
     pcfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
@@ -252,6 +399,11 @@ tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t
     out_inst->wasm_buf_size = size;
     out_inst->is_running = true;
     out_inst->generation = 1;
+    if (!init_instance_mutex(out_inst)) {
+        free(out_inst->wasm_buf);
+        memset(out_inst, 0, sizeof(*out_inst));
+        return TAB5_ERR_NO_MEM;
+    }
     return TAB5_OK;
 #endif
 }
@@ -302,47 +454,54 @@ tab5_err_t tab5_wasm_load_from_file(const char *wasm_path, uint32_t stack_size, 
 #if HAVE_WAMR
 extern "C" tab5_err_t tab5_wasm_select_entrypoint(tab5_wasm_app_instance_t *inst, const char **out_func_name)
 {
-    if (inst == nullptr || out_func_name == nullptr || !inst->is_running) {
+    if (inst == nullptr || out_func_name == nullptr) {
         return TAB5_ERR_INVALID_ARG;
     }
 
     *out_func_name = nullptr;
-    wasm_module_inst_t module_inst = (wasm_module_inst_t)inst->module_inst;
+    void *module_ptr = nullptr;
+    if (!admit_call(inst, 0, &module_ptr))
+        return TAB5_ERR_INVALID_STATE;
+    wasm_module_inst_t module_inst = (wasm_module_inst_t)module_ptr;
     if (wasm_runtime_lookup_function(module_inst, "app_main") != nullptr) {
         *out_func_name = "app_main";
+        release_call(inst);
         return TAB5_OK;
     }
     if (wasm_runtime_lookup_function(module_inst, "main") != nullptr) {
         *out_func_name = "main";
+        release_call(inst);
         return TAB5_OK;
     }
+    release_call(inst);
     return TAB5_ERR_NOT_FOUND;
-}
-
-static void tab5_wasm_call_depth_leave(tab5_wasm_app_instance_t *inst)
-{
-    if (inst->call_depth > 0) {
-        --inst->call_depth;
-    }
 }
 
 static tab5_err_t tab5_wasm_call_function_direct(tab5_wasm_app_instance_t *inst, const char *func_name, uint32_t argc,
                                                  uint32_t *argv)
 {
-    if (inst == nullptr || func_name == nullptr || !inst->is_running) {
+    if (inst == nullptr || func_name == nullptr) {
         return TAB5_ERR_INVALID_ARG;
     }
 
-    uint32_t &call_depth = inst->call_depth;
-    ++call_depth;
-
-    wasm_module_inst_t module_inst = (wasm_module_inst_t)inst->module_inst;
-    wasm_exec_env_t exec_env = (wasm_exec_env_t)inst->exec_env;
+    void *module_ptr = nullptr;
+    /* admit_call performs ++call_depth (inst->call_depth) while holding the
+     * state mutex; release_call performs the matching decrement after
+     * dispatch. */
+    if (!admit_call(inst, 0, &module_ptr))
+        return TAB5_ERR_INVALID_STATE;
+    wasm_module_inst_t module_inst = (wasm_module_inst_t)module_ptr;
+    wasm_exec_env_t exec_env = wasm_runtime_create_exec_env(module_inst, TAB5_WASM_DEFAULT_STACK_SIZE);
+    if (exec_env == nullptr) {
+        release_call(inst);
+        return TAB5_ERR_NO_MEM;
+    }
 
     wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, func_name);
     if (func == nullptr) {
         LOG_W("Funcao %s nao encontrada no modulo Wasm", func_name);
-        tab5_wasm_call_depth_leave(inst);
+        wasm_runtime_destroy_exec_env(exec_env);
+        release_call(inst);
         return TAB5_ERR_NOT_FOUND;
     }
 
@@ -356,15 +515,18 @@ static tab5_err_t tab5_wasm_call_function_direct(tab5_wasm_app_instance_t *inst,
     if (!wasm_runtime_call_wasm(exec_env, func, argc, local_argv)) {
         const char *exception = wasm_runtime_get_exception(module_inst);
         LOG_E("Excecao na execucao Wasm [%s]: %s", func_name, exception != nullptr ? exception : "desconhecida");
-        tab5_wasm_call_depth_leave(inst);
+        wasm_runtime_destroy_exec_env(exec_env);
+        release_call(inst);
         return TAB5_ERR_FAIL;
     }
+    /* release_call performs --call_depth (inst->call_depth) only after WAMR returned. */
 
     if (argv != nullptr && argc > 0) {
         argv[0] = local_argv[0];
     }
 
-    --call_depth;
+    wasm_runtime_destroy_exec_env(exec_env);
+    release_call(inst);
     return TAB5_OK;
 }
 
@@ -379,7 +541,12 @@ struct WasmCallInternalArgs {
 static void *wasm_call_pthread_worker(void *arg)
 {
     auto *a = (WasmCallInternalArgs *)arg;
+    if (!wasm_runtime_init_thread_env()) {
+        a->result = TAB5_ERR_FAIL;
+        return nullptr;
+    }
     a->result = tab5_wasm_call_function_direct(a->inst, a->func_name, a->argc, a->argv);
+    wasm_runtime_destroy_thread_env();
     return nullptr;
 }
 #endif
@@ -387,7 +554,7 @@ static void *wasm_call_pthread_worker(void *arg)
 #if !HAVE_WAMR
 extern "C" tab5_err_t tab5_wasm_select_entrypoint(tab5_wasm_app_instance_t *inst, const char **out_func_name)
 {
-    if (inst == nullptr || out_func_name == nullptr || !inst->is_running) {
+    if (inst == nullptr || out_func_name == nullptr || !tab5_wasm_instance_is_running(inst)) {
         return TAB5_ERR_INVALID_ARG;
     }
 
@@ -400,7 +567,7 @@ extern "C" tab5_err_t tab5_wasm_select_entrypoint(tab5_wasm_app_instance_t *inst
 
 tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *func_name, uint32_t argc, uint32_t *argv)
 {
-    if (inst == nullptr || func_name == nullptr || !inst->is_running) {
+    if (inst == nullptr || func_name == nullptr) {
         return TAB5_ERR_INVALID_ARG;
     }
 
@@ -413,7 +580,9 @@ tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *f
     }
     pthread_join(thread, nullptr);
     tab5_err_t res = call.result;
-    if (inst->call_depth == 0 && inst->unload_pending) {
+    uint32_t call_depth = tab5_wasm_instance_call_depth(inst);
+    bool unload_pending = tab5_wasm_instance_unload_pending(inst);
+    if (call_depth == 0 && unload_pending) {
         (void)tab5_wasm_unload(inst);
     }
     tab5_package_mgr_process_pending_close();
@@ -421,11 +590,9 @@ tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *f
 #else
     (void)argc;
     (void)argv;
-    ++inst->call_depth;
-    --inst->call_depth;
-    if (inst->call_depth == 0 && inst->unload_pending) {
-        (void)tab5_wasm_unload(inst);
-    }
+    if (!admit_call(inst, 0, nullptr))
+        return TAB5_ERR_INVALID_STATE;
+    release_call(inst);
     tab5_package_mgr_process_pending_close();
     return TAB5_OK;
 #endif
@@ -433,19 +600,24 @@ tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *f
 
 tab5_err_t tab5_wasm_call_string_function(tab5_wasm_app_instance_t *inst, const char *func_name, const char *value)
 {
-    if (inst == nullptr || func_name == nullptr || value == nullptr || !inst->is_running) {
+    if (inst == nullptr || func_name == nullptr || value == nullptr) {
         return TAB5_ERR_INVALID_ARG;
     }
 
 #if HAVE_WAMR
-    wasm_module_inst_t module_inst = (wasm_module_inst_t)inst->module_inst;
+    void *module_ptr = nullptr;
+    if (!admit_call(inst, 0, &module_ptr))
+        return TAB5_ERR_INVALID_STATE;
+    wasm_module_inst_t module_inst = (wasm_module_inst_t)module_ptr;
     size_t length = strlen(value) + 1;
     if (length > UINT32_MAX) {
+        release_call(inst);
         return TAB5_ERR_INVALID_ARG;
     }
 
     uint32_t offset = wasm_runtime_module_malloc(module_inst, (uint32_t)length, nullptr);
     if (offset == 0) {
+        release_call(inst);
         return TAB5_ERR_NO_MEM;
     }
 
@@ -457,6 +629,7 @@ tab5_err_t tab5_wasm_call_string_function(tab5_wasm_app_instance_t *inst, const 
         result = tab5_wasm_call_function(inst, func_name, 1, argv);
     }
     wasm_runtime_module_free(module_inst, offset);
+    release_call(inst);
     return result;
 #else
     // O stub de host não instancia WAMR; mantém o contrato de chamada
@@ -472,20 +645,40 @@ tab5_err_t tab5_wasm_unload(tab5_wasm_app_instance_t *inst)
         return TAB5_ERR_INVALID_ARG;
     }
 
-    uint32_t &call_depth = inst->call_depth;
-    bool &unload_pending = inst->unload_pending;
-    if (call_depth > 0) {
-        unload_pending = true;
-        ++inst->generation;
+    if (instance_mutex(inst) == nullptr)
+        return TAB5_OK; /* idempotent after final teardown */
+    instance_lock(inst);
+    if (!inst->is_running && inst->module == nullptr && inst->wasm_buf == nullptr) {
+        instance_unlock(inst);
         return TAB5_OK;
     }
+    /* Stop admission first. A callback may request its own unload; it must be
+     * deferred to the call epilogue, while an external caller waits for every
+     * admitted caller before touching WAMR pointers. */
+    inst->is_running = false;
+    inst->unload_pending = true;
+    ++inst->generation;
+    uint32_t call_depth = inst->call_depth;
+    bool unload_pending = inst->unload_pending;
+    if (call_depth > 0) {
+        if (!unload_pending)
+            inst->unload_pending = true;
+        if (unload_pending || inst->unload_pending) {
+            if (s_admitted_instance == inst) {
+                instance_unlock(inst);
+                return TAB5_OK;
+            }
+            if (inst->active_admissions == 0) {
+                instance_unlock(inst);
+                return TAB5_OK;
+            }
+            while (inst->call_depth != 0)
+                pthread_cond_wait(instance_cond(inst), instance_mutex(inst));
+        }
+    }
+    instance_unlock(inst);
 
 #if HAVE_WAMR
-    if (inst->exec_env != nullptr) {
-        wasm_runtime_destroy_exec_env((wasm_exec_env_t)inst->exec_env);
-        inst->exec_env = nullptr;
-    }
-
     if (inst->module_inst != nullptr) {
         wasm_runtime_deinstantiate((wasm_module_inst_t)inst->module_inst);
         inst->module_inst = nullptr;
@@ -508,16 +701,18 @@ tab5_err_t tab5_wasm_unload(tab5_wasm_app_instance_t *inst)
     }
 #endif
 
-    inst->is_running = false;
-    ++inst->generation;
+    instance_lock(inst);
     inst->unload_pending = false;
-    inst->call_depth = 0;
+    instance_unlock(inst);
+    destroy_instance_mutex(inst);
     LOG_I("App Wasm %s descarregada com sucesso", inst->app_id[0] ? inst->app_id : "unnamed");
     return TAB5_OK;
 }
 
 void tab5_wasm_runtime_destroy(void)
 {
+    (void)tab5_package_mgr_close_active();
+    tab5_wasm_dispatcher_shutdown();
 #if HAVE_WAMR
     if (s_runtime_initialized) {
         wasm_runtime_destroy();

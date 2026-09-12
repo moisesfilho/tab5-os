@@ -8,7 +8,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-/* Wrappers de link (-Wl,--wrap=fopen/open/mkdir/opendir/stat): interceptam
+/* Wrappers de link (-Wl,--wrap=fopen/open/mkdir/opendir/stat/lstat): interceptam
  * os acessos a "/sdcard/..." feitos pelos modulos de producao e redirecionam
  * para o tmpdir, sem alterar uma linha do codigo sob teste. */
 
@@ -19,6 +19,7 @@ int __real_open(const char *path, int flags, ...);
 int __real_mkdir(const char *path, mode_t mode);
 DIR *__real_opendir(const char *path);
 int __real_stat(const char *path, struct stat *buf);
+int __real_lstat(const char *path, struct stat *buf);
 
 FILE *__wrap_fopen(const char *path, const char *mode)
 {
@@ -51,6 +52,11 @@ DIR *__wrap_opendir(const char *path)
 int __wrap_stat(const char *path, struct stat *buf)
 {
     return __real_stat(hostmock::redirect_path(path).c_str(), buf);
+}
+
+int __wrap_lstat(const char *path, struct stat *buf)
+{
+    return __real_lstat(hostmock::redirect_path(path).c_str(), buf);
 }
 
 } // extern "C"

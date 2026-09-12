@@ -30,9 +30,12 @@ typedef struct {
     uint8_t *wasm_buf; /**< Buffer em PSRAM contendo o bytecode .wasm */
     size_t wasm_buf_size;
     bool is_running;
-    uint32_t call_depth; /**< Chamadas WAMR ativas nesta instância. */
-    bool unload_pending; /**< Teardown solicitado durante uma chamada. */
-    uint32_t generation; /**< Época; invalida jobs postados antes do unload. */
+    uint32_t call_depth;        /**< Chamadas WAMR ativas nesta instância. */
+    bool unload_pending;        /**< Teardown solicitado durante uma chamada. */
+    uint32_t generation;        /**< Época; invalida jobs postados antes do unload. */
+    void *state_mutex;          /**< mutex privado; protege lifecycle e call_depth */
+    void *state_cond;           /**< condvar privado; acorda o teardown quando callers saem */
+    uint32_t active_admissions; /**< threads que possuem uma admissão real */
 } tab5_wasm_app_instance_t;
 
 /**
@@ -84,6 +87,14 @@ tab5_err_t tab5_wasm_unload(tab5_wasm_app_instance_t *inst);
  * @brief Encerra o subsistema WAMR.
  */
 void tab5_wasm_runtime_destroy(void);
+
+/* Lifecycle queries are the only supported way for other subsystems to inspect
+ * an instance.  They take the instance lock and therefore are safe while a
+ * dispatcher worker is racing with unload. */
+bool tab5_wasm_instance_snapshot(const tab5_wasm_app_instance_t *inst, bool *out_running, uint32_t *out_generation);
+bool tab5_wasm_instance_is_running(const tab5_wasm_app_instance_t *inst);
+uint32_t tab5_wasm_instance_call_depth(const tab5_wasm_app_instance_t *inst);
+bool tab5_wasm_instance_unload_pending(const tab5_wasm_app_instance_t *inst);
 
 #ifdef __cplusplus
 }
