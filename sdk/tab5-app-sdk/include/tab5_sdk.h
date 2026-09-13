@@ -529,6 +529,16 @@ tab5_err_t tab5_storage_path_resolve(const char *in_path, char *out_path, size_t
 tab5_err_t tab5_storage_mkdir(const char *rel_or_abs_path);
 
 /**
+ * @brief Grava o conteúdo de um arquivo dentro da sandbox da aplicação.
+ */
+tab5_err_t tab5_storage_write_file(const char *rel_or_abs_path, const char *data, size_t data_len);
+
+/**
+ * @brief Lê um arquivo permitido pela sandbox para um buffer da aplicação.
+ */
+tab5_err_t tab5_storage_read_file(const char *rel_or_abs_path, char *data, size_t data_size, size_t *out_len);
+
+/**
  * @brief Remove um arquivo de forma segura dentro da sandbox.
  */
 tab5_err_t tab5_storage_remove(const char *rel_or_abs_path);
@@ -600,6 +610,11 @@ tab5_err_t tab5_system_get_bt_status(tab5_bt_info_t *out_info);
  * @param out_time Ponteiro opcional para struct tm preenchida.
  */
 tab5_err_t tab5_system_get_time(int64_t *out_epoch_ms, struct tm *out_time);
+
+/**
+ * @brief Formata a data/hora local como YYYYMMDD-HHMMSS.
+ */
+tab5_err_t tab5_system_get_timestamp(char *out_buf, size_t buf_size);
 
 /**
  * @brief Emite um bipe sonoro pelo alto-falante integrado do Tab5.

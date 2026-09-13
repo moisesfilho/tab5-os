@@ -582,6 +582,24 @@ tab5_err_t tab5_storage_mkdir(const char *rel_or_abs_path)
     return tab5_storage_sandbox_mkdir(rel_or_abs_path, s_active_app_ctx->app_id, s_active_app_ctx->permissions);
 }
 
+tab5_err_t tab5_storage_write_file(const char *rel_or_abs_path, const char *data, size_t data_len)
+{
+    if (s_active_app_ctx == nullptr) {
+        return TAB5_ERR_INVALID_STATE;
+    }
+    return tab5_storage_sandbox_write_file(rel_or_abs_path, data, data_len, s_active_app_ctx->app_id,
+                                           s_active_app_ctx->permissions);
+}
+
+tab5_err_t tab5_storage_read_file(const char *rel_or_abs_path, char *data, size_t data_size, size_t *out_len)
+{
+    if (s_active_app_ctx == nullptr) {
+        return TAB5_ERR_INVALID_STATE;
+    }
+    return tab5_storage_sandbox_read_file(rel_or_abs_path, data, data_size, out_len, s_active_app_ctx->app_id,
+                                          s_active_app_ctx->permissions);
+}
+
 tab5_err_t tab5_storage_remove(const char *rel_or_abs_path)
 {
     if (s_active_app_ctx == nullptr) {
@@ -618,6 +636,11 @@ tab5_err_t tab5_system_get_bt_status(tab5_bt_info_t *out_info)
 tab5_err_t tab5_system_get_time(int64_t *out_epoch_ms, struct tm *out_time)
 {
     return tab5_sys_host_get_time(out_epoch_ms, out_time);
+}
+
+tab5_err_t tab5_system_get_timestamp(char *out_buf, size_t buf_size)
+{
+    return tab5_sys_host_get_timestamp(out_buf, buf_size);
 }
 
 tab5_err_t tab5_sound_play_beep(uint32_t freq_hz, uint32_t duration_ms)
@@ -1271,31 +1294,19 @@ typedef void *wasm_module_inst_t;
 
 namespace {
 
-/* Native symbols receive WASM offsets, not host pointers.  Keep conversion in
- * one place so every pointer-bearing ABI wrapper follows the same rule. */
-#if HAVE_WAMR_ENV
-static wasm_module_inst_t wasm_module(wasm_exec_env_t env)
-{
-    return env != nullptr ? wasm_runtime_get_module_inst(env) : nullptr;
-}
-#endif
-
 template <typename T> static T *wasm_arg(wasm_exec_env_t env, T *app_ptr)
 {
-#if HAVE_WAMR_ENV
-    wasm_module_inst_t module = wasm_module(env);
-    if (module == nullptr || app_ptr == nullptr)
-        return nullptr;
-    return static_cast<T *>(wasm_runtime_addr_app_to_native(module, (uint32_t)(uintptr_t)app_ptr));
-#else
     (void)env;
+    /* WAMR already translates parameters declared as '*' or '$' in the
+     * native symbol signature. Converting them again treats a native pointer
+     * as a WASM offset and silently invalidates otherwise valid arguments. */
     return app_ptr;
-#endif
 }
 
 static const char *wasm_string(wasm_exec_env_t env, const char *app_ptr)
 {
-    return wasm_arg(env, const_cast<char *>(app_ptr));
+    (void)env;
+    return app_ptr;
 }
 
 static tab5_err_t wasm_tab5_lifecycle_register(wasm_exec_env_t exec_env, const tab5_lifecycle_callbacks_t *cbs)
@@ -1321,6 +1332,19 @@ static tab5_err_t wasm_tab5_storage_get_app_dir(wasm_exec_env_t exec_env, char *
 static tab5_err_t wasm_tab5_storage_mkdir(wasm_exec_env_t exec_env, const char *path)
 {
     return tab5_storage_mkdir(wasm_string(exec_env, path));
+}
+
+static tab5_err_t wasm_tab5_storage_write_file(wasm_exec_env_t exec_env, const char *path, const char *data,
+                                               size_t data_len)
+{
+    return tab5_storage_write_file(wasm_string(exec_env, path), wasm_string(exec_env, data), data_len);
+}
+
+static tab5_err_t wasm_tab5_storage_read_file(wasm_exec_env_t exec_env, const char *path, char *data, size_t data_size,
+                                              size_t *out_len)
+{
+    return tab5_storage_read_file(wasm_string(exec_env, path), wasm_arg(exec_env, data), data_size,
+                                  wasm_arg(exec_env, out_len));
 }
 
 static tab5_err_t wasm_tab5_storage_path_resolve(wasm_exec_env_t exec_env, const char *in_path, char *out_path,
@@ -1372,6 +1396,12 @@ static tab5_err_t wasm_tab5_system_get_time(wasm_exec_env_t exec_env, int64_t *o
     (void)exec_env;
 #endif
     return tab5_system_get_time(wasm_arg(exec_env, out_epoch), wasm_arg(exec_env, out_time));
+}
+
+static tab5_err_t wasm_tab5_system_get_timestamp(wasm_exec_env_t exec_env, char *out_buf, size_t buf_size)
+{
+    char *native_buf = wasm_arg(exec_env, out_buf);
+    return native_buf != nullptr ? tab5_system_get_timestamp(native_buf, buf_size) : TAB5_ERR_INVALID_ARG;
 }
 
 static tab5_err_t wasm_tab5_system_get_wifi_status(wasm_exec_env_t exec_env, tab5_wifi_info_t *out_info)
@@ -2145,12 +2175,15 @@ static tab5_native_symbol_t s_native_symbols[] = {
     {"tab5_sound_play_beep", (void *)wasm_tab5_sound_play_beep, "(ii)i", nullptr},
     {"tab5_storage_get_app_dir", (void *)wasm_tab5_storage_get_app_dir, "(*i)i", nullptr},
     {"tab5_storage_mkdir", (void *)wasm_tab5_storage_mkdir, "($)i", nullptr},
+    {"tab5_storage_write_file", (void *)wasm_tab5_storage_write_file, "($$i)i", nullptr},
+    {"tab5_storage_read_file", (void *)wasm_tab5_storage_read_file, "($*i*)i", nullptr},
     {"tab5_storage_path_resolve", (void *)wasm_tab5_storage_path_resolve, "($*ii)i", nullptr},
     {"tab5_storage_remove", (void *)wasm_tab5_storage_remove, "($)i", nullptr},
     {"tab5_storage_scandir", (void *)wasm_tab5_storage_scandir, "($*i*)i", nullptr},
     {"tab5_system_get_battery", (void *)wasm_tab5_system_get_battery, "(*)i", nullptr},
     {"tab5_system_get_bt_status", (void *)wasm_tab5_system_get_bt_status, "(*)i", nullptr},
     {"tab5_system_get_time", (void *)wasm_tab5_system_get_time, "(**)i", nullptr},
+    {"tab5_system_get_timestamp", (void *)wasm_tab5_system_get_timestamp, "(*i)i", nullptr},
     {"tab5_system_get_wifi_status", (void *)wasm_tab5_system_get_wifi_status, "(*)i", nullptr},
     {"tab5_system_log", (void *)wasm_tab5_system_log, "(i$$)", nullptr},
     {"tab5_ui_app_bar_add_action_button", (void *)wasm_tab5_ui_app_bar_add_action_button, "($ii)i", nullptr},

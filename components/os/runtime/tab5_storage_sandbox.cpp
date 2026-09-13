@@ -243,6 +243,60 @@ tab5_err_t tab5_storage_sandbox_mkdir(const char *rel_or_abs_path, const char *a
     return TAB5_OK;
 }
 
+tab5_err_t tab5_storage_sandbox_write_file(const char *rel_or_abs_path, const char *data, size_t data_len,
+                                           const char *app_id, uint32_t permissions)
+{
+    if (data == nullptr && data_len != 0) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+
+    char safe_path[256];
+    tab5_err_t err =
+        tab5_storage_sandbox_resolve_path(rel_or_abs_path, safe_path, sizeof(safe_path), app_id, permissions, true);
+    if (err != TAB5_OK) {
+        return err;
+    }
+
+    FILE *file = fopen(safe_path, "wb");
+    if (file == nullptr) {
+        return TAB5_ERR_FAIL;
+    }
+    const size_t written = data_len == 0 ? 0 : fwrite(data, 1, data_len, file);
+    const bool closed = fclose(file) == 0;
+    return written == data_len && closed ? TAB5_OK : TAB5_ERR_FAIL;
+}
+
+tab5_err_t tab5_storage_sandbox_read_file(const char *rel_or_abs_path, char *data, size_t data_size, size_t *out_len,
+                                          const char *app_id, uint32_t permissions)
+{
+    if (data == nullptr || data_size == 0 || out_len == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+    *out_len = 0;
+
+    char safe_path[256];
+    tab5_err_t err =
+        tab5_storage_sandbox_resolve_path(rel_or_abs_path, safe_path, sizeof(safe_path), app_id, permissions, false);
+    if (err != TAB5_OK) {
+        return err;
+    }
+
+    FILE *file = fopen(safe_path, "rb");
+    if (file == nullptr) {
+        return TAB5_ERR_NOT_FOUND;
+    }
+    memset(data, 0, data_size);
+    const size_t read = fread(data, 1, data_size - 1, file);
+    const bool failed = ferror(file) != 0;
+    const bool closed = fclose(file) == 0;
+    if (failed || !closed) {
+        return TAB5_ERR_FAIL;
+    }
+    data[data_size - 1] = '\0';
+    *out_len = read;
+    return TAB5_OK;
+}
+
 tab5_err_t tab5_storage_sandbox_remove(const char *rel_or_abs_path, const char *app_id, uint32_t permissions)
 {
     char safe_path[256];

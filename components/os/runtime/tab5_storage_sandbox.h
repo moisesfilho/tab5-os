@@ -33,6 +33,12 @@ tab5_err_t tab5_storage_sandbox_resolve_path(const char *in_path, char *out_path
  */
 tab5_err_t tab5_storage_sandbox_mkdir(const char *rel_or_abs_path, const char *app_id, uint32_t permissions);
 
+tab5_err_t tab5_storage_sandbox_write_file(const char *rel_or_abs_path, const char *data, size_t data_len,
+                                           const char *app_id, uint32_t permissions);
+
+tab5_err_t tab5_storage_sandbox_read_file(const char *rel_or_abs_path, char *data, size_t data_size, size_t *out_len,
+                                          const char *app_id, uint32_t permissions);
+
 /**
  * @brief Remove um arquivo de forma segura dentro da sandbox da aplicação.
  */

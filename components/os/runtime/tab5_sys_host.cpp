@@ -112,6 +112,19 @@ tab5_err_t tab5_sys_host_get_time(int64_t *out_epoch_ms, struct tm *out_time)
     return TAB5_OK;
 }
 
+tab5_err_t tab5_sys_host_get_timestamp(char *out_buf, size_t buf_size)
+{
+    if (out_buf == nullptr || buf_size < 16) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+    time_t now = time(nullptr);
+    struct tm local_time;
+    if (localtime_r(&now, &local_time) == nullptr || strftime(out_buf, buf_size, "%Y%m%d-%H%M%S", &local_time) != 15) {
+        return TAB5_ERR_FAIL;
+    }
+    return TAB5_OK;
+}
+
 tab5_err_t tab5_sys_host_beep(uint32_t freq_hz, uint32_t duration_ms)
 {
     (void)freq_hz;

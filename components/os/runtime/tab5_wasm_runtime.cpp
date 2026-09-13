@@ -564,6 +564,7 @@ static tab5_err_t tab5_wasm_call_function_direct(tab5_wasm_app_instance_t *inst,
                                                  uint32_t *argv)
 {
     if (inst == nullptr || func_name == nullptr) {
+        LOG_W("Chamada Wasm invalida: inst=%p func=%p argc=%u", (void *)inst, (const void *)func_name, argc);
         return TAB5_ERR_INVALID_ARG;
     }
 
@@ -571,8 +572,10 @@ static tab5_err_t tab5_wasm_call_function_direct(tab5_wasm_app_instance_t *inst,
     /* admit_call performs ++call_depth (inst->call_depth) while holding the
      * state mutex; release_call performs the matching decrement after
      * dispatch. */
-    if (!admit_call(inst, 0, &module_ptr))
+    if (!admit_call(inst, 0, &module_ptr)) {
+        LOG_W("Chamada Wasm rejeitada: instancia nao admitida para %s", func_name);
         return TAB5_ERR_INVALID_STATE;
+    }
     wasm_module_inst_t module_inst = (wasm_module_inst_t)module_ptr;
     wasm_exec_env_t exec_env = wasm_runtime_create_exec_env(module_inst, TAB5_WASM_DEFAULT_STACK_SIZE);
     if (exec_env == nullptr) {
@@ -654,6 +657,8 @@ tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *f
                                    uint32_t *argv) // NOLINT(readability-non-const-parameter)
 {
     if (inst == nullptr || func_name == nullptr) {
+        LOG_W("tab5_wasm_call_function recebeu argumento invalido: inst=%p func=%p argc=%u", (void *)inst,
+              (const void *)func_name, argc);
         return TAB5_ERR_INVALID_ARG;
     }
 

@@ -70,6 +70,12 @@ for app_name in "${EMBEDDED_APPS[@]}"; do
     app_path="${REPO_ROOT}/../${app_name}"
     if [ -d "${app_path}" ]; then
         compile_app "${app_path}"
+        if [ "${app_name}" = "tab5-app-notas" ]; then
+            python3 "${REPO_ROOT}/tools/ci/validate_wasm_entrypoint.py" "${app_path}/app.wasm" \
+                --require-export tab5_app_on_ui_event
+        else
+            python3 "${REPO_ROOT}/tools/ci/validate_wasm_entrypoint.py" "${app_path}/app.wasm"
+        fi
         python3 "${PACK_TOOL}" "${app_path}" -o "${PKG_OUTPUT_DIR}"
     fi
 done
@@ -79,6 +85,7 @@ if [ -d "${REPO_ROOT}/embedded_apps" ]; then
     for app_dir in "${REPO_ROOT}/embedded_apps"/*; do
         if [ -d "${app_dir}" ] && [ -f "${app_dir}/manifest.json" ]; then
             compile_app "${app_dir}"
+            python3 "${REPO_ROOT}/tools/ci/validate_wasm_entrypoint.py" "${app_dir}/app.wasm"
             python3 "${PACK_TOOL}" "${app_dir}" -o "${PKG_OUTPUT_DIR}"
         fi
     done

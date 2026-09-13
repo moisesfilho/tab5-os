@@ -97,12 +97,18 @@ static void execute_job(const tab5_wasm_dispatch_job &job)
     } else {
         err = tab5_wasm_call_function(inst, job.primary, job.argc, const_cast<uint32_t *>(job.args));
     }
+    if (err != TAB5_OK) {
+        LOG_W("Callback Wasm %s falhou (err=%d)", job.primary, (int)err);
+    }
     if (err == TAB5_ERR_NOT_FOUND && job.alias[0] != '\0') {
         if (job.token != nullptr) {
             if (job.kind == JOB_STRING) {
-                (void)tab5_wasm_call_string_function(inst, job.alias, job.value);
+                err = tab5_wasm_call_string_function(inst, job.alias, job.value);
             } else {
-                (void)tab5_wasm_call_function(inst, job.alias, job.argc, const_cast<uint32_t *>(job.args));
+                err = tab5_wasm_call_function(inst, job.alias, job.argc, const_cast<uint32_t *>(job.args));
+            }
+            if (err != TAB5_OK) {
+                LOG_W("Callback Wasm alias %s falhou (err=%d)", job.alias, (int)err);
             }
         }
     }
@@ -285,6 +291,7 @@ extern "C" bool tab5_wasm_dispatch_post_call(tab5_wasm_app_instance_t *inst, con
 {
     tab5_wasm_dispatch_job job = {};
     job.kind = JOB_CALL;
+    job.instance = inst;
     if (inst == nullptr || (job.token = tab5_wasm_dispatch_token_acquire(inst, &job.generation)) == nullptr)
         return false;
     job.argc = argc > 4 ? 4 : argc;
@@ -304,6 +311,7 @@ extern "C" bool tab5_wasm_dispatch_post_string(tab5_wasm_app_instance_t *inst, c
 {
     tab5_wasm_dispatch_job job = {};
     job.kind = JOB_STRING;
+    job.instance = inst;
     if (inst == nullptr || (job.token = tab5_wasm_dispatch_token_acquire(inst, &job.generation)) == nullptr)
         return false;
     copy_text(job.primary, sizeof(job.primary), primary);
