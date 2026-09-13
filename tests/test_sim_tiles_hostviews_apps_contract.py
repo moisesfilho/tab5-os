@@ -73,8 +73,15 @@ class LauncherTileContract(unittest.TestCase):
         self.assertIn("app.icon_symbol", UI_DESKTOP)
         self.assertIn("icon_symbol", MANIFEST_H)
 
-    def test_tile_click_carries_app_id(self):
-        self.assertIn("(void *)app.id", UI_DESKTOP)
+    def test_tile_click_resolves_app_from_stable_tile_index(self):
+        click_cb = UI_DESKTOP[UI_DESKTOP.index("static void app_tile_click_cb"):
+                              UI_DESKTOP.index("/* Reaplica a paleta ativa", UI_DESKTOP.index("static void app_tile_click_cb"))]
+        self.assertIn("lv_obj_get_index(tile)", click_cb)
+        self.assertIn("app_registry_get_all()", click_cb)
+        self.assertIn("app_index < apps.size()", click_cb)
+        self.assertIn("nullptr);", UI_DESKTOP[UI_DESKTOP.index("lv_obj_add_event_cb(tile, app_tile_click_cb"):
+                                                  UI_DESKTOP.index("lv_obj_add_event_cb(tile, app_tile_click_cb") + 120])
+        self.assertNotIn("(void *)app.id", UI_DESKTOP)
 
     def test_scan_and_register_runs_before_desktop_build(self):
         self.assertIn("tab5_package_mgr_scan_and_register_all()", UI_SHELL)

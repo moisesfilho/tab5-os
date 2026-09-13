@@ -55,6 +55,7 @@ struct pending_conn_t {
 
 #define AUTOCONN_BACKOFF_MS 15000
 #define AUTOCONN_FAIL_SLOTS 4
+#define BT_SCAN_PASSIVE_MIN_INTERVAL_MS 15000
 struct autoconn_fail_t {
     char mac[18];
     TickType_t tick;
@@ -76,6 +77,22 @@ bool s_scanning = false;
 TimerHandle_t s_scan_watchdog = nullptr;
 bt_scan_cb_t s_scan_cb = nullptr;
 void *s_scan_ctx = nullptr;
+TickType_t s_last_passive_scan_tick = 0;
+
+static bool passive_rescan_throttled(bt_scan_cb_t cb)
+{
+    /* Scans initiated by the Bluetooth UI must remain available on demand. */
+    if (cb != nullptr) {
+        return false;
+    }
+
+    TickType_t now = xTaskGetTickCount();
+    if (s_last_passive_scan_tick != 0 &&
+        (TickType_t)(now - s_last_passive_scan_tick) < pdMS_TO_TICKS(BT_SCAN_PASSIVE_MIN_INTERVAL_MS)) {
+        return true;
+    }
+    return false;
+}
 
 static void load_nvs_bt_enabled(void)
 {
@@ -957,7 +974,7 @@ static int handle_gap_disconnect(struct ble_gap_event *event)
     {
         bt_saved_list_t list = {};
         if (bt_storage_load_all(&list) == ESP_OK && list.count > 0) {
-            ESP_LOGI(TAG, "Reiniciando escuta passiva apos desconexao...");
+            ESP_LOGD(TAG, "Reiniciando escuta passiva apos desconexao...");
             bt_mgr_scan(nullptr, nullptr);
         }
     }
@@ -1360,7 +1377,7 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
         if (!any_connected_locked()) {
             bt_saved_list_t list = {};
             if (bt_storage_load_all(&list) == ESP_OK && list.count > 0) {
-                ESP_LOGI(TAG, "Reiniciando escuta passiva em segundo plano para auto-reconexao...");
+                ESP_LOGD(TAG, "Reiniciando escuta passiva em segundo plano para auto-reconexao...");
                 bt_mgr_scan(nullptr, nullptr);
             }
         }
@@ -1641,6 +1658,10 @@ esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (passive_rescan_throttled(cb)) {
+        return ESP_OK;
+    }
+
     if (s_bt_mutex == nullptr) {
         s_bt_mutex = xSemaphoreCreateMutex();
     }
@@ -1701,6 +1722,10 @@ esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
     if (s_scan_watchdog != nullptr) {
         xTimerStop(s_scan_watchdog, 0);
         xTimerStart(s_scan_watchdog, 0);
+    }
+
+    if (cb == nullptr) {
+        s_last_passive_scan_tick = xTaskGetTickCount();
     }
 
     uint8_t own_addr_type = BLE_OWN_ADDR_PUBLIC;

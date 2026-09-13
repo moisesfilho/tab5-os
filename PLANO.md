@@ -2227,6 +2227,7 @@ tests/host/src/
 - [x] **Etapa 5 — Report Map**: leitura GATT da característica 0x2A4B, parser de itens HID e roteamento das notificações pelo tipo real (mouse/teclado/consumer); heurísticas antigas preservadas para dispositivos sem mapa parseável.
 - [x] **Etapa 6 — Validação**: 98/98 testes host (+14 do parser), cobertura 93%, build firmware OK, regressão visual 15/15 PASS.
 - [x] **Etapa 7 — Ajustes pós-validação em hardware (Lift real)**: cursor exibido no evento READY (`ui_mouse_set_connected(true)` quando o slot é mouse); leitura do Report Map movida para o fim da inicialização HID (`read_report_map_if_needed`, reutilizada também no ENC_CHANGE); fallback que decodifica o payload composto de 7 bytes `[botões u16 | X/Y 12 bits | wheel | pan]` quando o firmware do Lift expõe um Report Map proprietário (22 bytes) que o parser não classifica; classificação por nome (`lift`/`mouse`/`trackpad`) na persistência e ícone de periférico correto na listagem sem exigir novo pareamento.
+- [x] **Etapa 8 — Rescan passivo controlado**: rescans automáticos ficam sujeitos a intervalo mínimo de 15 s; scans manuais continuam sob demanda e logs repetitivos de reinício foram reduzidos para `ESP_LOGD`.
 
 ## 5. Riscos & Mitigações
 
