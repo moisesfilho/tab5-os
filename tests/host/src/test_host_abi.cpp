@@ -568,6 +568,37 @@ TEST_F(HostAbiTest, UiScrollableApiViaSdk)
     tab5_lifecycle_host_destroy_app(&ctx);
 }
 
+TEST_F(HostAbiTest, PublicApiRejectsInvalidArguments)
+{
+    char buffer[32] = {};
+    uint32_t count = 0;
+
+    EXPECT_EQ(tab5_ui_app_bar_set_title(nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_ui_app_bar_add_action_button(nullptr, nullptr, nullptr), TAB5_UI_INVALID_OBJ);
+    EXPECT_EQ(tab5_storage_get_app_dir(nullptr, sizeof(buffer)), TAB5_ERR_INVALID_STATE);
+    EXPECT_EQ(tab5_storage_path_resolve(nullptr, buffer, sizeof(buffer), false), TAB5_ERR_INVALID_STATE);
+    EXPECT_EQ(tab5_storage_mkdir(nullptr), TAB5_ERR_INVALID_STATE);
+    EXPECT_EQ(tab5_storage_remove(nullptr), TAB5_ERR_INVALID_STATE);
+    EXPECT_EQ(tab5_storage_scandir(nullptr, nullptr, 0, &count), TAB5_ERR_INVALID_STATE);
+
+    EXPECT_EQ(tab5_system_get_battery(nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_system_get_wifi_status(nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_system_get_bt_status(nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_system_get_time(nullptr, nullptr), TAB5_OK);
+    EXPECT_EQ(tab5_terminal_exec(nullptr, buffer, sizeof(buffer)), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_terminal_exec("help", nullptr, sizeof(buffer)), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_terminal_exec("help", buffer, 0), TAB5_ERR_INVALID_ARG);
+
+    EXPECT_EQ(tab5_wifi_scan(nullptr, 1, &count), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_wifi_scan(nullptr, 0, &count), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_wifi_scan(reinterpret_cast<tab5_wifi_ap_t *>(buffer), 1, nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_wifi_connect(nullptr, nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_wifi_forget(nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_bt_scan(nullptr, 1, &count), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_bt_connect(nullptr, nullptr, 0), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_bt_forget(nullptr), TAB5_ERR_INVALID_ARG);
+}
+
 TEST_F(HostAbiTest, UiHostRootToastAndWidgetContractsWithoutLvgl)
 {
     // O build host deliberadamente usa HAVE_LVGL=0. Ainda assim, a ponte de

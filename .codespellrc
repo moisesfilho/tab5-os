@@ -1,4 +1,7 @@
-# codespell: o projeto usa comentários/docs em português — palavras PT-BR
-# que colidem com o dicionário de inglês são ignoradas aqui.
+# codespell: política única do projeto. Os diretórios gerados/vendidos ficam
+# fora do escopo; a lista abaixo contém somente falsos positivos PT-BR, além
+# dos identificadores `assertIn`/`assertin` e `dout` (campo BSP I2S) usados pelo
+# projeto. Não adicionar palavras inglesas válidas indiscriminadamente.
 [codespell]
-ignore-words-list = faze,fase,fases,vetor,caracteres,atual,erro,erros,controle,controles,nome,nomes,itens,oficial,ser,orientacao,rotacao,variante,datas,comando,comandos,sequencial,limite,cliente,utiliza,momento,componente,componentes,responde,seletor,acidental,foto,fotos,som,classe,classes,copie,conector,pares,nd,retangular,meu,caractere,descritor,leve,serie,cenario,cenarios,absorve,falso,ignora
+skip = *build*,*managed_components*,*m5stack_tab5*
+ignore-words-list = faze,fase,fases,vetor,caracteres,atual,erro,erros,controle,controles,nome,nomes,itens,oficial,ser,orientacao,rotacao,variante,datas,comando,comandos,sequencial,limite,cliente,utiliza,momento,componente,componentes,responde,seletor,acidental,foto,fotos,som,classe,classes,copie,conector,pares,nd,retangular,meu,caractere,descritor,leve,serie,cenario,cenarios,absorve,falso,ignora,assertin,excede,saem,conter,vai,envolve,eles,funcional,termine,adquire,dout

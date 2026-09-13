@@ -60,6 +60,17 @@ TEST_F(StorageMgrTest, RamAndDiskStats)
     EXPECT_TRUE(tab5_storage_mgr_has_enough_sd_space(1024));
 }
 
+TEST_F(StorageMgrTest, InvalidArgumentsAndMissingPathsUseSafeDefaults)
+{
+    EXPECT_EQ(tab5_storage_mgr_calculate_path_size(nullptr), 0u);
+    EXPECT_EQ(tab5_storage_mgr_calculate_path_size("/sdcard/does-not-exist"), 0u);
+
+    EXPECT_EQ(tab5_storage_mgr_get_ram_stats(nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_storage_mgr_get_flash_apps_stats(nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(tab5_storage_mgr_get_sd_stats(nullptr), TAB5_ERR_INVALID_ARG);
+    EXPECT_FALSE(tab5_storage_mgr_has_enough_sd_space(UINT64_MAX));
+}
+
 TEST_F(StorageMgrTest, ListInstalledAppsAndPendingPackages)
 {
     // 1. Cria app instalada no SD
@@ -115,4 +126,33 @@ TEST_F(StorageMgrTest, ListInstalledAppsAndPendingPackages)
     EXPECT_TRUE(found_pkg);
 
     tab5_package_mgr_uninstall("com.tab5.demo", true);
+}
+
+TEST_F(StorageMgrTest, EmbeddedAppsAndRegularPendingFilesAreListed)
+{
+    const std::string embedded = std::string(TAB5_APPS_EMBEDDED_DIR) + "/com.tab5.embedded";
+    mkdir(TAB5_APPS_EMBEDDED_DIR, 0755);
+    ASSERT_EQ(mkdir(embedded.c_str(), 0755), 0);
+
+    FILE *manifest = fopen((embedded + "/manifest.json").c_str(), "w");
+    ASSERT_NE(manifest, nullptr);
+    fputs("{\"id\":\"com.tab5.embedded\",\"name\":\"Embedded\",\"version\":\"1.0\"}", manifest);
+    fclose(manifest);
+
+    const auto installed = tab5_storage_mgr_list_installed_apps();
+    ASSERT_EQ(installed.size(), 1u);
+    EXPECT_STREQ(installed[0].id, "com.tab5.embedded");
+    EXPECT_TRUE(installed[0].is_embedded);
+
+    const std::string pending = std::string(TAB5_APPS_DIR) + "/pending.tab5pkg";
+    ASSERT_EQ(mkdir(pending.c_str(), 0755), 0);
+    FILE *pending_manifest = fopen((pending + "/manifest.json").c_str(), "w");
+    ASSERT_NE(pending_manifest, nullptr);
+    fputs("{\"id\":\"com.tab5.pending\",\"name\":\"Pending\",\"version\":\"2.0\"}", pending_manifest);
+    fclose(pending_manifest);
+
+    const auto packages = tab5_storage_mgr_list_pending_packages();
+    ASSERT_EQ(packages.size(), 1u);
+    EXPECT_STREQ(packages[0].id, "com.tab5.pending");
+    EXPECT_STREQ(packages[0].name, "Pending");
 }

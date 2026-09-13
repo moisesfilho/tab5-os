@@ -36,6 +36,7 @@ typedef struct {
     void *state_mutex;          /**< mutex privado; protege lifecycle e call_depth */
     void *state_cond;           /**< condvar privado; acorda o teardown quando callers saem */
     uint32_t active_admissions; /**< threads que possuem uma admissão real */
+    uint32_t dispatch_refs;     /**< tokens que mantêm a instância viva na fila/worker */
 } tab5_wasm_app_instance_t;
 
 /**
@@ -95,6 +96,13 @@ bool tab5_wasm_instance_snapshot(const tab5_wasm_app_instance_t *inst, bool *out
 bool tab5_wasm_instance_is_running(const tab5_wasm_app_instance_t *inst);
 uint32_t tab5_wasm_instance_call_depth(const tab5_wasm_app_instance_t *inst);
 bool tab5_wasm_instance_unload_pending(const tab5_wasm_app_instance_t *inst);
+
+/* Admission ownership for asynchronous dispatch.  A token is the lifetime
+ * proof for the raw instance pointer stored in a dispatch job. */
+typedef struct tab5_wasm_dispatch_token tab5_wasm_dispatch_token_t;
+tab5_wasm_dispatch_token_t *tab5_wasm_dispatch_token_acquire(tab5_wasm_app_instance_t *inst, uint32_t *out_generation);
+void tab5_wasm_dispatch_token_release(tab5_wasm_dispatch_token_t *token);
+bool tab5_wasm_dispatch_token_validate(const tab5_wasm_dispatch_token_t *token, uint32_t generation);
 
 #ifdef __cplusplus
 }

@@ -109,12 +109,12 @@ class PostRebuildPackagesContract(unittest.TestCase):
             "embedded_apps_pkg precisa conter exatamente 12 pacotes após o "
             f"rebuild; encontrados {len(pkgs)}",
         )
-        ids = {
-            json.loads(
-                tarfile.open(p).extractfile(tarfile.open(p).getmember("manifest.json")).read()
-            )["id"]
-            for p in pkgs
-        }
+        ids = set()
+        for p in pkgs:
+            with tarfile.open(p) as archive:
+                manifest = archive.extractfile(archive.getmember("manifest.json"))
+                assert manifest is not None
+                ids.add(json.loads(manifest.read())["id"])
         self.assertEqual(ids, set(STANDARD_APP_IDS), "ids dos pacotes divergem das 12 apps padrão")
 
     def test_package_names_match_manifest_ids(self):

@@ -224,7 +224,9 @@ using frame_writer_t = bool (*)(const char *, size_t, void *);
 
 /* Potentially large bridge data is heap-backed: the FreeRTOS task remains
  * intentionally fixed at 8 KiB. */
-constexpr size_t kMaxResponseBytes = 16u * 1024u;
+#ifdef ESP_PLATFORM
+constexpr size_t kMaxResponseBytes = 16ULL * 1024ULL;
+#endif
 constexpr size_t kMaxInputPathBytes = PATH_MAX;
 
 bool safe_screenshot_path(const char *path, char *canonical, size_t canonical_size)
@@ -239,9 +241,10 @@ bool safe_screenshot_path(const char *path, char *canonical, size_t canonical_si
     /* The host harness redirects /sdcard at libc boundaries, so realpath()
      * cannot resolve the virtual path itself.  The prefix and traversal
      * checks above are the equivalent sandbox boundary in that harness. */
-    if (strlen(path) + 1 > canonical_size)
+    const size_t path_len = strlen(path);
+    if (path_len + 1 > canonical_size)
         return false;
-    strcpy(canonical, path);
+    memcpy(canonical, path, path_len + 1);
     return true;
 #else
     std::unique_ptr<char[]> root_real(new (std::nothrow) char[kMaxInputPathBytes]);
@@ -256,7 +259,7 @@ bool safe_screenshot_path(const char *path, char *canonical, size_t canonical_si
             return false;
         if (strlen(path_real.get()) + 1 > canonical_size)
             return false;
-        strcpy(canonical, path_real.get());
+        memcpy(canonical, path_real.get(), strlen(path_real.get()) + 1);
         return true;
     }
     return false;
@@ -346,9 +349,21 @@ bool stream_dump(const char *path, frame_writer_t writer, void *ctx, const char 
     unsigned char buffer[chunk_size];
     if (from_chunk > chunks)
         from_chunk = chunks;
-    if (from_chunk != 0 && fseek(file, static_cast<long>(from_chunk * chunk_size), SEEK_SET) != 0) {
-        fclose(file);
-        return dump_error(writer, ctx, "indice inicial invalido", rid);
+    /* fseek accepts long, so reject an unrepresentable byte offset before
+     * multiplying/converting.  This keeps a hostile retry index from wrapping
+     * or truncating on targets where size_t is wider than long. */
+    if (from_chunk != 0) {
+        constexpr size_t max_seek_offset = static_cast<size_t>(LONG_MAX);
+        if (from_chunk > max_seek_offset / chunk_size) {
+            fclose(file);
+            return dump_error(writer, ctx, "indice inicial invalido", rid);
+        }
+        const size_t offset_value = from_chunk * chunk_size;
+        const long offset = static_cast<long>(offset_value);
+        if (fseek(file, offset, SEEK_SET) != 0) {
+            fclose(file);
+            return dump_error(writer, ctx, "indice inicial invalido", rid);
+        }
     }
     for (size_t index = 0; index < chunks - from_chunk; ++index) {
         const size_t chunk_index = index + from_chunk;
@@ -474,10 +489,11 @@ extern "C" int serial_bridge_dispatch(const char *json_line, char *out, size_t o
     if (!strcmp(cmd, "app.list")) {
         cJSON *data = cJSON_CreateObject();
         cJSON *apps = cJSON_AddArrayToObject(data, "apps");
-        for (const auto &app : app_registry_get_all()) {
+        const auto apps_snapshot = app_registry_get_all();
+        for (const auto &app : apps_snapshot) {
             cJSON *a = cJSON_CreateObject();
-            cJSON_AddStringToObject(a, "id", app.id);
-            cJSON_AddStringToObject(a, "name", app.name);
+            cJSON_AddStringToObject(a, "id", app.desc.id);
+            cJSON_AddStringToObject(a, "name", app.desc.name);
             cJSON_AddItemToArray(apps, a);
         }
         result = envelope("ok", cmd, nullptr, data);
@@ -707,7 +723,10 @@ extern "C" int serial_bridge_dispatch(const char *json_line, char *out, size_t o
             cJSON_AddNullToObject(d, "battery_mv");
             cJSON_AddNullToObject(d, "battery_pct");
         }
-        cJSON_AddStringToObject(d, "battery_state", battery_ok ? (b.available ? "available" : "unavailable") : "error");
+        const char *battery_state = "error";
+        if (battery_ok)
+            battery_state = b.available ? "available" : "unavailable";
+        cJSON_AddStringToObject(d, "battery_state", battery_state);
         wifi_status_t w = {};
         const bool wifi_ok = wifi_mgr_get_status(&w) == ESP_OK;
         cJSON_AddBoolToObject(d, "wifi_connected", wifi_ok && w.connected);
@@ -718,7 +737,10 @@ extern "C" int serial_bridge_dispatch(const char *json_line, char *out, size_t o
             cJSON_AddNullToObject(d, "wifi_ssid");
             cJSON_AddNullToObject(d, "wifi_ip");
         }
-        cJSON_AddStringToObject(d, "wifi_state", wifi_ok ? (w.connected ? "connected" : "disconnected") : "error");
+        const char *wifi_state = "error";
+        if (wifi_ok)
+            wifi_state = w.connected ? "connected" : "disconnected";
+        cJSON_AddStringToObject(d, "wifi_state", wifi_state);
 #else
         cJSON_AddNumberToObject(d, "heap_free_internal", 0);
         cJSON_AddNumberToObject(d, "heap_free_psram", 0);
@@ -767,6 +789,7 @@ static void unlock_frame_writer(void)
         xSemaphoreGive(s_frame_lock);
 }
 
+#if CONFIG_TAB5_SERIAL_BRIDGE_TRANSPORT_UART
 static bool uart_frame_writer(const char *data, size_t size, void *ctx)
 {
     const uart_port_t port = *static_cast<const uart_port_t *>(ctx);
@@ -783,6 +806,7 @@ static bool uart_frame_writer(const char *data, size_t size, void *ctx)
     unlock_frame_writer();
     return written == static_cast<int>(wire.size());
 }
+#endif
 
 static bool usb_frame_writer(const char *data, size_t size, void *)
 {

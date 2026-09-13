@@ -164,6 +164,10 @@ tab5_ui_obj_t tab5_ui_app_bar_add_action_button(const char *symbol_or_text, void
     if (s_active_app_ctx == nullptr || symbol_or_text == nullptr) {
         return TAB5_UI_INVALID_OBJ;
     }
+#if !HAVE_LVGL
+    (void)on_click;
+    (void)user_data;
+#endif
 #if HAVE_LVGL
     if (!LV_LOCK()) {
         return TAB5_UI_INVALID_OBJ;
@@ -1242,6 +1246,7 @@ tab5_err_t tab5_nvs_set_u8(const char *ns, const char *key, uint8_t val)
     nvs_close(nvs);
     return TAB5_OK;
 #else
+    (void)val;
     return TAB5_OK;
 #endif
 }
@@ -1268,15 +1273,12 @@ namespace {
 
 /* Native symbols receive WASM offsets, not host pointers.  Keep conversion in
  * one place so every pointer-bearing ABI wrapper follows the same rule. */
+#if HAVE_WAMR_ENV
 static wasm_module_inst_t wasm_module(wasm_exec_env_t env)
 {
-#if HAVE_WAMR_ENV
     return env != nullptr ? wasm_runtime_get_module_inst(env) : nullptr;
-#else
-    (void)env;
-    return nullptr;
-#endif
 }
+#endif
 
 template <typename T> static T *wasm_arg(wasm_exec_env_t env, T *app_ptr)
 {

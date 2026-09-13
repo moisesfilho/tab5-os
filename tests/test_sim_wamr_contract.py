@@ -400,19 +400,14 @@ class SimDeterminismContract(unittest.TestCase):
         self.assertIn("--goldens", SIM_SCRIPT)
         self.assertIn("--out", SIM_SCRIPT)
 
-    def test_host_launch_dispatch_is_synchronous(self):
-        # No host/desktop o JOB_LAUNCH executa inline (não vira job de fila),
-        # o que mantém o launch determinístico dentro do passo do cenário.
-        m = re.search(
-            r"#ifndef ESP_PLATFORM.*?JOB_LAUNCH.*?execute_job\(job\);.*?#endif",
+    def test_host_launch_dispatch_uses_shared_worker_boundary(self):
+        # Host e ESP devem admitir JOB_LAUNCH pela mesma fila/gate; o host
+        # preserva determinismo esperando o idle no facade do package manager.
+        self.assertNotRegex(
             DISPATCHER,
-            re.S,
+            r"#ifndef ESP_PLATFORM.*?JOB_LAUNCH.*?execute_job\(job\);.*?#endif",
         )
-        self.assertIsNotNone(
-            m,
-            "tab5_wasm_dispatcher.cpp precisa manter o launch síncrono no "
-            "build host (sem isso o cenário pode capturar antes do app abrir)",
-        )
+        self.assertIn("s_launch_gate", DISPATCHER)
 
 
 # ---------------------------------------------------------------------------

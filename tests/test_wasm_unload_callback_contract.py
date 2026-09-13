@@ -180,6 +180,12 @@ class DeferredUnloadContract(unittest.TestCase):
         self.assertRegex(window, rf"\b{re.escape(counter)}\b\s*==\s*0",
                          "chamadas aninhadas devem manter o unload pendente até a profundidade zerar")
 
+    def test_string_call_has_post_admission_epilogue(self):
+        call = function_body(WASM, "tab5_err_t tab5_wasm_call_string_function")
+        release = call.index("release_call(inst);")
+        self.assertIn("tab5_wasm_unload(inst)", call[release:])
+        self.assertIn("tab5_package_mgr_process_pending_close();", call[release:])
+
     def test_pthread_failure_leaves_no_pending(self):
         call = function_body(WASM, "tab5_err_t tab5_wasm_call_function(")
         for block in re.finditer(r"if \(rc != 0\) \{(?P<body>.*?)\n    \}", call, re.DOTALL):

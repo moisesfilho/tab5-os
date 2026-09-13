@@ -82,7 +82,11 @@ class AbortContracts(unittest.TestCase):
     def test_abort_restores_context_handles_and_has_no_pending_callback_owner(self):
         abort = function_body(UI, "tab5_err_t tab5_ui_host_abort_app_screen")
         self.assertIn("delete_wasm_poll_timer();", abort)
-        self.assertIn("memcpy(s_handle_table, s_previous_handle_table", abort)
+        self.assertRegex(
+            abort,
+            r"(?:memcpy\(s_handle_table, s_previous_handle_table|"
+            r"std::copy_n\(s_previous_handle_table, MAX_UI_HANDLES, s_handle_table\))",
+        )
         self.assertIn("s_next_handle = s_previous_next_handle;", abort)
         self.assertIn("s_active_camera_view = s_previous_camera_view;", abort)
         self.assertIn("s_active_gallery_view = s_previous_gallery_view;", abort)

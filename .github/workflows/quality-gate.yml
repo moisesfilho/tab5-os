@@ -44,54 +44,65 @@ jobs:
   lint:
     name: Lint (clang-tidy + cppcheck)
     runs-on: ubuntu-latest
+    # Tag 18 exists in Docker Hub; the manifest digest makes this immutable.
+    container: silkeh/clang:18@sha256:3914c93a02e866795aafc80737488e515b96390eff3d2787cf8c5095997baea9
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Install lint tools
+      - name: Install cppcheck
         run: |
-          sudo apt-get update -o Acquire::http::Timeout=15 -o Acquire::ftp::Timeout=15 -o Acquire::Retries=3
-          sudo apt-get install -y --no-install-recommends clang-tidy cppcheck
+          apt-get update -o Acquire::Retries=3
+           apt-get install -y --no-install-recommends cppcheck cmake git python3
 
-      - name: Install ESP-IDF
-        uses: espressif/install-esp-idf-action@v1
-        with:
-          version: v5.5.5
-
-      # Gera build/compile_commands.json rapidamente sem compilar binarios
-      - name: Configure CMake (compile db)
+      # O host build usa clang e os stubs versionados de tests/host; não
+      # mistura flags RISC-V do ESP-IDF com o clang-tidy do container.
+      - name: Configure host CMake (compile db)
         run: |
-          idf.py reconfigure
-          python3 -c "import json, os; [open(x['file'], 'a').close() for x in json.load(open('build/compile_commands.json')) if not os.path.exists(x['file'])]"
+          cmake -S tests/host -B build/host \
+             -DCMAKE_BUILD_TYPE=Debug \
+             -DHOST_TESTS_COVERAGE=OFF \
+             -DCMAKE_C_COMPILER=clang \
+             -DCMAKE_CXX_COMPILER=clang++ \
+             -DFETCHCONTENT_UPDATES_DISCONNECTED=ON \
+             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Verify pinned clang-tidy
+        run: |
+          set -euo pipefail
+          clang --version
+          clang++ --version
+          clang-tidy --version
+           clang --version | grep -Fq 'clang version 18.'
+           clang++ --version | grep -Fq 'clang version 18.'
+           clang-tidy --version | grep -Fq 'LLVM version 18.'
 
       - name: clang-tidy (app code only)
         id: clang_tidy
         run: |
-          set +e
-          clang-tidy -p build \
-            --config-file=.clang-tidy \
-            --extra-arg="-Wno-unknown-warning-option" \
-            --extra-arg="-Wno-extern-c-compat" \
-            --extra-arg="-Wno-unknown-pragmas" \
-            --header-filter='components/os/(?!.*minimp3).*' \
-            main/app_main.cpp \
-            components/os/core/*.cpp \
-            components/os/runtime/*.cpp \
-            components/os/shell/*.cpp 2>&1 | tee clang-tidy.log
-          # Desconsidera flags especificas do GCC RISC-V
-          grep -vE "error: (unknown argument|invalid arch name)" clang-tidy.log > clang-tidy-clean.log
-          if grep -qE 'error:|warning:' clang-tidy-clean.log; then
-            echo "::error::clang-tidy encontrou problemas — ver clang-tidy.log"
-            cat clang-tidy-clean.log
-            exit 1
-          fi
+          set -o pipefail
+          mapfile -t HOST_SOURCES < <(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path.cwd()
+          for entry in json.loads(Path('build/host/compile_commands.json').read_text()):
+              path = Path(entry['file'])
+              try:
+                  relative = path.resolve().relative_to(root.resolve())
+              except ValueError:
+                  continue
+              if str(relative).startswith(('components/os/', 'main/')):
+                  print(relative)
+          PY
+          )
+          ./tools/ci/run_clang_tidy.sh "${HOST_SOURCES[@]}" 2>&1 | tee clang-tidy.log
 
       - name: cppcheck (via compile db)
         id: cppcheck
         run: |
           cppcheck -j $(nproc) \
-            --project=build/compile_commands.json \
+             --project=build/host/compile_commands.json \
             --enable=warning,performance,portability \
             --suppress=missingIncludeSystem \
             --suppress=syntaxError \
@@ -156,3 +167,103 @@ jobs:
         with:
           name: coverage-report
           path: build/host/coverage-html
+
+  python:
+    name: Python tests (official tests/ suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Python test dependencies
+        run: python3 -m pip install --upgrade pytest pillow
+
+      - name: Run official Python suite
+        run: |
+          set -o pipefail
+          timeout --signal=TERM 900s python3 -m pytest -q -ra tests \
+            --ignore=managed_components --ignore=tests/fixtures \
+            --ignore=tests/external 2>&1 | tee pytest.log
+
+      - name: Report Python suite result
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          text = Path("pytest.log").read_text(encoding="utf-8") if Path("pytest.log").exists() else ""
+          summary = next((line.strip() for line in reversed(text.splitlines())
+                          if re.search(r"\b(passed|failed|error|skipped)\b", line)),
+                         "pytest did not produce a summary")
+          print(f"Pytest result: {summary}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as report:
+              report.write("## 🐍 Official Python suite\n\n")
+              report.write(f"`{summary}`\n\n")
+              report.write("Device-in-the-loop checks are skipped when the port is "
+                           "absent or disconnected during setup; product test failures "
+                           "remain failures.\n")
+          PY
+
+      - name: Upload Python test log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-test-log
+          path: pytest.log
+
+  simulator:
+    name: Simulator (17 scenarios)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install simulator dependencies
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends cmake g++ libsdl2-dev python3
+
+      - name: Run simulator matrix
+        run: timeout --signal=TERM 900s ./tools/ci/run_sim_tests.sh
+
+  pre-commit:
+    name: Pre-commit (all files)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install lint/build tools
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends cmake clang clang-tidy cppcheck g++
+
+       # clang-tidy-local consumes this exact database.  Creating it before
+       # pre-commit makes a clean checkout deterministic instead of silently
+       # linting with guessed/default compiler flags.
+      - name: Configure host CMake (compile db for pre-commit)
+        run: |
+          cmake -S tests/host -B build/host \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DHOST_TESTS_COVERAGE=OFF \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DFETCHCONTENT_UPDATES_DISCONNECTED=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run all pre-commit hooks
+        uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: --all-files

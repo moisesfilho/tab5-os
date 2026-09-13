@@ -4,7 +4,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(tab5_os_sim LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
@@ -21,7 +21,7 @@ set(WAMR_BUILD_INTERP 1 CACHE BOOL "" FORCE)
 set(WAMR_BUILD_AOT 1 CACHE BOOL "" FORCE)
 set(WAMR_BUILD_JIT 0 CACHE BOOL "" FORCE)
 add_subdirectory(${REPO_ROOT}/managed_components/espressif__wasm-micro-runtime
-    ${CMAKE_CURRENT_BINARY_DIR}/wasm-micro-runtime)
+                  ${CMAKE_CURRENT_BINARY_DIR}/wasm-micro-runtime)
 
 # LVGL do proprio repo (mesma versao do firmware) com o lv_conf.h do sim.
 set(LV_BUILD_CONF_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lv_conf.h
@@ -29,7 +29,7 @@ set(LV_BUILD_CONF_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lv_conf.h
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${REPO_ROOT}/managed_components/lvgl__lvgl
-    ${CMAKE_CURRENT_BINARY_DIR}/lvgl)
+                  ${CMAKE_CURRENT_BINARY_DIR}/lvgl)
 target_link_libraries(lvgl PUBLIC SDL2::SDL2)
 
 set(OS ${REPO_ROOT}/components/os)
@@ -112,18 +112,18 @@ target_compile_definitions(tab5_sim PRIVATE TAB5_SIM=1)
 
 target_compile_options(tab5_sim PRIVATE -Wall -Wextra -Wno-unused-parameter)
 
-# fopen/open/mkdir/opendir/stat/lstat -> /sdcard/apps no tmpdir; time/localtime_r ->
-# relogio congelavel no modo cenario.
+# fopen/open/mkdir/opendir/stat/lstat -> /sdcard/apps no tmpdir;
+# time/localtime_r -> relogio congelavel no modo cenario.
 target_link_libraries(tab5_sim PRIVATE lvgl vmlib
-    -Wl,--wrap=fopen
-    -Wl,--wrap=open
-    -Wl,--wrap=mkdir
-    -Wl,--wrap=opendir
-    -Wl,--wrap=stat
-    -Wl,--wrap=lstat
-    -Wl,--wrap=time
-    -Wl,--wrap=localtime_r
-    -Wl,--wrap=gettimeofday
+                         -Wl,--wrap=fopen
+                         -Wl,--wrap=open
+                         -Wl,--wrap=mkdir
+                         -Wl,--wrap=opendir
+                         -Wl,--wrap=stat
+                         -Wl,--wrap=lstat
+                         -Wl,--wrap=time
+                         -Wl,--wrap=localtime_r
+                         -Wl,--wrap=gettimeofday
 )
 
 # bt_storage usa atoi() sem incluir <stdlib.h> (mesma correcao dos testes host)

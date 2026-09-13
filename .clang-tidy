@@ -2,11 +2,10 @@
 # Checkers do clang-tidy usados no CI (lint estático).
 # Set conservador p/ firmware embarcado: sem WarningsAsErrors para
 # não bloquear o build em false positives do toolchain RISC-V.
+# Exclusões deliberadas: assignment-in-if é o padrão de retorno de erro do
+# firmware; defined(X) mantém a intenção multi-target explícita.
 Checks: >
-  clang-diagnostic-*,
-  bugprone-*,
-  performance-*,
-  readability-*,
+  clang-diagnostic-*, bugprone-*, performance-*, readability-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-narrowing-conversions,
   -readability-identifier-length,
@@ -20,6 +19,8 @@ Checks: >
   -readability-implicit-bool-conversion,
   -readability-braces-around-statements,
   -readability-else-after-return,
+  -bugprone-assignment-in-if-condition,
+  -readability-use-concise-preprocessor-directives,
   -readability-uppercase-literal-suffix,
   -readability-isolate-declaration,
   -performance-enum-size,

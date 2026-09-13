@@ -13,7 +13,9 @@ include(FetchContent)
 FetchContent_Declare(
     googletest
     GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG v1.14.0
+    # A release tag can be moved.  Pin the exact commit so a clean CI build
+    # obtains the same test framework as a local build.
+    GIT_TAG f8d7d77c06936315286eb55f8de22cd23c188571
 )
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
@@ -122,29 +124,32 @@ gtest_discover_tests(tab5_host_tests)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME runtime_rollback_static
-  COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_runtime_rollback.py)
+    COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_runtime_rollback.py)
 add_test(NAME runtime_entrypoint_cleanup_contracts
-  COMMAND ${Python3_EXECUTABLE}
-          ${REPO_ROOT}/tests/test_runtime_entrypoint_cleanup_contracts.py)
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_runtime_entrypoint_cleanup_contracts.py)
 add_test(NAME sdk_export_contract
-  COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_sdk_export_contract.py)
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_sdk_export_contract.py)
 add_test(NAME wasm_unload_callback_contract
-  COMMAND ${Python3_EXECUTABLE}
-          ${REPO_ROOT}/tests/test_wasm_unload_callback_contract.py)
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_wasm_unload_callback_contract.py)
 add_test(NAME async_dispatcher_contract
-  COMMAND ${Python3_EXECUTABLE}
-          ${REPO_ROOT}/tests/test_async_dispatcher_contract.py)
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_async_dispatcher_contract.py)
 add_test(NAME tab5_cli_contract
-  COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_tab5_cli_contract.py)
+    COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_tab5_cli_contract.py)
 add_test(NAME serial_bridge_kconfig_contract
-  COMMAND ${Python3_EXECUTABLE}
-          ${REPO_ROOT}/tests/test_serial_bridge_kconfig_contract.py)
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_serial_bridge_kconfig_contract.py)
 add_test(NAME ui_scroll_default_contract
-  COMMAND ${Python3_EXECUTABLE}
-          ${REPO_ROOT}/tests/test_ui_scroll_default_contract.py)
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_ui_scroll_default_contract.py)
 add_test(NAME sim_wamr_contract
-  COMMAND ${Python3_EXECUTABLE}
-          ${REPO_ROOT}/tests/test_sim_wamr_contract.py)
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_sim_wamr_contract.py)
 add_test(NAME serial_bridge_stack_contract
-  COMMAND ${Python3_EXECUTABLE}
-          ${REPO_ROOT}/tests/test_serial_bridge_stack_contract.py)
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_serial_bridge_stack_contract.py)
+add_test(NAME lint_fix_contracts
+    COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_lint_fix_contracts.py)

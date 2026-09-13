@@ -145,7 +145,20 @@ void tab5_sys_host_log(int level, const char *tag, const char *message)
         break;
     }
 #else
-    const char *prefix = (level == 0) ? "[E]" : (level == 1) ? "[W]" : (level == 2) ? "[I]" : "[D]";
+    const char *prefix = "[D]";
+    switch (level) {
+    case 0:
+        prefix = "[E]";
+        break;
+    case 1:
+        prefix = "[W]";
+        break;
+    case 2:
+        prefix = "[I]";
+        break;
+    default:
+        break;
+    }
     printf("%s [%s] %s\n", prefix, tag, message);
 #endif
 }

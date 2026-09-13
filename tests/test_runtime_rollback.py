@@ -23,7 +23,11 @@ class RuntimeRollbackContract(unittest.TestCase):
 
     def test_abort_restores_handles_before_future_events(self):
         abort = UI.split("tab5_err_t tab5_ui_host_abort_app_screen", 1)[1]
-        self.assertIn("memcpy(s_handle_table, s_previous_handle_table", abort)
+        self.assertRegex(
+            abort,
+            r"(?:memcpy\(s_handle_table, s_previous_handle_table|"
+            r"std::copy_n\(s_previous_handle_table, MAX_UI_HANDLES, s_handle_table\))",
+        )
         self.assertIn("lv_obj_delete(scr)", abort)
 
     def test_wasm_callbacks_fallback_only_when_primary_is_missing(self):

@@ -144,7 +144,7 @@ std::string cmd_ls(const std::vector<std::string> &args, const std::string &cwd)
             char size_buf[32];
             if (item.size < 1024) {
                 std::snprintf(size_buf, sizeof(size_buf), "%5u B", (unsigned int)item.size);
-            } else if (item.size < 1024 * 1024) {
+            } else if (item.size < static_cast<size_t>(1024U * 1024U)) {
                 std::snprintf(size_buf, sizeof(size_buf), "%5.1f KB", (float)item.size / 1024.0F);
             } else {
                 std::snprintf(size_buf, sizeof(size_buf), "%5.1f MB", (float)item.size / (1024.0F * 1024.0F));

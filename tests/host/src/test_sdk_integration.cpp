@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 #include <sys/stat.h>
+#include <filesystem>
 
 class SdkIntegrationTest : public ::testing::Test {
   protected:
@@ -28,6 +29,14 @@ class SdkIntegrationTest : public ::testing::Test {
 
 static std::string find_sdk_file(const char *rel_path)
 {
+    const std::filesystem::path source_root =
+        std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path();
+    const std::filesystem::path from_source = source_root / rel_path;
+    FILE *source_file = fopen(from_source.c_str(), "r");
+    if (source_file != nullptr) {
+        fclose(source_file);
+        return from_source.string();
+    }
     const char *prefixes[] = {"", "../../", "../", "../../../"};
     for (const char *p : prefixes) {
         std::string candidate = std::string(p) + rel_path;
@@ -131,9 +140,10 @@ TEST_F(SdkIntegrationTest, PackageInstallationFromSdkTemplate)
     EXPECT_STREQ(installed_id, "com.tab5.hello");
 
     // Verifica no registro
-    const app_desc_t *desc = app_registry_find_by_id("com.tab5.hello");
-    ASSERT_NE(desc, nullptr);
-    EXPECT_STREQ(desc->name, "Hello Tab5");
+    app_desc_t desc = {};
+    ASSERT_EQ(app_registry_find_by_id("com.tab5.hello", &desc), ESP_OK);
+    EXPECT_STREQ(desc.name, "Hello Tab5");
+    app_registry_release_snapshot(&desc);
 
     // Launch e cleanup
     EXPECT_EQ(tab5_package_mgr_launch("com.tab5.hello", nullptr), TAB5_OK);

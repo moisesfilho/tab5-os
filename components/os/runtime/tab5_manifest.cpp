@@ -301,7 +301,7 @@ tab5_err_t tab5_manifest_load_from_file(const char *filepath, tab5_manifest_t *o
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    if (size <= 0 || size > 64 * 1024) {
+    if (size <= 0 || size > 64L * 1024L) {
         fclose(f);
         return TAB5_ERR_FAIL;
     }

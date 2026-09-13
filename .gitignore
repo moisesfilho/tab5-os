@@ -11,5 +11,6 @@ tests/simulator/diffs/
 tests/simulator/report.txt
 embedded_apps_pkg/
 tests/host/Testing/
+tests/host/build-cov/
 __pycache__/
 *.pyc

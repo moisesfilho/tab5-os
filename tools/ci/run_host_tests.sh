@@ -13,15 +13,35 @@ BUILD_DIR="${BUILD_DIR:-$ROOT/build/host}"
 COVERAGE_MIN="${COVERAGE_MIN:-80}"
 
 echo "==> Configurando ($BUILD_DIR)"
+# Never reuse instrumented objects or gcda files from another build. Stale
+# counters are instrumentation errors, not coverage results.
+rm -rf "$BUILD_DIR"
+BUILD_MARKER="$ROOT/.host-coverage-build-start"
+touch "$BUILD_MARKER"
+trap 'rm -f "$BUILD_MARKER"' EXIT
 cmake -S "$ROOT/tests/host" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Debug \
-    -DCMAKE_CXX_FLAGS=--coverage >/dev/null
+    -DCMAKE_CXX_FLAGS=--coverage \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON >/dev/null
 
 echo "==> Compilando"
 cmake --build "$BUILD_DIR" -j "$(nproc)"
 
 echo "==> Executando testes"
 ctest --test-dir "$BUILD_DIR" --output-on-failure
+
+# lcov must see only data emitted by this build.  Refuse an accidentally
+# checked-in/generated gcda outside BUILD_DIR and files older than our clean
+# build marker instead of converting them into a plausible percentage.
+shopt -s globstar nullglob
+for gcda in "$ROOT"/**/*.gcda; do
+    [[ -f "$gcda" ]] || continue
+    if [[ "$gcda" != "$BUILD_DIR"/* || ! "$gcda" -nt "$BUILD_MARKER" ]]; then
+        echo "erro: GCDA fora do build atual: $gcda" >&2
+        exit 1
+    fi
+done
+shopt -u globstar nullglob
 
 if ! command -v lcov >/dev/null 2>&1; then
     echo "erro: lcov nao encontrado no PATH (apt-get install lcov)" >&2
@@ -30,12 +50,12 @@ fi
 
 TRACE="$BUILD_DIR/coverage.info"
 echo "==> Capturando cobertura (gcov/lcov)"
-# inconsistent/mismatch: alarme do par GCC/lcov em TU de teste;
-# irrelevante aqui pois o filtro abaixo reduz aos .cpp de producao.
 RAW="$BUILD_DIR/coverage-raw.info"
 lcov --config-file "$ROOT/tools/ci/lcovrc" \
-    --ignore-errors inconsistent --ignore-errors mismatch \
-    --capture --directory "$BUILD_DIR" --output-file "$RAW" --quiet
+    --capture \
+    --directory "$BUILD_DIR/CMakeFiles/tab5_host_tests.dir$ROOT/components/os/core" \
+    --directory "$BUILD_DIR/CMakeFiles/tab5_host_tests.dir$ROOT/components/os/runtime" \
+    --output-file "$RAW" --quiet
 
 # A metrica cobre apenas os modulos sob teste; stubs/, mocks/ e tests/
 # ficam fora do calculo por construcao.

@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -34,6 +35,7 @@
 #include "app_registry.h"
 #include "tab5_package_mgr.h"
 #include "tab5_wasm_runtime.h"
+#include "tab5_wasm_dispatcher.h"
 
 namespace {
 
@@ -51,6 +53,16 @@ void pump(uint32_t ms)
         }
         usleep(next * 1000U);
     }
+}
+
+void settle(uint32_t ms)
+{
+    pump(ms);
+    /* WASM callbacks execute on a worker.  Do not let wall-clock scheduling
+     * decide whether a callback is visible in the snapshot. */
+    (void)tab5_wasm_dispatcher_wait_idle(2000);
+    pump(20);
+    (void)tab5_wasm_dispatcher_wait_idle(2000);
 }
 
 void ensure_dir(const std::string &dir)
@@ -180,25 +192,44 @@ int run_scenario(const std::string &name, const std::string &out_arg, bool updat
     }
 
     simtime::set_frozen(true);
+    srand(42);
+    SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
 
     std::string out_dir = out_arg;
     if (out_dir.empty()) {
         out_dir = update_goldens ? "tests/simulator/goldens/" + name : "tests/simulator/out/" + name;
     }
     ensure_dir(out_dir);
+    const std::string explicit_shot_dir = out_arg.empty() ? out_dir : out_dir + "/" + name;
+    if (!out_arg.empty()) {
+        /* Preserve the legacy single-scenario --out layout while also
+         * providing the suite-root layout used by the visual matrix. */
+        ensure_dir(explicit_shot_dir);
+    }
 
     int idx = 1;
     for (const auto &step : found->steps) {
         if (step.action != nullptr) {
             step.action();
         }
+        /* Keep the scenario's declared settle visible here: the screenshot
+         * must be after both LVGL time and the dispatcher idle barrier. */
         pump(step.settle_ms);
+        settle(0);
         if (step.shot_name != nullptr) {
             char path[256];
             snprintf(path, sizeof(path), "%s/%s.bmp", out_dir.c_str(), step.shot_name);
             if (!sim_capture_to_bmp(path)) {
                 fprintf(stderr, "sim: falha na captura %s\n", path);
                 return 1;
+            }
+            if (!out_arg.empty()) {
+                char suite_path[256];
+                snprintf(suite_path, sizeof(suite_path), "%s/%s.bmp", explicit_shot_dir.c_str(), step.shot_name);
+                if (!sim_capture_to_bmp(suite_path)) {
+                    fprintf(stderr, "sim: falha na captura %s\n", suite_path);
+                    return 1;
+                }
             }
         }
         idx++;
@@ -247,13 +278,40 @@ void boot_ui()
     /* Popula /apps a partir de embedded_apps_pkg para o simulador */
     DIR *d_pkg = opendir("embedded_apps_pkg");
     if (d_pkg != nullptr) {
+        std::vector<std::string> package_names;
         struct dirent *entry;
         while ((entry = readdir(d_pkg)) != nullptr) {
             if (entry->d_name[0] == '.') {
                 continue;
             }
-            std::string src = std::string("embedded_apps_pkg/") + entry->d_name;
-            std::string dst = std::string("/apps/") + entry->d_name;
+            package_names.emplace_back(entry->d_name);
+        }
+        closedir(d_pkg);
+
+        /* ext4 readdir order is not an API.  The launcher grid reflects the
+         * package registration order, so copy packages in the established
+         * image order rather than allowing directory allocation to choose it. */
+        static const std::vector<std::string> package_order = {
+            "com.tab5.fileserver.tab5pkg", "com.tab5.bluetooth.tab5pkg", "com.tab5.files.tab5pkg",
+            "com.tab5.chat.tab5pkg",       "com.tab5.terminal.tab5pkg",  "com.tab5.notas.tab5pkg",
+            "com.tab5.calendar.tab5pkg",   "com.tab5.recorder.tab5pkg",  "com.tab5.gallery.tab5pkg",
+            "com.tab5.music.tab5pkg",      "com.tab5.wifi.tab5pkg",      "com.tab5.camera.tab5pkg",
+        };
+        std::stable_sort(package_names.begin(), package_names.end(),
+                         [&](const std::string &lhs, const std::string &rhs) {
+                             const auto rank = [&](const std::string &name) {
+                                 auto it = std::find(package_order.begin(), package_order.end(), name);
+                                 return it == package_order.end() ? package_order.size()
+                                                                  : static_cast<size_t>(it - package_order.begin());
+                             };
+                             const size_t left_rank = rank(lhs);
+                             const size_t right_rank = rank(rhs);
+                             return left_rank == right_rank ? lhs < rhs : left_rank < right_rank;
+                         });
+
+        for (const std::string &package_name : package_names) {
+            std::string src = std::string("embedded_apps_pkg/") + package_name;
+            std::string dst = std::string("/apps/") + package_name;
             FILE *fsrc = fopen(src.c_str(), "rb");
             if (fsrc != nullptr) {
                 FILE *fdst = fopen(dst.c_str(), "wb");
@@ -268,7 +326,6 @@ void boot_ui()
                 fclose(fsrc);
             }
         }
-        closedir(d_pkg);
     }
 
     /* Define fonte Latin-1 como padrão global */

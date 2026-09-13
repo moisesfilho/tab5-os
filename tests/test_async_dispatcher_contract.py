@@ -138,7 +138,15 @@ def function_bodies_named(source: str, name_pattern: re.Pattern) -> list[str]:
     for match in re.finditer(r"\b([A-Za-z_]\w*)\s*\(", source):
         if not name_pattern.fullmatch(match.group(1)):
             continue
-        opening = _next_non_space(source, match.end())
+        depth = 1
+        close = match.end()
+        while close < len(source) and depth:
+            if source[close] == "(":
+                depth += 1
+            elif source[close] == ")":
+                depth -= 1
+            close += 1
+        opening = _next_non_space(source, close)
         if opening is None or source[opening] != "{":
             continue
         bodies.append(_balanced_body(source, opening))
@@ -300,6 +308,19 @@ class BoundedQueueCopiesArguments(unittest.TestCase):
             any(full_branch.search(body) for body in enqueuers),
             "enqueue precisa tratar fila cheia retornando sem bloquear (branch de capacidade/full)",
         )
+        dispatcher = next(text for text in _DISPATCHER_EXTRA
+                          if "void tab5_wasm_dispatcher_shutdown(void)" in text and "s_jobs.clear()" in text)
+        shutdown = function_body(dispatcher, "extern \"C\" void tab5_wasm_dispatcher_shutdown(void)")
+        self.assertIn("s_jobs.clear()", shutdown,
+                      "shutdown precisa cancelar jobs pendentes, inclusive JOB_LAUNCH")
+        self.assertIn("s_ready.notify_all()", shutdown,
+                      "shutdown precisa acordar o worker sem deixar wait_idle/join bloqueado")
+        self.assertIn("if (s_stopping)", dispatcher,
+                      "o worker precisa rejeitar um launch que ainda não iniciou ao parar")
+        runtime_destroy = function_body(WASM, "void tab5_wasm_runtime_destroy(void)")
+        self.assertLess(runtime_destroy.index("tab5_wasm_dispatcher_shutdown"),
+                        runtime_destroy.index("tab5_package_mgr_close_active"),
+                        "dispatcher deve ser parado antes do teardown do package manager")
 
 
 class GenerationRejectsClosedInstance(unittest.TestCase):
@@ -323,6 +344,25 @@ class GenerationRejectsClosedInstance(unittest.TestCase):
                              "o processamento do job precisa comparar a geração da instância")
         self.assertIn("is_running", ALL,
                       "o worker precisa conferir is_running da instância antes de executar")
+
+    def test_dequeue_revalidation_precedes_wasm_calls(self):
+        dispatcher = next(text for text in _DISPATCHER_EXTRA if "Revalidate after dequeue" in text)
+        execute = function_body(dispatcher, "static void execute_job")
+        guard = execute.index("tab5_wasm_dispatch_token_validate")
+        first_call = execute.index("tab5_wasm_call_")
+        self.assertLess(guard, first_call)
+
+
+class PackageTransitionOwnership(unittest.TestCase):
+    def test_launch_uninstall_close_share_recursive_transition_lock(self):
+        self.assertIn("std::recursive_mutex s_package_mutex", PKG)
+        for signature in (
+            "tab5_package_mgr_uninstall",
+            "tab5_package_mgr_launch_direct",
+            "tab5_package_mgr_close_active",
+        ):
+            self.assertIn("std::lock_guard<std::recursive_mutex> lock(s_package_mutex)",
+                          function_body(PKG, signature), signature)
 
 
 class NonBlockingDisplayPath(unittest.TestCase):
@@ -361,6 +401,29 @@ class TeardownOnce(unittest.TestCase):
             "todo free(inst->wasm_buf) precisa viver dentro de tab5_wasm_unload — "
             "nunca no caminho de dispatch/teardown paralelo do dispatcher",
         )
+
+
+class LaunchShutdownLinearization(unittest.TestCase):
+    """Host and ESP must share the same launch admission boundary."""
+
+    def test_launch_has_no_host_only_synchronous_bypass(self):
+        dispatcher = next(text for text in _DISPATCHER_EXTRA
+                          if "void tab5_wasm_dispatcher_shutdown(void)" in text
+                          and "s_jobs.clear()" in text)
+        post_launch = function_body(
+            dispatcher,
+            "tab5_err_t tab5_wasm_dispatch_post_launch")
+        self.assertNotIn("#ifndef ESP_PLATFORM", post_launch)
+        self.assertIn("JOB_LAUNCH", post_launch)
+        self.assertIn("enqueue(job)", post_launch)
+
+    def test_shutdown_protects_worker_self_join(self):
+        dispatcher = next(text for text in _DISPATCHER_EXTRA
+                          if "pthread_join" in text)
+        shutdown = function_body(
+            dispatcher, 'extern "C" void tab5_wasm_dispatcher_shutdown(void)')
+        self.assertIn("pthread_equal", shutdown)
+        self.assertIn("pthread_detach", shutdown)
 
 
 if __name__ == "__main__":

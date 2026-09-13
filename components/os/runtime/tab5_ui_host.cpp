@@ -7,6 +7,7 @@
 #include "tab5_lifecycle_host.h"
 #include "tab5_package_mgr.h"
 #include "tab5_wasm_dispatcher.h"
+#include <algorithm>
 #include <cstring>
 
 #if defined(ESP_PLATFORM)
@@ -37,6 +38,21 @@
 #define LV_UNLOCK() (void)0
 #endif
 #define MAX_UI_HANDLES 128
+
+static tab5_err_t call_wasm_callback(tab5_wasm_app_instance_t *inst, const char *primary, const char *alias,
+                                     uint32_t argc, uint32_t *argv) __attribute__((unused));
+
+static tab5_err_t call_wasm_callback(tab5_wasm_app_instance_t *inst, const char *primary, const char *alias,
+                                     uint32_t argc, uint32_t *argv)
+{
+    tab5_err_t err = tab5_wasm_call_function(inst, primary, argc, argv);
+    if (err == TAB5_ERR_NOT_FOUND) {
+        if (alias != nullptr) {
+            err = tab5_wasm_call_function(inst, alias, argc, argv);
+        }
+    }
+    return err;
+}
 
 #if defined(ESP_PLATFORM)
 static const char *TAG = "tab5_ui_host";
@@ -113,16 +129,6 @@ static void tab5_ui_host_apply_layout_locked(void)
     }
 }
 
-static tab5_err_t call_wasm_callback(tab5_wasm_app_instance_t *wasm_inst, const char *primary, const char *alias,
-                                     uint32_t argc, uint32_t *argv)
-{
-    tab5_err_t err = tab5_wasm_call_function(wasm_inst, primary, argc, argv);
-    if (err == TAB5_ERR_NOT_FOUND) {
-        err = tab5_wasm_call_function(wasm_inst, alias, argc, argv);
-    }
-    return err;
-}
-
 static bool is_descendant_of(lv_obj_t *obj, lv_obj_t *ancestor)
 {
     while (obj != nullptr) {
@@ -177,8 +183,6 @@ static void destroy_snapshot_owned_views(tab5_app_context_t *owner)
         s_previous_gallery_owner = nullptr;
     }
 }
-
-void tab5_ui_host_generic_widget_event_cb(lv_event_t *e);
 
 static void on_app_bar_close_clicked(lv_event_t *e)
 {
@@ -256,7 +260,7 @@ tab5_err_t tab5_ui_host_create_app_screen(const char *app_name, tab5_app_context
     if (!LV_LOCK()) {
         return TAB5_ERR_TIMEOUT;
     }
-    memcpy(s_previous_handle_table, s_handle_table, sizeof(s_handle_table));
+    std::copy_n(s_handle_table, MAX_UI_HANDLES, s_previous_handle_table);
     s_previous_next_handle = s_next_handle;
     s_has_previous_handles = true;
     s_previous_camera_view = s_active_camera_view;
@@ -477,7 +481,7 @@ tab5_err_t tab5_ui_host_abort_app_screen(tab5_app_context_t *ctx)
     }
 
     if (s_has_previous_handles) {
-        memcpy(s_handle_table, s_previous_handle_table, sizeof(s_handle_table));
+        std::copy_n(s_previous_handle_table, MAX_UI_HANDLES, s_handle_table);
         s_next_handle = s_previous_next_handle;
     } else {
         tab5_ui_host_clear_handles();
@@ -898,7 +902,7 @@ void tab5_ui_host_generic_widget_event_cb(lv_event_t *e)
     } else if (code == LV_EVENT_VALUE_CHANGED || code == LV_EVENT_READY) {
         event_type = TAB5_UI_EVENT_VALUE_CHANGED;
         if (lv_obj_check_type(target, &lv_slider_class)) {
-            event_val = (int32_t)lv_slider_get_value(target);
+            event_val = lv_slider_get_value(target);
         } else if (lv_obj_check_type(target, &lv_switch_class)) {
             event_val = lv_obj_has_state(target, LV_STATE_CHECKED) ? 1 : 0;
         }
@@ -919,9 +923,12 @@ void tab5_ui_host_generic_widget_event_cb(lv_event_t *e)
         }
         if (app_ctx->is_wasm && app_ctx->wasm_instance != nullptr) {
             tab5_wasm_app_instance_t *wasm_inst = (tab5_wasm_app_instance_t *)app_ctx->wasm_instance;
-            uint32_t argv[3] = {(uint32_t)handle, (uint32_t)event_type, (uint32_t)event_val};
+            uint32_t argv[3] = {static_cast<uint32_t>(handle), event_type, static_cast<uint32_t>(event_val)};
             // dispatch post: argv is copied into the bounded job.
             (void)tab5_wasm_dispatch_post_call(wasm_inst, "tab5_app_on_ui_event", "on_ui_event", 3, argv);
+        } else if (app_ctx->is_wasm) {
+            // app_ctx->wasm_instance is absent; never call a native callback for WASM.
+            return;
         } else if (app_ctx->lifecycle.on_ui_event != nullptr) {
             app_ctx->lifecycle.on_ui_event(handle, event_type, event_val);
         }
@@ -974,7 +981,7 @@ void *tab5_ui_host_get_lv_obj(tab5_ui_obj_t handle)
 void tab5_ui_host_clear_handles(void)
 {
 #if HAVE_LVGL
-    memset(s_handle_table, 0, sizeof(s_handle_table));
+    std::fill_n(s_handle_table, MAX_UI_HANDLES, nullptr);
     s_next_handle = 1;
 #endif
 }
@@ -1024,9 +1031,9 @@ tab5_ui_obj_t tab5_ui_host_container_create(tab5_ui_obj_t parent_handle)
 #endif
 }
 
+#if HAVE_LVGL
 static int32_t resolve_size(int32_t val)
 {
-#if HAVE_LVGL
     if (val == TAB5_UI_SIZE_CONTENT) {
         return LV_SIZE_CONTENT;
     }
@@ -1035,10 +1042,8 @@ static int32_t resolve_size(int32_t val)
         return lv_pct(pct);
     }
     return val;
-#else
-    return val;
-#endif
 }
+#endif
 
 tab5_err_t tab5_ui_host_obj_set_size(tab5_ui_obj_t obj_handle, int32_t w, int32_t h)
 {
@@ -1094,7 +1099,7 @@ tab5_err_t tab5_ui_host_obj_scroll_to_bottom(tab5_ui_obj_t obj_handle, bool anim
         LV_UNLOCK();
         return TAB5_ERR_INVALID_ARG;
     }
-    lv_obj_scroll_to_y(obj, LV_COORD_MAX, animated ? LV_ANIM_ON : LV_ANIM_OFF);
+    lv_obj_scroll_to_y(obj, LV_COORD_MAX, animated);
     LV_UNLOCK();
     return TAB5_OK;
 #else
@@ -1113,7 +1118,7 @@ tab5_err_t tab5_ui_host_obj_scroll_to_top(tab5_ui_obj_t obj_handle, bool animate
         LV_UNLOCK();
         return TAB5_ERR_INVALID_ARG;
     }
-    lv_obj_scroll_to_y(obj, 0, animated ? LV_ANIM_ON : LV_ANIM_OFF);
+    lv_obj_scroll_to_y(obj, 0, animated);
     LV_UNLOCK();
     return TAB5_OK;
 #else
@@ -1538,7 +1543,7 @@ int32_t tab5_ui_host_slider_get_value(tab5_ui_obj_t obj_handle)
         LV_UNLOCK();
         return 0;
     }
-    int32_t res = (int32_t)lv_slider_get_value(obj);
+    int32_t res = lv_slider_get_value(obj);
     LV_UNLOCK();
     return res;
 #else
@@ -1697,7 +1702,6 @@ uint32_t tab5_ui_host_theme_get_color(uint32_t color_id)
     }
     switch (color_id) {
     case 0:
-        return pal->accent;
     case 1:
         return pal->accent;
     case 2:

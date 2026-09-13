@@ -11,9 +11,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
+#include <unordered_map>
+#include <mutex>
+#include <new>
 #include <pthread.h>
 
-static const char *TAG = "tab5_wasm";
+static const char *TAG __attribute__((unused)) = "tab5_wasm";
 
 /* Implementado pelo package manager; mantido como chokepoint pós-retorno para
  * que lifecycle/UI de uma app antiga não sejam destruídos no callback. */
@@ -44,6 +47,28 @@ extern "C" tab5_err_t tab5_package_mgr_close_active(void);
 #endif
 
 static bool s_runtime_initialized = false;
+
+/* The registry is the first ownership boundary.  A dispatcher never probes
+ * state_mutex from a raw pointer: it first obtains a token from this table.
+ * The token keeps dispatch_refs non-zero until the worker has released it. */
+static std::mutex s_instance_registry_mutex;
+static std::unordered_map<tab5_wasm_app_instance_t *, bool> s_instance_registry;
+
+struct tab5_wasm_dispatch_token {
+    tab5_wasm_app_instance_t *instance;
+};
+
+static void register_instance(tab5_wasm_app_instance_t *inst)
+{
+    std::lock_guard<std::mutex> lock(s_instance_registry_mutex);
+    s_instance_registry[inst] = true;
+}
+
+static void unregister_instance(tab5_wasm_app_instance_t *inst)
+{
+    std::lock_guard<std::mutex> lock(s_instance_registry_mutex);
+    s_instance_registry.erase(inst);
+}
 
 static pthread_mutex_t *instance_mutex(tab5_wasm_app_instance_t *inst)
 {
@@ -81,6 +106,56 @@ static bool init_instance_mutex(tab5_wasm_app_instance_t *inst)
     }
     inst->state_cond = cond;
     return true;
+}
+
+extern "C" tab5_wasm_dispatch_token_t *tab5_wasm_dispatch_token_acquire(tab5_wasm_app_instance_t *inst,
+                                                                        uint32_t *out_generation)
+{
+    if (inst == nullptr)
+        return nullptr;
+    std::lock_guard<std::mutex> registry_lock(s_instance_registry_mutex);
+    if (s_instance_registry.count(inst) == 0) // NOLINT(readability-container-contains)
+        return nullptr;
+    instance_lock(inst);
+    if (!inst->is_running || inst->unload_pending) {
+        instance_unlock(inst);
+        return nullptr;
+    }
+    auto *token = new (std::nothrow) tab5_wasm_dispatch_token_t{inst};
+    if (token == nullptr) {
+        instance_unlock(inst);
+        return nullptr;
+    }
+    ++inst->dispatch_refs;
+    if (out_generation != nullptr)
+        *out_generation = inst->generation;
+    instance_unlock(inst);
+    return token;
+}
+
+extern "C" void tab5_wasm_dispatch_token_release(tab5_wasm_dispatch_token_t *token)
+{
+    if (token == nullptr)
+        return;
+    tab5_wasm_app_instance_t *inst = token->instance;
+    instance_lock(inst);
+    if (inst->dispatch_refs > 0)
+        --inst->dispatch_refs;
+    if (inst->dispatch_refs == 0 && inst->call_depth == 0 && instance_cond(inst) != nullptr)
+        pthread_cond_broadcast(instance_cond(inst));
+    instance_unlock(inst);
+    delete token;
+}
+
+extern "C" bool tab5_wasm_dispatch_token_validate(const tab5_wasm_dispatch_token_t *token, uint32_t generation)
+{
+    if (token == nullptr || token->instance == nullptr)
+        return false;
+    auto *inst = token->instance;
+    instance_lock(inst);
+    const bool valid = inst->is_running && !inst->unload_pending && inst->generation == generation;
+    instance_unlock(inst);
+    return valid;
 }
 static void destroy_instance_mutex(tab5_wasm_app_instance_t *inst)
 {
@@ -136,20 +211,26 @@ static void release_call(tab5_wasm_app_instance_t *inst)
         if (--s_admitted_depth == 0)
             s_admitted_instance = nullptr;
     }
+    /* Direct calls have no dispatcher token to run the post-job epilogue.
+     * Complete a deferred unload when the final admission leaves. */
+    if (tab5_wasm_instance_unload_pending(inst) && tab5_wasm_instance_call_depth(inst) == 0 &&
+        !tab5_wasm_dispatcher_is_current_instance(inst)) {
+        (void)tab5_wasm_unload(inst);
+    }
 }
 
-extern "C" bool tab5_wasm_instance_snapshot(const tab5_wasm_app_instance_t *raw, bool *out_running,
+extern "C" bool tab5_wasm_instance_snapshot(const tab5_wasm_app_instance_t *inst, bool *out_running,
                                             uint32_t *out_generation)
 {
-    auto *inst = const_cast<tab5_wasm_app_instance_t *>(raw);
-    if (inst == nullptr || instance_mutex(inst) == nullptr)
+    auto *mutable_inst = const_cast<tab5_wasm_app_instance_t *>(inst);
+    if (mutable_inst == nullptr || instance_mutex(mutable_inst) == nullptr)
         return false;
-    instance_lock(inst);
+    instance_lock(mutable_inst);
     if (out_running)
-        *out_running = inst->is_running && !inst->unload_pending;
+        *out_running = mutable_inst->is_running && !mutable_inst->unload_pending;
     if (out_generation)
-        *out_generation = inst->generation;
-    instance_unlock(inst);
+        *out_generation = mutable_inst->generation;
+    instance_unlock(mutable_inst);
     return true;
 }
 extern "C" bool tab5_wasm_instance_is_running(const tab5_wasm_app_instance_t *inst)
@@ -157,24 +238,24 @@ extern "C" bool tab5_wasm_instance_is_running(const tab5_wasm_app_instance_t *in
     bool running = false;
     return tab5_wasm_instance_snapshot(inst, &running, nullptr) && running;
 }
-extern "C" uint32_t tab5_wasm_instance_call_depth(const tab5_wasm_app_instance_t *raw)
+extern "C" uint32_t tab5_wasm_instance_call_depth(const tab5_wasm_app_instance_t *inst)
 {
-    auto *inst = const_cast<tab5_wasm_app_instance_t *>(raw);
-    if (inst == nullptr || instance_mutex(inst) == nullptr)
+    auto *mutable_inst = const_cast<tab5_wasm_app_instance_t *>(inst);
+    if (mutable_inst == nullptr || instance_mutex(mutable_inst) == nullptr)
         return 0;
-    instance_lock(inst);
-    uint32_t depth = inst->call_depth;
-    instance_unlock(inst);
+    instance_lock(mutable_inst);
+    uint32_t depth = mutable_inst->call_depth;
+    instance_unlock(mutable_inst);
     return depth;
 }
-extern "C" bool tab5_wasm_instance_unload_pending(const tab5_wasm_app_instance_t *raw)
+extern "C" bool tab5_wasm_instance_unload_pending(const tab5_wasm_app_instance_t *inst)
 {
-    auto *inst = const_cast<tab5_wasm_app_instance_t *>(raw);
-    if (inst == nullptr || instance_mutex(inst) == nullptr)
+    auto *mutable_inst = const_cast<tab5_wasm_app_instance_t *>(inst);
+    if (mutable_inst == nullptr || instance_mutex(mutable_inst) == nullptr)
         return false;
-    instance_lock(inst);
-    bool pending = inst->unload_pending;
-    instance_unlock(inst);
+    instance_lock(mutable_inst);
+    bool pending = mutable_inst->unload_pending;
+    instance_unlock(mutable_inst);
     return pending;
 }
 
@@ -306,6 +387,7 @@ static tab5_err_t tab5_wasm_load_from_bytes_direct(const uint8_t *bytes, size_t 
         memset(out_inst, 0, sizeof(*out_inst));
         return TAB5_ERR_NO_MEM;
     }
+    register_instance(out_inst);
 
     LOG_I("App Wasm %s instanciada com sucesso (Stack=%u, Heap=%u)", out_inst->app_id[0] ? out_inst->app_id : "unnamed",
           (unsigned)real_stack, (unsigned)real_heap);
@@ -404,6 +486,7 @@ tab5_err_t tab5_wasm_load_from_bytes(const uint8_t *bytes, size_t size, uint32_t
         memset(out_inst, 0, sizeof(*out_inst));
         return TAB5_ERR_NO_MEM;
     }
+    register_instance(out_inst);
     return TAB5_OK;
 #endif
 }
@@ -425,7 +508,7 @@ tab5_err_t tab5_wasm_load_from_file(const char *wasm_path, uint32_t stack_size, 
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    if (fsize <= 0 || fsize > 8 * 1024 * 1024) {
+    if (fsize <= 0 || fsize > 8L * 1024L * 1024L) {
         fclose(f);
         LOG_E("Tamanho invalido do arquivo Wasm: %ld bytes", fsize);
         return TAB5_ERR_INVALID_ARG;
@@ -565,7 +648,10 @@ extern "C" tab5_err_t tab5_wasm_select_entrypoint(tab5_wasm_app_instance_t *inst
 }
 #endif
 
-tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *func_name, uint32_t argc, uint32_t *argv)
+// argv é mutado pelo dispatch WAMR (retorno de argumentos); permanece não-const
+// mesmo no TU host, que não compila o backend WAMR.
+tab5_err_t tab5_wasm_call_function(tab5_wasm_app_instance_t *inst, const char *func_name, uint32_t argc,
+                                   uint32_t *argv) // NOLINT(readability-non-const-parameter)
 {
     if (inst == nullptr || func_name == nullptr) {
         return TAB5_ERR_INVALID_ARG;
@@ -630,6 +716,12 @@ tab5_err_t tab5_wasm_call_string_function(tab5_wasm_app_instance_t *inst, const 
     }
     wasm_runtime_module_free(module_inst, offset);
     release_call(inst);
+    /* Self-unload is completed only after this admission is released.  If the
+     * current dispatch token is still held, tab5_wasm_unload intentionally
+     * defers the final pass to the dispatcher post-token epilogue. */
+    if (tab5_wasm_instance_unload_pending(inst))
+        (void)tab5_wasm_unload(inst);
+    tab5_package_mgr_process_pending_close();
     return result;
 #else
     // O stub de host não instancia WAMR; mantém o contrato de chamada
@@ -659,23 +751,28 @@ tab5_err_t tab5_wasm_unload(tab5_wasm_app_instance_t *inst)
     inst->unload_pending = true;
     ++inst->generation;
     uint32_t call_depth = inst->call_depth;
-    bool unload_pending = inst->unload_pending;
+    /* Keep compatibility with the lifecycle callback contract: a callback
+     * that is represented only by call_depth (legacy/manual host fixtures)
+     * has no admission token for this thread, so teardown is deferred. Real
+     * calls always increment active_admissions and are waited below. */
     if (call_depth > 0) {
-        if (!unload_pending)
-            inst->unload_pending = true;
-        if (unload_pending || inst->unload_pending) {
-            if (s_admitted_instance == inst) {
-                instance_unlock(inst);
-                return TAB5_OK;
-            }
-            if (inst->active_admissions == 0) {
-                instance_unlock(inst);
-                return TAB5_OK;
-            }
-            while (inst->call_depth != 0)
-                pthread_cond_wait(instance_cond(inst), instance_mutex(inst));
+        if (inst->active_admissions == 0) {
+            instance_unlock(inst);
+            return TAB5_OK;
         }
     }
+    instance_unlock(inst);
+
+    /* Remove queued tokens after stopping admission.  The worker that already
+     * crossed the boundary is covered by call_depth and dispatch_refs. */
+    tab5_wasm_dispatcher_cancel_instance(inst);
+    instance_lock(inst);
+    if (s_admitted_instance == inst || tab5_wasm_dispatcher_is_current_instance(inst)) {
+        instance_unlock(inst);
+        return TAB5_OK;
+    }
+    while (inst->call_depth != 0 || inst->dispatch_refs != 0)
+        pthread_cond_wait(instance_cond(inst), instance_mutex(inst));
     instance_unlock(inst);
 
 #if HAVE_WAMR
@@ -704,6 +801,7 @@ tab5_err_t tab5_wasm_unload(tab5_wasm_app_instance_t *inst)
     instance_lock(inst);
     inst->unload_pending = false;
     instance_unlock(inst);
+    unregister_instance(inst);
     destroy_instance_mutex(inst);
     LOG_I("App Wasm %s descarregada com sucesso", inst->app_id[0] ? inst->app_id : "unnamed");
     return TAB5_OK;
@@ -711,8 +809,11 @@ tab5_err_t tab5_wasm_unload(tab5_wasm_app_instance_t *inst)
 
 void tab5_wasm_runtime_destroy(void)
 {
-    (void)tab5_package_mgr_close_active();
+    /* Stop and join the dispatcher first.  Otherwise a queued JOB_LAUNCH can
+     * enter package_mgr_launch_direct while close_active() is tearing down the
+     * active runtime. */
     tab5_wasm_dispatcher_shutdown();
+    (void)tab5_package_mgr_close_active();
 #if HAVE_WAMR
     if (s_runtime_initialized) {
         wasm_runtime_destroy();

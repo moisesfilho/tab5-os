@@ -165,7 +165,10 @@ bool tab5_storage_mgr_has_enough_sd_space(uint64_t required_bytes)
     }
     // Reserva de segurança de 512 KB
     uint64_t safety_margin = 512ULL * 1024ULL;
-    return (stats.free_bytes >= (required_bytes + safety_margin));
+    if (stats.free_bytes < safety_margin) {
+        return false;
+    }
+    return required_bytes <= (stats.free_bytes - safety_margin);
 }
 
 std::vector<tab5_app_storage_item_t> tab5_storage_mgr_list_installed_apps(void)
@@ -211,7 +214,7 @@ std::vector<tab5_app_storage_item_t> tab5_storage_mgr_list_installed_apps(void)
             size_t slash_pos = name.find('/');
             std::string pkg_name = (slash_pos != std::string::npos) ? name.substr(0, slash_pos) : name;
 
-            if (inspected_dirs.count(pkg_name) > 0) {
+            if (inspected_dirs.contains(pkg_name)) {
                 continue;
             }
             inspected_dirs.insert(pkg_name);

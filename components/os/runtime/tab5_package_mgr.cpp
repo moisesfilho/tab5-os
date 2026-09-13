@@ -15,6 +15,7 @@
 #include <map>
 #include <set>
 #include <memory>
+#include <mutex>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -47,7 +48,7 @@ static size_t parse_octal(const char *str, size_t max_len)
 
 static int package_lstat(const char *path, struct stat *st)
 {
-#if defined(TAB5_SIM)
+#ifdef TAB5_SIM
     return lstat(path, st);
 #else
     return stat(path, st);
@@ -335,6 +336,8 @@ struct DynamicAppEntry {
 static std::map<std::string, std::unique_ptr<DynamicAppEntry>> s_dynamic_apps;
 static DynamicAppEntry *s_running_dynamic_app = nullptr;
 static DynamicAppEntry *s_pending_close_app = nullptr;
+/* Single ownership boundary for registry, contexts and active instance. */
+static std::recursive_mutex s_package_mutex;
 
 static bool copy_file_contents(const char *src_path, const char *dst_path)
 {
@@ -420,12 +423,14 @@ static size_t s_slot_count = 0;
 template <size_t Index> struct AppSlot {
     static void launch()
     {
+        std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
         if (Index < s_slot_count && s_slot_app_ids[Index][0] != '\0') {
             on_dynamic_app_launch(s_slot_app_ids[Index]);
         }
     }
     static void open_file(const char *filepath)
     {
+        std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
         if (Index < s_slot_count && s_slot_app_ids[Index][0] != '\0') {
             on_dynamic_app_open_file(s_slot_app_ids[Index], filepath);
         }
@@ -449,6 +454,7 @@ static const struct {
 
 tab5_err_t tab5_package_mgr_init(void)
 {
+    std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
 #ifdef ESP_PLATFORM
     esp_vfs_spiffs_conf_t conf = {.base_path = TAB5_APPS_EMBEDDED_DIR,
                                   .partition_label = "apps",
@@ -548,6 +554,7 @@ static tab5_err_t register_dynamic_app_entry(const tab5_manifest_t &manifest, co
 
 tab5_err_t tab5_package_mgr_install(const char *source_path, char *out_app_id, size_t id_buf_size)
 {
+    std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
     if (source_path == nullptr) {
         return TAB5_ERR_INVALID_ARG;
     }
@@ -669,6 +676,7 @@ tab5_err_t tab5_package_mgr_install(const char *source_path, char *out_app_id, s
 
 tab5_err_t tab5_package_mgr_uninstall(const char *app_id, bool delete_user_data)
 {
+    std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
     if (app_id == nullptr || app_id[0] == '\0') {
         return TAB5_ERR_INVALID_ARG;
     }
@@ -721,8 +729,7 @@ static int scan_directory_and_register(const char *base_dir, bool is_embedded)
         std::string name = entry->d_name;
         size_t slash_pos = name.find('/');
         std::string pkg_name = (slash_pos != std::string::npos) ? name.substr(0, slash_pos) : name;
-
-        if (inspected_dirs.count(pkg_name) > 0) {
+        if (inspected_dirs.count(pkg_name) > 0) { // NOLINT(readability-container-contains)
             continue;
         }
         inspected_dirs.insert(pkg_name);
@@ -762,6 +769,7 @@ static int scan_directory_and_register(const char *base_dir, bool is_embedded)
 
 int tab5_package_mgr_scan_and_register_all(void)
 {
+    std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
     int embedded_count = scan_directory_and_register(TAB5_APPS_EMBEDDED_DIR, true);
     int sd_count = scan_directory_and_register(TAB5_APPS_INSTALLED_DIR, false);
     (void)embedded_count;
@@ -772,6 +780,7 @@ int tab5_package_mgr_scan_and_register_all(void)
 
 tab5_err_t tab5_package_mgr_get_app_info(const char *app_id, tab5_installed_app_info_t *out_info)
 {
+    std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
     if (app_id == nullptr || out_info == nullptr) {
         return TAB5_ERR_INVALID_ARG;
     }
@@ -789,6 +798,7 @@ tab5_err_t tab5_package_mgr_get_app_info(const char *app_id, tab5_installed_app_
 
 extern "C" tab5_err_t tab5_package_mgr_launch_direct(const char *app_id, const char *open_file_path)
 {
+    std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
     if (app_id == nullptr) {
         return TAB5_ERR_INVALID_ARG;
     }
@@ -923,17 +933,34 @@ extern "C" tab5_err_t tab5_package_mgr_launch(const char *app_id, const char *op
     if (app_id == nullptr) {
         return TAB5_ERR_INVALID_ARG;
     }
-    if (s_dynamic_apps.find(app_id) == s_dynamic_apps.end()) {
-        return TAB5_ERR_NOT_FOUND;
+    {
+        /* Admission uses the package -> registry order used by install,
+         * scan and uninstall. Do not hold it while waiting for the worker:
+         * launch_direct acquires it and the host facade waits for that worker. */
+        std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
+        if (s_dynamic_apps.find(app_id) == s_dynamic_apps.end()) { // NOLINT(readability-container-contains)
+            return TAB5_ERR_NOT_FOUND;
+        }
     }
     // The worker performs tab5_lifecycle_host_resume_app(&entry->host_ctx)
     // before tab5_package_mgr_close_active(); UI callers return immediately.
     // dispatch post: app_id and open_file_path are copied by value.
-    return tab5_wasm_dispatch_post_launch(app_id, open_file_path);
+    const tab5_err_t result = tab5_wasm_dispatch_post_launch(app_id, open_file_path);
+#ifndef ESP_PLATFORM
+    /* Host callers historically use this API as a synchronous test/runtime
+     * facade.  Keep that observable contract while still routing the launch
+     * through the same worker and launch gate used by ESP. */
+    if (result == TAB5_OK) {
+        (void)tab5_wasm_dispatcher_wait_idle(1000);
+        tab5_wasm_dispatcher_shutdown();
+    }
+#endif
+    return result;
 }
 
 tab5_err_t tab5_package_mgr_close_active(void)
 {
+    std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
     if (s_running_dynamic_app == nullptr) {
         return TAB5_OK;
     }
@@ -958,6 +985,7 @@ tab5_err_t tab5_package_mgr_close_active(void)
 
 extern "C" void tab5_package_mgr_process_pending_close(void)
 {
+    std::lock_guard<std::recursive_mutex> lock(s_package_mutex);
     DynamicAppEntry *entry = s_pending_close_app;
     if (entry == nullptr || tab5_wasm_instance_call_depth(&entry->wasm_inst) != 0) {
         return;

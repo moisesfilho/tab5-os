@@ -6,6 +6,9 @@
 #include <cstring>
 #include <cstdio>
 #include <sys/stat.h>
+#include <atomic>
+#include <thread>
+#include <filesystem>
 
 class PackageMgrTest : public ::testing::Test {
   protected:
@@ -53,9 +56,10 @@ TEST_F(PackageMgrTest, InstallLaunchAndUninstallApp)
     EXPECT_STREQ(installed_id, "com.tab5.sample");
 
     // Verifica se foi registrado no app_registry
-    const app_desc_t *desc = app_registry_find_by_id("com.tab5.sample");
-    ASSERT_NE(desc, nullptr);
-    EXPECT_STREQ(desc->name, "Sample App");
+    app_desc_t desc = {};
+    ASSERT_EQ(app_registry_find_by_id("com.tab5.sample", &desc), ESP_OK);
+    EXPECT_STREQ(desc.name, "Sample App");
+    app_registry_release_snapshot(&desc);
 
     // 3. Consulta de informações
     tab5_installed_app_info_t info = {};
@@ -72,7 +76,7 @@ TEST_F(PackageMgrTest, InstallLaunchAndUninstallApp)
 
     // 5. Desinstalação
     EXPECT_EQ(tab5_package_mgr_uninstall("com.tab5.sample", true), TAB5_OK);
-    EXPECT_EQ(app_registry_find_by_id("com.tab5.sample"), nullptr);
+    EXPECT_EQ(app_registry_find_by_id("com.tab5.sample", &desc), ESP_ERR_NOT_FOUND);
 }
 
 TEST_F(PackageMgrTest, ScanInstalledApps)
@@ -106,8 +110,11 @@ TEST_F(PackageMgrTest, ScanInstalledApps)
 
     int registered = tab5_package_mgr_scan_and_register_all();
     EXPECT_GE(registered, 2);
-    EXPECT_NE(app_registry_find_by_id("com.tab5.app1"), nullptr);
-    EXPECT_NE(app_registry_find_by_id("com.tab5.app2"), nullptr);
+    app_desc_t desc = {};
+    EXPECT_EQ(app_registry_find_by_id("com.tab5.app1", &desc), ESP_OK);
+    app_registry_release_snapshot(&desc);
+    EXPECT_EQ(app_registry_find_by_id("com.tab5.app2", &desc), ESP_OK);
+    app_registry_release_snapshot(&desc);
 
     tab5_package_mgr_uninstall("com.tab5.app1", false);
     tab5_package_mgr_uninstall("com.tab5.app2", false);
@@ -133,7 +140,8 @@ TEST_F(PackageMgrTest, MissingWasmLaunchFailsWithoutActivation)
     // Instalação é rejeitada pela validação de entry/app.wasm.
     EXPECT_EQ(tab5_package_mgr_install(app_dir.c_str(), app_id, sizeof(app_id)), TAB5_ERR_INVALID_ARG);
     // O pacote inválido não vaza para o desktop: nada foi registrado.
-    EXPECT_EQ(app_registry_find_by_id("com.tab5.previous"), nullptr);
+    app_desc_t desc = {};
+    EXPECT_EQ(app_registry_find_by_id("com.tab5.previous", &desc), ESP_ERR_NOT_FOUND);
 
     // Launch de uma app cujo pacote foi rejeitado falha SEM ativar/alterar a
     // app atualmente em foco.
@@ -192,6 +200,14 @@ TEST_F(PackageMgrTest, EmbeddedAppPrecedence)
 
 static std::string find_sdk_file(const char *rel_path)
 {
+    const std::filesystem::path source_root =
+        std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path();
+    const std::filesystem::path from_source = source_root / rel_path;
+    FILE *source_file = fopen(from_source.c_str(), "r");
+    if (source_file != nullptr) {
+        fclose(source_file);
+        return from_source.string();
+    }
     const char *prefixes[] = {"", "../../", "../", "../../../"};
     for (const char *p : prefixes) {
         std::string candidate = std::string(p) + rel_path;
@@ -259,4 +275,56 @@ TEST_F(PackageMgrTest, InvalidPackageOperationsReturnErrors)
 
     tab5_installed_app_info_t info = {};
     EXPECT_NE(tab5_package_mgr_get_app_info("com.tab5.no-such-app", &info), TAB5_OK);
+}
+
+TEST_F(PackageMgrTest, LaunchAndUninstallSerializeWithoutDeadlock)
+{
+    const std::string app_dir = std::string(TAB5_APPS_INSTALLED_DIR) + "/com.tab5.concurrent";
+    ASSERT_EQ(mkdir(app_dir.c_str(), 0755), 0);
+    FILE *manifest = fopen((app_dir + "/manifest.json").c_str(), "w");
+    ASSERT_NE(manifest, nullptr);
+    fputs("{\"id\":\"com.tab5.concurrent\",\"name\":\"Concurrent\","
+          "\"version\":\"1.0.0\",\"entry\":\"app.wasm\"}",
+          manifest);
+    fclose(manifest);
+    FILE *wasm = fopen((app_dir + "/app.wasm").c_str(), "wb");
+    ASSERT_NE(wasm, nullptr);
+    const uint8_t magic[] = {0, 'a', 's', 'm', 1, 0, 0, 0};
+    ASSERT_EQ(fwrite(magic, 1, sizeof(magic), wasm), sizeof(magic));
+    fclose(wasm);
+    ASSERT_GE(tab5_package_mgr_scan_and_register_all(), 1);
+
+    std::atomic<bool> go{false};
+    std::thread launcher([&] {
+        while (!go.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        (void)tab5_package_mgr_launch("com.tab5.concurrent", nullptr);
+    });
+    std::thread remover([&] {
+        while (!go.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        (void)tab5_package_mgr_uninstall("com.tab5.concurrent", true);
+    });
+    go.store(true, std::memory_order_release);
+    launcher.join();
+    remover.join();
+    app_desc_t desc = {};
+    EXPECT_EQ(app_registry_find_by_id("com.tab5.concurrent", &desc), ESP_ERR_NOT_FOUND);
+}
+
+TEST_F(PackageMgrTest, PublicArgumentValidationIsDeterministic)
+{
+    char app_id[64] = {};
+    tab5_manifest_t manifest = {};
+
+    EXPECT_NE(tab5_package_mgr_install(nullptr, app_id, sizeof(app_id)), TAB5_OK);
+    EXPECT_NE(tab5_package_mgr_install("missing", nullptr, sizeof(app_id)), TAB5_OK);
+    EXPECT_NE(tab5_package_mgr_install("missing", app_id, 0), TAB5_OK);
+    EXPECT_NE(tab5_package_mgr_get_app_info(nullptr, nullptr), TAB5_OK);
+    EXPECT_FALSE(tab5_package_read_manifest_from_tar(nullptr, &manifest));
+    EXPECT_FALSE(tab5_package_read_manifest_from_tar("missing", nullptr));
+    EXPECT_FALSE(tab5_package_extract_tar(nullptr, "dest"));
+    EXPECT_FALSE(tab5_package_extract_tar("missing", nullptr));
 }

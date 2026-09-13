@@ -122,10 +122,11 @@ static void app_tile_click_cb(lv_event_t *event)
     }
     const char *app_id = static_cast<const char *>(lv_event_get_user_data(event));
     if (app_id != nullptr) {
-        const app_desc_t *app = app_registry_find_by_id(app_id);
-        if (app != nullptr && app->on_launch != nullptr) {
-            app->on_launch();
+        app_desc_t app = {};
+        if (app_registry_find_by_id(app_id, &app) == ESP_OK && app.on_launch != nullptr) {
+            app.on_launch();
         }
+        app_registry_release_snapshot(&app);
     }
 }
 
@@ -149,7 +150,7 @@ void apply_desktop_theme(void)
                 continue;
             }
 
-            const app_desc_t &app = apps[i];
+            const auto &app = apps[i];
             lv_obj_t *icon_box = lv_obj_get_child(tile, 0);
             lv_obj_t *app_label = lv_obj_get_child(tile, 1);
 

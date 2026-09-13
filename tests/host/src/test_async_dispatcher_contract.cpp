@@ -3,15 +3,9 @@
 //   1. Teardown idempotente/único: duas chamadas consecutivas de
 //      tab5_wasm_unload liberam o bytecode uma única vez (nenhum double-free
 //      nem teardown paralelo introduzido pelo dispatcher).
-//   2. Geração/época por instância: quando o marcador existir na struct, o
-//      unload precisa INVALIDAR eventos antigos postados (geração muda) e as
-//      chamadas em voo precisam MANTER a geração estável — é o que permite ao
-//      worker rejeitar jobs de instância já fechada.
-//
-// Os testes que dependem do marcador de geração usam detecção em tempo de
-// compilação (trait + if constexpr) para não quebrar o build do host enquanto
-// a implementação não chega; ficam SKIP até o campo existir. A verificação
-// autoritativa (fonte) está em ../test_async_dispatcher_contract.py.
+//   2. Geração/época por instância: unload invalida tokens antigos e chamadas
+//      admitidas mantêm a geração estável — o worker pode assim rejeitar jobs
+//      de uma instância já fechada.
 //
 // Limite do ambiente: HAVE_WAMR=0/HAVE_LVGL=0 — o host não instancia WAMR nem
 // cria worker/fila reais; a semântica de join/worker/fila exige alvo ESP-IDF.
@@ -21,7 +15,8 @@
 
 #include <cstdint>
 #include <cstring>
-#include <type_traits>
+#include <atomic>
+#include <thread>
 
 #include "tab5_host_abi.h"
 #include "tab5_wasm_runtime.h"
@@ -38,46 +33,11 @@ template <typename Inst> void load_sample(Inst &inst)
     ASSERT_NE(inst.wasm_buf, nullptr);
 }
 
-template <typename T, typename = void> struct HasGeneration : std::false_type {};
-template <typename T> struct HasGeneration<T, std::void_t<decltype(T::generation)>> : std::true_type {};
-
-template <typename T, typename = void> struct HasDispatchGeneration : std::false_type {};
-template <typename T>
-struct HasDispatchGeneration<T, std::void_t<decltype(T::dispatch_generation)>> : std::true_type {};
-
-template <typename T, typename = void> struct HasStateEpoch : std::false_type {};
-template <typename T> struct HasStateEpoch<T, std::void_t<decltype(T::state_epoch)>> : std::true_type {};
-
-template <typename T, typename = void> struct HasInstanceEpoch : std::false_type {};
-template <typename T> struct HasInstanceEpoch<T, std::void_t<decltype(T::instance_epoch)>> : std::true_type {};
-
-template <typename T, typename = void> struct HasActiveEpoch : std::false_type {};
-template <typename T> struct HasActiveEpoch<T, std::void_t<decltype(T::active_epoch)>> : std::true_type {};
-
-template <typename T, typename = void> struct HasEpoch : std::false_type {};
-template <typename T> struct HasEpoch<T, std::void_t<decltype(T::epoch)>> : std::true_type {};
-
-template <typename T>
-inline constexpr bool kHasGenerationMarker =
-    HasGeneration<T>::value || HasDispatchGeneration<T>::value || HasStateEpoch<T>::value ||
-    HasInstanceEpoch<T>::value || HasActiveEpoch<T>::value || HasEpoch<T>::value;
-
-template <typename T> uint64_t read_generation(const T &inst)
+uint32_t read_generation(const tab5_wasm_app_instance_t &inst)
 {
-    if constexpr (HasGeneration<T>::value) {
-        return static_cast<uint64_t>(inst.generation);
-    } else if constexpr (HasDispatchGeneration<T>::value) {
-        return static_cast<uint64_t>(inst.dispatch_generation);
-    } else if constexpr (HasStateEpoch<T>::value) {
-        return static_cast<uint64_t>(inst.state_epoch);
-    } else if constexpr (HasInstanceEpoch<T>::value) {
-        return static_cast<uint64_t>(inst.instance_epoch);
-    } else if constexpr (HasActiveEpoch<T>::value) {
-        return static_cast<uint64_t>(inst.active_epoch);
-    } else if constexpr (HasEpoch<T>::value) {
-        return static_cast<uint64_t>(inst.epoch);
-    }
-    return 0u;
+    uint32_t generation = 0;
+    EXPECT_TRUE(tab5_wasm_instance_snapshot(&inst, nullptr, &generation));
+    return generation;
 }
 
 } // namespace
@@ -89,45 +49,43 @@ TEST(AsyncDispatcherContract, DoubleUnloadFreesBytecodeExactlyOnce)
 
     ASSERT_EQ(tab5_wasm_unload(&inst), TAB5_OK);
     EXPECT_EQ(inst.wasm_buf, nullptr);
-    EXPECT_FALSE(inst.is_running);
+    EXPECT_FALSE(tab5_wasm_instance_is_running(&inst));
 
     // Teardown repetido (ex.: job em voo + unload do package manager) precisa
     // ser idempotente: nada a liberar, sem double-free.
     ASSERT_EQ(tab5_wasm_unload(&inst), TAB5_OK);
     EXPECT_EQ(inst.wasm_buf, nullptr);
-    EXPECT_FALSE(inst.is_running);
+    EXPECT_FALSE(tab5_wasm_instance_is_running(&inst));
 }
 
 TEST(AsyncDispatcherContract, UnloadInvalidatesInstanceGeneration)
 {
-    if constexpr (!kHasGenerationMarker<tab5_wasm_app_instance_t>) {
-        GTEST_SKIP() << "marcador de geração/época ainda não implementado na struct "
-                        "tab5_wasm_app_instance_t";
-    }
-
     tab5_wasm_app_instance_t inst = {};
     load_sample(inst);
-    const uint64_t before = read_generation(inst);
-
-    ASSERT_EQ(tab5_wasm_unload(&inst), TAB5_OK);
-    EXPECT_NE(read_generation(inst), before) << "unload precisa invalidar eventos antigos postados para esta instância";
+    uint32_t before = 0;
+    auto *token = tab5_wasm_dispatch_token_acquire(&inst, &before);
+    ASSERT_NE(token, nullptr);
+    std::thread unloader([&] { EXPECT_EQ(tab5_wasm_unload(&inst), TAB5_OK); });
+    while (tab5_wasm_dispatch_token_validate(token, before))
+        std::this_thread::yield();
+    EXPECT_FALSE(tab5_wasm_dispatch_token_validate(token, before))
+        << "unload precisa invalidar eventos antigos postados para esta instância";
+    tab5_wasm_dispatch_token_release(token);
+    unloader.join();
+    EXPECT_EQ(inst.wasm_buf, nullptr);
 }
 
 TEST(AsyncDispatcherContract, InFlightCallKeepsGenerationStable)
 {
-    if constexpr (!kHasGenerationMarker<tab5_wasm_app_instance_t>) {
-        GTEST_SKIP() << "marcador de geração/época ainda não implementado na struct "
-                        "tab5_wasm_app_instance_t";
-    }
-
     tab5_wasm_app_instance_t inst = {};
     load_sample(inst);
 
     EXPECT_EQ(tab5_wasm_call_function(&inst, "noop", 0, nullptr), TAB5_OK);
-    const uint64_t generation = read_generation(inst);
+    const uint32_t generation = read_generation(inst);
 
     EXPECT_EQ(tab5_wasm_call_function(&inst, "noop", 0, nullptr), TAB5_OK);
     EXPECT_EQ(read_generation(inst), generation) << "chamadas em voo não podem alterar a geração da instância";
+    ASSERT_EQ(tab5_wasm_unload(&inst), TAB5_OK);
 }
 
 TEST(AsyncDispatcherContract, QueueLifecycleRejectsStaleJobsAndAcceptsBoundedInputs)
@@ -147,6 +105,31 @@ TEST(AsyncDispatcherContract, QueueLifecycleRejectsStaleJobsAndAcceptsBoundedInp
     tab5_wasm_dispatcher_shutdown();
 }
 
+TEST(AsyncDispatcherContract, DequeueValidationRejectsGenerationChangedBeforeExecution)
+{
+    tab5_wasm_app_instance_t inst = {};
+    load_sample(inst);
+    uint32_t generation = 0;
+    auto *token = tab5_wasm_dispatch_token_acquire(&inst, &generation);
+    ASSERT_NE(token, nullptr);
+
+    // Unload owns the lifecycle transition and advances the generation while
+    // the admission token keeps the instance storage alive.
+    std::atomic<bool> unload_started = false;
+    std::thread unloader([&] {
+        unload_started.store(true, std::memory_order_release);
+        EXPECT_EQ(tab5_wasm_unload(&inst), TAB5_OK);
+    });
+    while (!unload_started.load(std::memory_order_acquire))
+        std::this_thread::yield();
+    while (tab5_wasm_dispatch_token_validate(token, generation))
+        std::this_thread::yield();
+    EXPECT_FALSE(tab5_wasm_dispatch_token_validate(token, generation));
+    tab5_wasm_dispatch_token_release(token);
+    unloader.join();
+    EXPECT_EQ(inst.wasm_buf, nullptr);
+}
+
 TEST(AsyncDispatcherContract, RunningInstanceExecutesCallAndStringFallbacks)
 {
     tab5_wasm_app_instance_t running = {};
@@ -155,6 +138,8 @@ TEST(AsyncDispatcherContract, RunningInstanceExecutesCallAndStringFallbacks)
     ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
     EXPECT_TRUE(tab5_wasm_dispatch_post_call(&running, "missing", "fallback", 5, args));
     EXPECT_TRUE(tab5_wasm_dispatch_post_string(&running, "missing", "fallback", "payload"));
+    ASSERT_TRUE(tab5_wasm_dispatcher_wait_idle(1000));
+    ASSERT_EQ(tab5_wasm_unload(&running), TAB5_OK);
     tab5_wasm_dispatcher_shutdown();
 }
 
@@ -165,11 +150,66 @@ TEST(AsyncDispatcherContract, NullOptionalArgumentsAreSafe)
     ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
     EXPECT_TRUE(tab5_wasm_dispatch_post_call(&running, nullptr, nullptr, 0, nullptr));
     EXPECT_TRUE(tab5_wasm_dispatch_post_string(&running, nullptr, nullptr, nullptr));
+    ASSERT_TRUE(tab5_wasm_dispatcher_wait_idle(1000));
+    ASSERT_EQ(tab5_wasm_unload(&running), TAB5_OK);
     tab5_wasm_dispatcher_shutdown();
 }
 
 TEST(AsyncDispatcherContract, HostLaunchUsesPackageManagerPath)
 {
-    const tab5_err_t result = tab5_wasm_dispatch_post_launch("com.tab5.missing", nullptr);
-    EXPECT_NE(result, TAB5_OK);
+    ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
+    EXPECT_EQ(tab5_wasm_dispatch_post_launch("com.tab5.missing", nullptr), TAB5_OK);
+    EXPECT_TRUE(tab5_wasm_dispatcher_wait_idle(1000));
+    tab5_wasm_dispatcher_shutdown();
+}
+
+TEST(AsyncDispatcherContract, ShutdownCancelsQueuedLaunches)
+{
+    ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
+    for (int i = 0; i < TAB5_WASM_DISPATCH_QUEUE_CAPACITY; ++i)
+        ASSERT_EQ(tab5_wasm_dispatch_post_launch("com.tab5.missing", nullptr), TAB5_OK);
+    tab5_wasm_dispatcher_shutdown();
+    EXPECT_TRUE(tab5_wasm_dispatcher_wait_idle(10));
+}
+
+TEST(AsyncDispatcherContract, LaunchAndShutdownHaveControlledLinearization)
+{
+    ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
+    std::atomic<bool> posted = false;
+    std::thread producer([&posted] {
+        for (int i = 0; i < 32; ++i) {
+            (void)tab5_wasm_dispatch_post_launch("com.tab5.missing", nullptr);
+            posted = true;
+        }
+    });
+    tab5_wasm_dispatcher_shutdown();
+    producer.join();
+    EXPECT_TRUE(posted.load());
+    tab5_wasm_dispatcher_shutdown();
+}
+
+TEST(AsyncDispatcherContract, ConcurrentPostExecuteUnloadHasOwnedAdmission)
+{
+    ASSERT_EQ(tab5_wasm_dispatcher_init(), TAB5_OK);
+    for (int round = 0; round < 32; ++round) {
+        tab5_wasm_app_instance_t inst = {};
+        load_sample(inst);
+        std::atomic<bool> start = false;
+        std::atomic<tab5_err_t> unload_result = TAB5_ERR_FAIL;
+        std::thread poster([&] {
+            while (!start.load(std::memory_order_acquire))
+                std::this_thread::yield();
+            (void)tab5_wasm_dispatch_post_call(&inst, "noop", nullptr, 0, nullptr);
+        });
+        std::thread unloader([&] {
+            start.store(true, std::memory_order_release);
+            unload_result.store(tab5_wasm_unload(&inst), std::memory_order_release);
+        });
+        poster.join();
+        unloader.join();
+        EXPECT_EQ(unload_result.load(std::memory_order_acquire), TAB5_OK);
+        EXPECT_FALSE(tab5_wasm_instance_is_running(&inst));
+        EXPECT_TRUE(tab5_wasm_dispatcher_wait_idle(1000));
+    }
+    tab5_wasm_dispatcher_shutdown();
 }
