@@ -8,9 +8,12 @@
 #include "tab5_ui_host.h"
 #include "tab5_sys_host.h"
 #include "tab5_lifecycle_host.h"
+#include "tab5_nvs_worker.h"
+#include "terminal_cmd.h"
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <string>
 
 #if defined(ESP_PLATFORM) || defined(LV_LVGL_H_INCLUDE_SIMPLE) || defined(LV_CONF_INCLUDE_SIMPLE) ||                   \
     defined(TAB5_SIMULATOR)
@@ -36,7 +39,6 @@
 #include "esp_log.h"
 #include "http_file_server.h"
 #include "audio_recorder.h"
-#include "terminal_cmd.h"
 #include "music_player.h"
 #include "wifi_mgr.h"
 #include "bt_mgr.h"
@@ -317,13 +319,13 @@ tab5_err_t tab5_ui_textarea_set_text(tab5_ui_obj_t ta, const char *text)
     return tab5_ui_host_textarea_set_text(obj, text);
 }
 
-const char *tab5_ui_textarea_get_text(tab5_ui_obj_t ta)
+int32_t tab5_ui_textarea_copy_text(tab5_ui_obj_t ta, char *buffer, uint32_t capacity)
 {
     void *obj = tab5_ui_host_get_lv_obj(ta);
 #if !HAVE_LVGL
     obj = obj != nullptr ? obj : (void *)(uintptr_t)ta;
 #endif
-    return tab5_ui_host_textarea_get_text(obj);
+    return tab5_ui_host_textarea_copy_text(obj, buffer, capacity);
 }
 
 tab5_err_t tab5_ui_textarea_set_placeholder(tab5_ui_obj_t ta, const char *placeholder)
@@ -773,13 +775,14 @@ tab5_err_t tab5_terminal_exec(const char *cmd, char *out_buf, size_t buf_size)
 #if defined(ESP_PLATFORM)
     static std::string s_terminal_cwd = "/sdcard";
     std::string output = terminal_exec(cmd, s_terminal_cwd);
-    strncpy(out_buf, output.c_str(), buf_size - 1);
-    out_buf[buf_size - 1] = '\0';
-    return TAB5_OK;
 #else
-    snprintf(out_buf, buf_size, "Output of '%s'\n", cmd);
-    return TAB5_OK;
+    static std::string s_terminal_cwd = "/tmp";
+    std::string output = terminal_exec(cmd, s_terminal_cwd);
 #endif
+    const size_t copy_len = output.size() < buf_size - 1 ? output.size() : buf_size - 1;
+    memcpy(out_buf, output.data(), copy_len);
+    out_buf[copy_len] = '\0';
+    return TAB5_OK;
 }
 
 /* ========================================================================= */
@@ -1241,13 +1244,7 @@ tab5_err_t tab5_nvs_get_u8(const char *ns, const char *key, uint8_t *out_val)
         return TAB5_ERR_INVALID_ARG;
     }
 #if defined(ESP_PLATFORM)
-    nvs_handle_t nvs;
-    if (nvs_open(ns, NVS_READONLY, &nvs) != ESP_OK) {
-        return TAB5_ERR_NOT_FOUND;
-    }
-    esp_err_t err = nvs_get_u8(nvs, key, out_val);
-    nvs_close(nvs);
-    return err == ESP_OK ? TAB5_OK : TAB5_ERR_NOT_FOUND;
+    return tab5_nvs_worker_get_u8(ns, key, out_val);
 #else
     *out_val = 0;
     return TAB5_ERR_NOT_FOUND;
@@ -1260,14 +1257,7 @@ tab5_err_t tab5_nvs_set_u8(const char *ns, const char *key, uint8_t val)
         return TAB5_ERR_INVALID_ARG;
     }
 #if defined(ESP_PLATFORM)
-    nvs_handle_t nvs;
-    if (nvs_open(ns, NVS_READWRITE, &nvs) != ESP_OK) {
-        return TAB5_ERR_FAIL;
-    }
-    nvs_set_u8(nvs, key, val);
-    nvs_commit(nvs);
-    nvs_close(nvs);
-    return TAB5_OK;
+    return tab5_nvs_worker_set_u8(ns, key, val);
 #else
     (void)val;
     return TAB5_OK;
@@ -1280,9 +1270,11 @@ tab5_err_t tab5_nvs_set_u8(const char *ns, const char *key, uint8_t val)
 /* Wrappers de Exportação para WAMR (recebem wasm_exec_env_t no 1º argumento) */
 /* ========================================================================= */
 
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM) || defined(TAB5_SIM) || defined(TAB5_SIMULATOR)
 #include "wasm_export.h"
+#if defined(ESP_PLATFORM)
 #include "esp_rom_sys.h"
+#endif
 #define HAVE_WAMR_ENV 1
 #else
 #define HAVE_WAMR_ENV 0
@@ -1493,30 +1485,30 @@ static tab5_err_t wasm_tab5_ui_show_toast(wasm_exec_env_t exec_env, const char *
     return tab5_ui_show_toast(wasm_string(exec_env, message), duration_ms);
 }
 
-static uint32_t wasm_tab5_ui_textarea_get_text(wasm_exec_env_t exec_env, tab5_ui_obj_t ta)
+/* The WASM import is (i,i,i)->i: a C char * is an i32 offset in wasm32.
+ * Keep the wrapper argument wide enough for the no-WAMR simulator, where the
+ * same C import is called with a native host pointer.  On WAMR it remains an
+ * app offset and is narrowed only at the single validation/conversion point. */
+static int32_t wasm_tab5_ui_textarea_copy_text(wasm_exec_env_t exec_env, tab5_ui_obj_t ta, uintptr_t buffer_ptr,
+                                               uint32_t capacity)
 {
-    const char *text = tab5_ui_textarea_get_text(ta);
-    if (text == nullptr) {
-        return 0;
-    }
 #if HAVE_WAMR_ENV
     wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
-    if (module_inst == nullptr) {
-        return 0;
+    if (module_inst == nullptr || (capacity > 0 && buffer_ptr == 0) || buffer_ptr > UINT32_MAX) {
+        return TAB5_ERR_INVALID_ARG;
     }
-    size_t len = strlen(text) + 1;
-    uint32_t offset = wasm_runtime_module_malloc(module_inst, len, nullptr);
-    if (offset != 0) {
-        char *dest = (char *)wasm_runtime_addr_app_to_native(module_inst, offset);
-        if (dest != nullptr) {
-            memcpy(dest, text, len);
-        }
+    const uint32_t app_buffer_ptr = (uint32_t)buffer_ptr;
+    if (capacity > 0 && !wasm_runtime_validate_app_addr(module_inst, app_buffer_ptr, capacity)) {
+        return TAB5_ERR_INVALID_ARG;
     }
-    return offset;
+    char *native_buffer = capacity > 0 ? (char *)wasm_runtime_addr_app_to_native(module_inst, app_buffer_ptr) : nullptr;
+    if (capacity > 0 && native_buffer == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+    return tab5_ui_textarea_copy_text(ta, native_buffer, capacity);
 #else
     (void)exec_env;
-    uintptr_t addr = (uintptr_t)text;
-    return (uint32_t)addr;
+    return tab5_ui_textarea_copy_text(ta, (char *)buffer_ptr, capacity);
 #endif
 }
 
@@ -2143,19 +2135,7 @@ static tab5_err_t wasm_tab5_file_assoc_open(wasm_exec_env_t exec_env, const char
 
 static tab5_err_t wasm_tab5_nvs_get_u8(wasm_exec_env_t exec_env, const char *ns, const char *key, uint8_t *out_val)
 {
-#if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
-    if (module_inst != nullptr && out_val != nullptr) {
-        uint8_t *native_val = (uint8_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_val);
-        if (native_val != nullptr) {
-            return tab5_nvs_get_u8(ns, key, native_val);
-        }
-        return TAB5_ERR_INVALID_ARG;
-    }
-#else
-    (void)exec_env;
-#endif
-    return tab5_nvs_get_u8(ns, key, out_val);
+    return tab5_nvs_get_u8(wasm_string(exec_env, ns), wasm_string(exec_env, key), wasm_arg(exec_env, out_val));
 }
 
 static tab5_err_t wasm_tab5_nvs_set_u8(wasm_exec_env_t exec_env, const char *ns, const char *key, uint8_t val)
@@ -2197,7 +2177,7 @@ static tab5_native_symbol_t s_native_symbols[] = {
     {"tab5_ui_get_display_size", (void *)wasm_tab5_ui_get_display_size, "(**)", nullptr},
     {"tab5_ui_show_toast", (void *)wasm_tab5_ui_show_toast, "($i)i", nullptr},
     {"tab5_ui_textarea_create", (void *)wasm_tab5_ui_textarea_create, "(i)i", nullptr},
-    {"tab5_ui_textarea_get_text", (void *)wasm_tab5_ui_textarea_get_text, "(i)i", nullptr},
+    {"tab5_ui_textarea_copy_text", (void *)wasm_tab5_ui_textarea_copy_text, "(iii)i", nullptr},
     {"tab5_ui_textarea_set_placeholder", (void *)wasm_tab5_ui_textarea_set_placeholder, "(i$)i", nullptr},
     {"tab5_ui_textarea_set_text", (void *)wasm_tab5_ui_textarea_set_text, "(i$)i", nullptr},
     {"tab5_ui_textarea_set_cursor_pos", (void *)wasm_tab5_ui_textarea_set_cursor_pos, "(ii)i", nullptr},

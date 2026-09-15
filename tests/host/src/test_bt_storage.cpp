@@ -37,7 +37,14 @@ class BtStorageTest : public ::testing::Test {
 };
 
 /* O modulo mantem cache estatico interno: save_all() o sobrescreve por
- * inteiro, entao cada teste comeca gravando uma base conhecida. */
+ * inteiro, entao cada teste comeca gravando uma base conhecida.
+ *
+ * CONTRATO DE ORDEM: uma vez que qualquer save/load acontece, o cache
+ * interno fica valido e load_all() responde a partir dele mesmo com o
+ * arquivo ausente. O unico teste que observa ESP_ERR_NOT_FOUND com
+ * determinismo e LoadAllSemArquivoESemCacheRetornaNotFound, que precisa
+ * permanecer como a PRIMEIRA interacao com bt_storage_* de um processo
+ * (o GTest executa na ordem de registro dentro da suite). */
 
 TEST_F(BtStorageTest, LoadAllSemArquivoESemCacheRetornaNotFound)
 {
@@ -189,10 +196,17 @@ TEST_F(BtStorageTest, ListaCheiaRejeitaNovoDispositivo)
 
 TEST_F(BtStorageTest, ArgumentosInvalidos)
 {
-    bt_saved_list_t lista = {};
+    /* Todas as assercoes abaixo sao independentes do cache estatico: nenhuma
+     * chamada toca o cache nem o arquivo (todas rejeitam antes). */
     EXPECT_EQ(bt_storage_load_all(nullptr), ESP_ERR_INVALID_ARG);
     EXPECT_EQ(bt_storage_save_all(nullptr), ESP_ERR_INVALID_ARG);
-    EXPECT_EQ(bt_storage_load_all(&lista), ESP_ERR_NOT_FOUND); /* sem arquivo e sem cache */
+
+    /* O caso "arquivo ausente + cache vazio -> ESP_ERR_NOT_FOUND" NAO roda
+     * aqui: em um processo unico com a suite completa, testes anteriores ja
+     * popularam o cache e load_all(&lista) responderiam ESP_OK via fallback
+     * (comportamento documentado do modulo). Esse cenario tem cobertura
+     * propria e deterministica em LoadAllSemArquivoESemCacheRetornaNotFound
+     * (primeiro teste da suite, antes de qualquer save/load). */
 
     bt_saved_device_t vazio = {};
     EXPECT_EQ(bt_storage_add_or_update(nullptr), ESP_ERR_INVALID_ARG);

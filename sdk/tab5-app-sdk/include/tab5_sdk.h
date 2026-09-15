@@ -175,7 +175,8 @@ typedef enum {
     TAB5_UI_EVENT_VALUE_CHANGED = 2,
     TAB5_UI_EVENT_LONG_PRESSED = 3,
     TAB5_UI_EVENT_FOCUSED = 4,
-    TAB5_UI_EVENT_DEFOCUSED = 5
+    TAB5_UI_EVENT_DEFOCUSED = 5,
+    TAB5_UI_EVENT_READY = 6
 } tab5_ui_event_type_t;
 
 typedef void (*tab5_ui_event_cb_t)(tab5_ui_obj_t obj, uint32_t event_type, int32_t event_val);
@@ -251,9 +252,14 @@ tab5_ui_obj_t tab5_ui_textarea_create(tab5_ui_obj_t parent);
 tab5_err_t tab5_ui_textarea_set_text(tab5_ui_obj_t ta, const char *text);
 
 /**
- * @brief Obtém o texto atual de um widget textarea.
+ * @brief Copia o texto atual para buffer fornecido pelo caller.
+ *
+ * Retorna o tamanho necessário, sem o NUL final. Se @p capacity for maior
+ * que zero, @p buffer deve ser válido e sempre recebe uma string terminada
+ * em NUL (podendo ser truncada). Com capacity zero, permite consultar o
+ * tamanho sem escrever. Retorna código TAB5_ERR_* negativo em erro.
  */
-const char *tab5_ui_textarea_get_text(tab5_ui_obj_t ta);
+int32_t tab5_ui_textarea_copy_text(tab5_ui_obj_t ta, char *buffer, uint32_t capacity);
 
 /**
  * @brief Define o texto de placeholder do textarea.

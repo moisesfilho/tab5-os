@@ -10,6 +10,12 @@ bool ui_keyboard_is_visible(void);
 int32_t ui_keyboard_get_height(void);
 void ui_keyboard_notify_hardware_change(void);
 void ui_keyboard_inject_char(char c);
+/* Enfileira a inserção no contexto do task LVGL.  Usado por bridges que não
+ * podem executar callbacks LVGL enquanto seguram o display lock. */
+void ui_keyboard_inject_char_async(char c);
+/* Enfileira todo o texto em uma única callback LVGL.  O buffer é copiado e
+ * pode ser liberado pelo chamador assim que a função retornar. */
+void ui_keyboard_inject_text_async(const char *text);
 void ui_keyboard_inject_key(uint32_t key);
 
 /* Injeta uma tecla com byte de modificador (bit0=Ctrl, bit2=Alt).

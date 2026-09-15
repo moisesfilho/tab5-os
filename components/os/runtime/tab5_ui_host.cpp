@@ -9,6 +9,7 @@
 #include "tab5_wasm_dispatcher.h"
 #include <algorithm>
 #include <cstring>
+#include <string>
 
 #if defined(ESP_PLATFORM)
 #include "esp_log.h"
@@ -78,6 +79,11 @@ static tab5_app_context_t *s_previous_gallery_owner = nullptr;
 static bool s_has_previous_views = false;
 static lv_timer_t *s_wasm_poll_timer = nullptr;
 static tab5_app_context_t *s_wasm_poll_owner = nullptr;
+/* lv_textarea_set_text emits VALUE_CHANGED synchronously.  A WASM callback
+ * updates the textarea while holding the display lock; forwarding that
+ * synthetic event back to the same dispatcher would re-enter the module and
+ * wait on the current callback. */
+static thread_local bool s_suppress_textarea_events = false;
 
 static void tab5_ui_host_disable_default_scroll(lv_obj_t *obj)
 {
@@ -511,7 +517,11 @@ tab5_err_t tab5_ui_host_keyboard_show(void *target_textarea)
     }
 
 #if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
+    }
     ui_keyboard_attach((lv_obj_t *)target_textarea);
+    LV_UNLOCK();
     return TAB5_OK;
 #else
     return TAB5_OK;
@@ -521,7 +531,11 @@ tab5_err_t tab5_ui_host_keyboard_show(void *target_textarea)
 tab5_err_t tab5_ui_host_keyboard_hide(void)
 {
 #if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
+    }
     ui_keyboard_hide();
+    LV_UNLOCK();
     return TAB5_OK;
 #else
     return TAB5_OK;
@@ -688,23 +702,58 @@ tab5_err_t tab5_ui_host_textarea_set_text(void *ta, const char *text)
         return TAB5_ERR_INVALID_ARG;
     }
 #if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
+    }
+    const bool previous_suppression = s_suppress_textarea_events;
+    s_suppress_textarea_events = true;
     lv_textarea_set_text((lv_obj_t *)ta, text);
+    s_suppress_textarea_events = previous_suppression;
+    LV_UNLOCK();
     return TAB5_OK;
 #else
     return TAB5_OK;
 #endif
 }
 
-const char *tab5_ui_host_textarea_get_text(void *ta)
+int32_t tab5_ui_host_textarea_copy_text(void *ta, char *buffer, uint32_t capacity)
 {
     if (ta == nullptr) {
-        return "";
+        if (buffer != nullptr && capacity > 0) {
+            buffer[0] = '\0';
+        }
+        return TAB5_ERR_INVALID_ARG;
     }
 #if HAVE_LVGL
+    if (!LV_LOCK()) {
+        if (buffer != nullptr && capacity > 0) {
+            buffer[0] = '\0';
+        }
+        return TAB5_ERR_TIMEOUT;
+    }
     const char *txt = lv_textarea_get_text((lv_obj_t *)ta);
-    return txt != nullptr ? txt : "";
+    const size_t length = txt != nullptr ? strlen(txt) : 0;
+    if (capacity > 0) {
+        if (buffer == nullptr) {
+            LV_UNLOCK();
+            return TAB5_ERR_INVALID_ARG;
+        }
+        const size_t copied = length < (size_t)capacity - 1 ? length : (size_t)capacity - 1;
+        if (copied > 0) {
+            memcpy(buffer, txt, copied);
+        }
+        buffer[copied] = '\0';
+    }
+    LV_UNLOCK();
+    return length > INT32_MAX ? TAB5_ERR_BUFFER_OVERFLOW : (int32_t)length;
 #else
-    return "";
+    if (capacity > 0 && buffer == nullptr) {
+        return TAB5_ERR_INVALID_ARG;
+    }
+    if (capacity > 0) {
+        buffer[0] = '\0';
+    }
+    return 0;
 #endif
 }
 
@@ -714,7 +763,11 @@ tab5_err_t tab5_ui_host_textarea_set_placeholder(void *ta, const char *placehold
         return TAB5_ERR_INVALID_ARG;
     }
 #if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
+    }
     lv_textarea_set_placeholder_text((lv_obj_t *)ta, placeholder);
+    LV_UNLOCK();
     return TAB5_OK;
 #else
     return TAB5_OK;
@@ -727,11 +780,15 @@ tab5_err_t tab5_ui_host_textarea_set_cursor_pos(void *ta, int32_t pos)
         return TAB5_ERR_INVALID_ARG;
     }
 #if HAVE_LVGL
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
+    }
     if (pos >= TAB5_UI_CURSOR_LAST) {
         lv_textarea_set_cursor_pos((lv_obj_t *)ta, LV_TEXTAREA_CURSOR_LAST);
     } else {
         lv_textarea_set_cursor_pos((lv_obj_t *)ta, pos);
     }
+    LV_UNLOCK();
     return TAB5_OK;
 #else
     (void)pos;
@@ -745,7 +802,12 @@ int32_t tab5_ui_host_textarea_get_cursor_pos(void *ta)
         return 0;
     }
 #if HAVE_LVGL
-    return (int32_t)lv_textarea_get_cursor_pos((lv_obj_t *)ta);
+    if (!LV_LOCK()) {
+        return 0;
+    }
+    int32_t result = (int32_t)lv_textarea_get_cursor_pos((lv_obj_t *)ta);
+    LV_UNLOCK();
+    return result;
 #else
     return 0;
 #endif
@@ -757,7 +819,9 @@ tab5_err_t tab5_ui_host_textarea_set_password_mode(void *ta, bool password_mode)
         return TAB5_ERR_INVALID_ARG;
     }
 #if HAVE_LVGL
-    LV_LOCK();
+    if (!LV_LOCK()) {
+        return TAB5_ERR_TIMEOUT;
+    }
     lv_textarea_set_password_mode((lv_obj_t *)ta, password_mode);
     LV_UNLOCK();
     return TAB5_OK;
@@ -899,13 +963,15 @@ void tab5_ui_host_generic_widget_event_cb(lv_event_t *e)
 
     if (code == LV_EVENT_CLICKED) {
         event_type = TAB5_UI_EVENT_CLICKED;
-    } else if (code == LV_EVENT_VALUE_CHANGED || code == LV_EVENT_READY) {
+    } else if (code == LV_EVENT_VALUE_CHANGED) {
         event_type = TAB5_UI_EVENT_VALUE_CHANGED;
         if (lv_obj_check_type(target, &lv_slider_class)) {
             event_val = lv_slider_get_value(target);
         } else if (lv_obj_check_type(target, &lv_switch_class)) {
             event_val = lv_obj_has_state(target, LV_STATE_CHECKED) ? 1 : 0;
         }
+    } else if (code == LV_EVENT_READY) {
+        event_type = TAB5_UI_EVENT_READY;
     } else if (code == LV_EVENT_LONG_PRESSED) {
         event_type = TAB5_UI_EVENT_LONG_PRESSED;
     } else if (code == LV_EVENT_FOCUSED) {
@@ -915,6 +981,9 @@ void tab5_ui_host_generic_widget_event_cb(lv_event_t *e)
     }
 
     if (event_type != 0) {
+        if (s_suppress_textarea_events && event_type == TAB5_UI_EVENT_VALUE_CHANGED) {
+            return;
+        }
         /* LVGL emits an initial focus transition while the screen is being
          * assembled.  It is not an application interaction and, for WASM,
          * can race the module's registration of its event state. */

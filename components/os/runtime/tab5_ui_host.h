@@ -71,9 +71,10 @@ tab5_err_t tab5_ui_host_show_toast(const char *message, uint32_t duration_ms);
 tab5_err_t tab5_ui_host_textarea_set_text(void *ta, const char *text);
 
 /**
- * @brief Obtém o texto atual de um widget textarea.
+ * @brief Copia o texto atual de um widget textarea para um buffer do caller.
+ * @return Tamanho necessário (sem NUL), ou código de erro negativo.
  */
-const char *tab5_ui_host_textarea_get_text(void *ta);
+int32_t tab5_ui_host_textarea_copy_text(void *ta, char *buffer, uint32_t capacity);
 
 /**
  * @brief Define o texto de placeholder do textarea.

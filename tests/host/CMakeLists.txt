@@ -39,6 +39,7 @@ add_executable(tab5_host_tests
     src/test_file_assoc.cpp
     src/test_app_registry.cpp
     src/test_terminal_cmd.cpp
+    src/test_terminal_micro_shell.cpp
     src/test_timezone_mgr.cpp
     src/test_wifi_storage.cpp
     src/test_bt_storage.cpp
@@ -56,11 +57,13 @@ add_executable(tab5_host_tests
     src/test_storage_mgr.cpp
     src/test_sdk_integration.cpp
     src/test_serial_bridge_dispatch.cpp
+    src/test_nvs_worker.cpp
     stubs/cJSON.c
     mocks/path_redirect.cpp
     mocks/link_wrappers.cpp
     mocks/nvs_mock.cpp
     mocks/bsp_mock.cpp
+    mocks/freertos_mock.cpp
     mocks/serial_bridge_subsystem_mocks.cpp
     ${REPO_ROOT}/components/os/core/orientation.cpp
     ${REPO_ROOT}/components/os/core/file_assoc.cpp
@@ -76,6 +79,7 @@ add_executable(tab5_host_tests
     ${REPO_ROOT}/components/os/runtime/tab5_ui_host.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_sys_host.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_lifecycle_host.cpp
+    ${REPO_ROOT}/components/os/runtime/tab5_nvs_worker.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_host_abi.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_wasm_runtime.cpp
     ${REPO_ROOT}/components/os/runtime/tab5_wasm_dispatcher.cpp
@@ -103,6 +107,14 @@ target_link_libraries(tab5_host_tests
 # chega transitivamente); em host forcamos a inclusao via compilador.
 set_source_files_properties(${REPO_ROOT}/components/os/core/bt_storage.cpp
     PROPERTIES COMPILE_OPTIONS "-include;cstdlib")
+
+# tab5_nvs_worker.cpp e o unico TU compilado como ESP_PLATFORM no build host:
+# e o codigo real de producao do worker (fila/semafotos/task staticas), cujas
+# primitivas FreeRTOS sao supridas por mocks/freertos_mock.cpp. Os demais TUs
+# permanecem no caminho host (sem ESP_PLATFORM), sem mudanca de semantica.
+set_source_files_properties(
+    ${REPO_ROOT}/components/os/runtime/tab5_nvs_worker.cpp
+    PROPERTIES COMPILE_OPTIONS "-DESP_PLATFORM")
 
 if(HOST_TESTS_COVERAGE)
   target_compile_options(tab5_host_tests PRIVATE --coverage)
@@ -153,3 +165,12 @@ add_test(NAME serial_bridge_stack_contract
             ${REPO_ROOT}/tests/test_serial_bridge_stack_contract.py)
 add_test(NAME lint_fix_contracts
     COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_lint_fix_contracts.py)
+add_test(NAME nvs_worker_contracts
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_nvs_worker_contracts.py)
+add_test(NAME files_hidden_reboot_runtime_contracts
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_files_hidden_reboot_runtime_contracts.py)
+add_test(NAME wasm_abi_pointer_contract
+    COMMAND ${Python3_EXECUTABLE}
+            ${REPO_ROOT}/tests/test_wasm_abi_pointer_contract.py)

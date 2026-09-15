@@ -196,6 +196,10 @@ TEST_F(PackageMgrTest, EmbeddedAppPrecedence)
     EXPECT_FALSE(info.is_embedded);
 
     tab5_package_mgr_uninstall("com.tab5.calc", true);
+    /* A desinstalacao remove somente a copia do SD; a app embutida
+     * permanece no diretorio /apps e vazaria para outras suites que
+     * contam apps instaladas (ex.: StorageMgrTest). Remove o artefato. */
+    hostmock::rm_rf(emb_dir.c_str());
 }
 
 static std::string find_sdk_file(const char *rel_path)

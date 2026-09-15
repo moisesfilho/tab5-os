@@ -2,6 +2,8 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
@@ -83,6 +85,12 @@ void unlink_files(const std::initializer_list<const char *> &virtual_paths)
     for (const char *path : virtual_paths) {
         ::unlink(host_of(path).c_str());
     }
+}
+
+void rm_rf(const char *virtual_path)
+{
+    std::error_code ec;
+    std::filesystem::remove_all(host_of(virtual_path), ec);
 }
 
 } // namespace hostmock

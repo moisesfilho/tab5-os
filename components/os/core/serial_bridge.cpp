@@ -34,6 +34,7 @@
 #include "tab5_package_mgr.h"
 #include "tab5_host_abi.h"
 #include "ui_mouse.h"
+#include "ui_keyboard.h"
 #include "ui_shell.h"
 #include "ui_screensaver.h"
 #include "ui_screen_off.h"
@@ -134,19 +135,20 @@ void append_b64(std::string &out, const unsigned char *data, size_t size)
 }
 
 #ifdef ESP_PLATFORM
-void visit_ui(lv_obj_t *obj, const char *target, const char *symbol, bool *found)
+lv_obj_t *find_ui(lv_obj_t *obj, const char *target, const char *symbol)
 {
-    if (!obj || *found)
-        return;
+    if (!obj)
+        return nullptr;
     const char *text = lv_obj_check_type(obj, &lv_label_class) ? lv_label_get_text(obj) : nullptr;
     if (text && ((target && strcmp(text, target) == 0) || (symbol && strstr(text, symbol)))) {
-        lv_obj_send_event(obj, LV_EVENT_CLICKED, nullptr);
-        *found = true;
-        return;
+        return obj;
     }
     uint32_t count = lv_obj_get_child_count(obj);
-    for (uint32_t i = 0; i < count; ++i)
-        visit_ui(lv_obj_get_child(obj, i), target, symbol, found);
+    for (uint32_t i = 0; i < count; ++i) {
+        if (lv_obj_t *match = find_ui(lv_obj_get_child(obj, i), target, symbol))
+            return match;
+    }
+    return nullptr;
 }
 
 void dump_ui(lv_obj_t *obj, cJSON *items)
@@ -176,22 +178,31 @@ void dump_ui(lv_obj_t *obj, cJSON *items)
         dump_ui(lv_obj_get_child(obj, i), items);
 }
 
-bool click_ui_at(lv_obj_t *obj, int x, int y)
+lv_obj_t *find_clickable_ui_at(lv_obj_t *obj, int x, int y)
 {
     if (!obj)
-        return false;
+        return nullptr;
     for (int32_t i = (int32_t)lv_obj_get_child_count(obj) - 1; i >= 0; --i) {
-        if (click_ui_at(lv_obj_get_child(obj, (uint32_t)i), x, y))
-            return true;
+        if (lv_obj_t *match = find_clickable_ui_at(lv_obj_get_child(obj, (uint32_t)i), x, y))
+            return match;
     }
     lv_area_t area;
     lv_point_t point{x, y};
     lv_obj_get_coords(obj, &area);
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE) && _lv_area_is_point_on(&area, &point, 0)) {
-        lv_obj_send_event(obj, LV_EVENT_CLICKED, nullptr);
-        return true;
+        return obj;
     }
-    return false;
+    return nullptr;
+}
+
+/* Never invoke an LVGL event callback while the bridge owns the display lock.
+ * A textarea CLICKED callback attaches the keyboard and synchronously asks
+ * the shell to relayout; that path takes the same finite display lock. */
+void send_clicked_async(void *user_data)
+{
+    lv_obj_t *obj = static_cast<lv_obj_t *>(user_data);
+    if (obj != nullptr && lv_obj_is_valid(obj))
+        lv_obj_send_event(obj, LV_EVENT_CLICKED, nullptr);
 }
 #endif
 
@@ -559,9 +570,14 @@ extern "C" int serial_bridge_dispatch(const char *json_line, char *out, size_t o
             if (!bsp_display_lock(pdMS_TO_TICKS(500)))
                 result = error_frame(cmd, "lock do display indisponivel");
             else {
-                bool found = click_ui_at(lv_screen_active(), x, y) || click_ui_at(lv_layer_top(), x, y);
+                lv_obj_t *target = find_clickable_ui_at(lv_screen_active(), x, y);
+                if (target == nullptr)
+                    target = find_clickable_ui_at(lv_layer_top(), x, y);
+                const bool found = target != nullptr;
                 bsp_display_unlock();
-                if (!found)
+                if (found)
+                    lv_async_call(send_clicked_async, target);
+                else
                     ui_mouse_inject_click();
                 cJSON *d = cJSON_CreateObject();
                 cJSON_AddNumberToObject(d, "x", x);
@@ -586,9 +602,13 @@ extern "C" int serial_bridge_dispatch(const char *json_line, char *out, size_t o
             if (!bsp_display_lock(pdMS_TO_TICKS(500)))
                 result = error_frame(cmd, "lock do display indisponivel");
             else {
-                visit_ui(lv_screen_active(), target, symbol, &found);
-                visit_ui(lv_layer_top(), target, symbol, &found);
+                lv_obj_t *match = find_ui(lv_screen_active(), target, symbol);
+                if (match == nullptr)
+                    match = find_ui(lv_layer_top(), target, symbol);
+                found = match != nullptr;
                 bsp_display_unlock();
+                if (found)
+                    lv_async_call(send_clicked_async, match);
             }
 #else
             found = true;
@@ -605,15 +625,11 @@ extern "C" int serial_bridge_dispatch(const char *json_line, char *out, size_t o
             result = error_frame(cmd, "campo text ausente");
         else {
 #ifdef ESP_PLATFORM
-            /* Keyboard subsystem owns focus and insertion; dispatch one character sequence through LVGL. */
-            if (!bsp_display_lock(pdMS_TO_TICKS(500)))
-                result = error_frame(cmd, "lock do display indisponivel");
-            else {
-                lv_obj_t *focused = lv_group_get_focused(lv_group_get_default());
-                if (focused && lv_obj_check_type(focused, &lv_textarea_class))
-                    lv_textarea_add_text(focused, text);
-                bsp_display_unlock();
-            }
+            /* Bridge commands run outside the LVGL task.  Queue the complete
+             * text in one callback so its bytes (including a final Enter) are
+             * consumed in order, without nesting VALUE_CHANGED callbacks
+             * under the bridge's display lock. */
+            ui_keyboard_inject_text_async(text);
 #endif
             if (result.empty()) {
                 cJSON *d = cJSON_CreateObject();

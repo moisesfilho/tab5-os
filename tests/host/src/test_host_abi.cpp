@@ -4,6 +4,7 @@
 #include "tab5_ui_host.h"
 #include "tab5_sys_host.h"
 #include <cstring>
+#include <cstdint>
 
 static bool s_init_called = false;
 static bool s_resume_called = false;
@@ -87,7 +88,10 @@ TEST_F(HostAbiTest, UiInvalidHandlesReturnErrorsWithoutCreatingWidgets)
     EXPECT_EQ(tab5_ui_host_obj_scroll_to_top(0, false), TAB5_OK);
     EXPECT_EQ(tab5_ui_host_label_set_text(0, "x"), TAB5_OK);
     EXPECT_EQ(tab5_ui_host_textarea_set_text(nullptr, "x"), TAB5_ERR_INVALID_ARG);
-    EXPECT_NE(tab5_ui_host_textarea_get_text(nullptr), nullptr);
+    char buf[8] = {0};
+    EXPECT_EQ(tab5_ui_host_textarea_copy_text(nullptr, buf, sizeof(buf)), TAB5_ERR_INVALID_ARG);
+    EXPECT_STREQ(buf, "");
+    EXPECT_EQ(tab5_ui_host_textarea_copy_text(nullptr, buf, 0), TAB5_ERR_INVALID_ARG);
     tab5_ui_host_clear_handles();
 }
 
@@ -425,7 +429,8 @@ TEST_F(HostAbiTest, NewNativeSymbolsRegistered)
                               "tab5_nvs_set_u8",
                               "tab5_ui_obj_set_scrollable",
                               "tab5_ui_obj_scroll_to_bottom",
-                              "tab5_ui_obj_scroll_to_top"};
+                              "tab5_ui_obj_scroll_to_top",
+                              "tab5_ui_textarea_copy_text"};
 
     for (const char *name : expected) {
         bool found = false;
@@ -456,6 +461,7 @@ typedef tab5_err_t (*fn_nvs_get_t)(void *, const char *, const char *, uint8_t *
 typedef tab5_err_t (*fn_nvs_set_t)(void *, const char *, const char *, uint8_t);
 typedef tab5_err_t (*fn_ui_set_scrollable_t)(void *, tab5_ui_obj_t, bool);
 typedef tab5_err_t (*fn_ui_scroll_to_t)(void *, tab5_ui_obj_t, bool);
+typedef int32_t (*fn_ui_copy_text_t)(void *, tab5_ui_obj_t, uintptr_t, uint32_t);
 
 static void *lookup_symbol(const char *name)
 {
@@ -532,6 +538,65 @@ TEST_F(HostAbiTest, UiScrollWasmWrappersThroughSymbolTable)
     EXPECT_EQ(scroll_bottom(nullptr, 1, false), TAB5_OK);
     EXPECT_EQ(scroll_top(nullptr, 1, true), TAB5_OK);
     EXPECT_EQ(scroll_top(nullptr, 1, false), TAB5_OK);
+}
+
+TEST_F(HostAbiTest, TextareaCopyTextWasmWrapperThroughSymbolTable)
+{
+    // A mudança intencional troca tab5_ui_textarea_get_text (que alocava o
+    // retorno no heap do módulo via module_malloc, sem release) por
+    // tab5_ui_textarea_copy_text, que copia para o buffer FORNECIDO pelo
+    // caller. O wrapper exposto aos apps WASM segue (i,i,i)->i e não pode
+    // alocar memória de módulo.
+    fn_ui_copy_text_t copy = (fn_ui_copy_text_t)lookup_symbol("tab5_ui_textarea_copy_text");
+    ASSERT_NE(copy, nullptr);
+
+    // Sem LVGL (build host) o conteúdo é vazio; o contrato de
+    // buffer/capacity/NUL ainda precisa valer no caminho do wrapper.
+    char buf[8] = {'q', 'q', 'q', 'q', 'q', 'q', 'q', '\0'};
+    EXPECT_EQ(copy(nullptr, 1, (uintptr_t)buf, sizeof(buf)), 0);
+    EXPECT_STREQ(buf, "");
+
+    // capacity == 0: modo consulta — retorna o tamanho sem escrever.
+    buf[0] = 'q';
+    EXPECT_EQ(copy(nullptr, 1, (uintptr_t)buf, 0), 0);
+    EXPECT_EQ(buf[0], 'q') << "'q' sobrescrito com capacity==0 (modo consulta)";
+
+    // buffer nulo com capacity > 0: erro determinístico (não derruba o runtime).
+    EXPECT_EQ(copy(nullptr, 1, 0, sizeof(buf)), TAB5_ERR_INVALID_ARG);
+
+    // handle inválido (TAB5_UI_INVALID_OBJ == 0): erro e buffer NUL-terminado.
+    EXPECT_EQ(copy(nullptr, TAB5_UI_INVALID_OBJ, (uintptr_t)buf, sizeof(buf)), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(buf[0], '\0');
+}
+
+TEST_F(HostAbiTest, TextareaCopyTextContractWithoutLvgl)
+{
+    // Contrato do SDK (sem LVGL no build host): tab5_ui_textarea_copy_text
+    // retorna o tamanho necessário (sem NUL), grava string NUL-terminada (com
+    // truncamento), aceita capacity==0 como consulta e rejeita ponteiro nulo
+    // com capacity > 0 — nunca derrubando o runtime.
+    char buf[16] = {0};
+
+    // Handle inválido: TAB5_UI_INVALID_OBJ == 0 → obj nulo → erro, buffer NUL.
+    memset(buf, 'x', sizeof(buf));
+    EXPECT_EQ(tab5_ui_textarea_copy_text(TAB5_UI_INVALID_OBJ, buf, sizeof(buf)), TAB5_ERR_INVALID_ARG);
+    EXPECT_EQ(buf[0], '\0');
+
+    // Handle não registrado (>= 1) sem app ativo: no build host o mutator é
+    // no-op determinístico (texto vazio NUL-terminado).
+    memset(buf, 'x', sizeof(buf));
+    EXPECT_EQ(tab5_ui_textarea_copy_text(1, buf, sizeof(buf)), 0);
+    EXPECT_STREQ(buf, "");
+
+    // capacity == 0: consulta o tamanho sem tocar no buffer.
+    memset(buf, 'x', sizeof(buf));
+    EXPECT_EQ(tab5_ui_textarea_copy_text(1, buf, 0), 0);
+    EXPECT_EQ(buf[0], 'x') << "capacity==0 não pode escrever no buffer";
+
+    // buffer nulo com capacity > 0: TAB5_ERR_INVALID_ARG.
+    EXPECT_EQ(tab5_ui_textarea_copy_text(1, nullptr, 4), TAB5_ERR_INVALID_ARG);
+    // buffer nulo com capacity == 0: consulta permitida.
+    EXPECT_EQ(tab5_ui_textarea_copy_text(1, nullptr, 0), 0);
 }
 
 TEST_F(HostAbiTest, UiScrollableApiViaSdk)

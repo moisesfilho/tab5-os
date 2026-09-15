@@ -7,6 +7,7 @@
 #include "bt_mgr.h"
 #include "tab5_keyboard.h"
 #include "bsp/esp-bsp.h"
+#include <stdlib.h>
 #include <string.h>
 
 /* Macros privados do LVGL, definidos apenas em lv_keyboard.c e usados nos
@@ -330,41 +331,130 @@ static lv_obj_t *find_textarea_recursive(lv_obj_t *parent)
     return nullptr;
 }
 
+static lv_obj_t *ui_keyboard_get_target_locked()
+{
+    lv_display_trigger_activity(NULL);
+    if (ui_screensaver_is_active()) {
+        ui_screensaver_wake_up();
+    }
+    ui_screen_off_wake_up();
+
+    lv_obj_t *target = kb_target;
+    if (target == nullptr || !lv_obj_is_valid(target)) {
+        target = find_textarea_recursive(lv_screen_active());
+        if (target != nullptr) {
+            kb_target = target;
+        }
+    }
+
+    return target;
+}
+
+static void ui_keyboard_inject_char_locked(char c)
+{
+    lv_obj_t *target = ui_keyboard_get_target_locked();
+    if (target != nullptr && lv_obj_is_valid(target)) {
+        ESP_LOGI("ui_kb", "ui_keyboard_inject_char: '%c' (0x%02X) no target=%p", c, (uint8_t)c, target);
+        if (c == '\b') {
+            lv_textarea_delete_char(target);
+        } else if (c == '\n') {
+            char str[2] = {'\n', '\0'};
+            lv_textarea_add_text(target, str);
+        } else if (c != 0) {
+            char str[2] = {c, '\0'};
+            lv_textarea_add_text(target, str);
+        }
+        lv_obj_send_event(target, LV_EVENT_VALUE_CHANGED, nullptr);
+        lv_obj_invalidate(target);
+    } else {
+        ESP_LOGW("ui_kb", "ui_keyboard_inject_char: NENHUM target textarea encontrado!");
+    }
+}
+
+static void ui_keyboard_inject_text_locked(const char *text, size_t length)
+{
+    lv_obj_t *target = ui_keyboard_get_target_locked();
+    if (target == nullptr || !lv_obj_is_valid(target)) {
+        ESP_LOGW("ui_kb", "ui_keyboard_inject_text: NENHUM target textarea encontrado!");
+        return;
+    }
+
+    /* Mutate the textarea first and emit one event for the complete payload.
+     * This prevents the app dispatcher from observing an intermediate command
+     * while this LVGL callback is still appending bytes. */
+    for (size_t i = 0; i < length; ++i) {
+        const char c = text[i];
+        if (c == '\b') {
+            lv_textarea_delete_char(target);
+        } else if (c != 0) {
+            char str[2] = {c, '\0'};
+            lv_textarea_add_text(target, str);
+        }
+    }
+    lv_obj_send_event(target, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_invalidate(target);
+}
+
 void ui_keyboard_inject_char(char c)
 {
     if (bsp_display_lock(pdMS_TO_TICKS(50))) {
-        lv_display_trigger_activity(NULL);
-        if (ui_screensaver_is_active()) {
-            ui_screensaver_wake_up();
-        }
-        ui_screen_off_wake_up();
-
-        lv_obj_t *target = kb_target;
-        if (target == nullptr || !lv_obj_is_valid(target)) {
-            target = find_textarea_recursive(lv_screen_active());
-            if (target != nullptr) {
-                kb_target = target;
-            }
-        }
-
-        if (target != nullptr && lv_obj_is_valid(target)) {
-            ESP_LOGI("ui_kb", "ui_keyboard_inject_char: '%c' (0x%02X) no target=%p", c, (uint8_t)c, target);
-            if (c == '\b') {
-                lv_textarea_delete_char(target);
-            } else if (c == '\n') {
-                char str[2] = {'\n', '\0'};
-                lv_textarea_add_text(target, str);
-            } else if (c != 0) {
-                char str[2] = {c, '\0'};
-                lv_textarea_add_text(target, str);
-            }
-            lv_obj_send_event(target, LV_EVENT_VALUE_CHANGED, nullptr);
-            lv_obj_invalidate(target);
-        } else {
-            ESP_LOGW("ui_kb", "ui_keyboard_inject_char: NENHUM target textarea encontrado!");
-        }
+        ui_keyboard_inject_char_locked(c);
         bsp_display_unlock();
     }
+}
+
+struct async_text_context {
+    size_t length;
+    char text[];
+};
+
+static void ui_keyboard_inject_text_async_cb(void *user_data)
+{
+    async_text_context *context = static_cast<async_text_context *>(user_data);
+    if (context != nullptr) {
+        /* This callback already runs in the LVGL task.  Do not take the
+         * display lock here: VALUE_CHANGED may post work back to the app
+         * dispatcher and must not run nested under that lock. */
+        ui_keyboard_inject_text_locked(context->text, context->length);
+        free(context);
+    }
+}
+
+static void ui_keyboard_queue_text_async(const char *text)
+{
+    if (text == nullptr || text[0] == '\0')
+        return;
+
+    const size_t length = strlen(text);
+    async_text_context *context = static_cast<async_text_context *>(malloc(sizeof(async_text_context) + length + 1));
+    if (context == nullptr)
+        return;
+    context->length = length;
+    memcpy(context->text, text, length + 1);
+
+    /* lv_async_call itself mutates LVGL's timer list, so only the short
+     * enqueue operation is protected here.  The callback runs later in the
+     * LVGL task, consumes the copied string in order, and deliberately does
+     * not acquire the display lock again. */
+    if (bsp_display_lock(pdMS_TO_TICKS(50))) {
+        lv_async_call(ui_keyboard_inject_text_async_cb, context);
+        bsp_display_unlock();
+    } else {
+        free(context);
+    }
+}
+
+void ui_keyboard_inject_text_async(const char *text)
+{
+    ui_keyboard_queue_text_async(text);
+}
+
+void ui_keyboard_inject_char_async(char c)
+{
+    if (c == 0)
+        return;
+    char text[2] = {c, '\0'};
+    ui_keyboard_queue_text_async(text);
 }
 
 void ui_keyboard_inject_key(uint32_t key)

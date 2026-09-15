@@ -33,6 +33,7 @@ idf_component_register(
         "runtime/tab5_sys_host.cpp"
         "runtime/tab5_lifecycle_host.cpp"
         "runtime/tab5_host_abi.cpp"
+        "runtime/tab5_nvs_worker.cpp"
         "runtime/tab5_wasm_runtime.cpp"
         "runtime/tab5_wasm_dispatcher.cpp"
         "runtime/tab5_manifest.cpp"

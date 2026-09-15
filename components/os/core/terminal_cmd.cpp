@@ -11,6 +11,14 @@
 #include <algorithm>
 #include <sstream>
 #include <vector>
+#include <ctime>
+#include <cstdint>
+#if defined(ESP_PLATFORM)
+#include "esp_heap_caps.h"
+#include "esp_vfs_fat.h"
+#else
+#include <sys/statvfs.h>
+#endif
 
 namespace {
 
@@ -337,11 +345,69 @@ std::string cmd_help(void)
            "  touch <arq...>    - Cria arquivos vazios\n"
            "  cat <arquivo...>  - Exibe o conteúdo de arquivos de texto\n"
            "  echo [texto...]   - Imprime texto na tela\n"
+           "  free              - Exibe memória livre\n"
+           "  df [caminho]      - Exibe espaço livre\n"
+           "  date              - Exibe data e hora\n"
            "  ssh [user@]host   - Conecta via SSH (-p port)\n"
            "  clear             - Limpa o terminal\n"
            "  whoami            - Exibe o usuário atual\n"
            "  uname             - Exibe informações do sistema\n"
            "  help              - Mostra esta mensagem de ajuda\n";
+}
+
+std::string cmd_free(void)
+{
+#if defined(ESP_PLATFORM)
+    return "Memoria livre: " + std::to_string(esp_get_free_heap_size()) + " bytes\n";
+#else
+    const long available_pages = sysconf(_SC_AVPHYS_PAGES);
+    const long page_size = sysconf(_SC_PAGESIZE);
+    if (available_pages <= 0 || page_size <= 0) {
+        return "Memoria livre: indisponivel (0 bytes)\n";
+    }
+    const unsigned long long available_bytes =
+        static_cast<unsigned long long>(available_pages) * static_cast<unsigned long long>(page_size);
+    return "Memoria livre: " + std::to_string(available_bytes) + " bytes\n";
+#endif
+}
+
+std::string cmd_df(const std::vector<std::string> &args, const std::string &cwd)
+{
+    const std::string path = resolve_path(cwd, args.size() > 1 ? args[1] : cwd);
+#if defined(ESP_PLATFORM)
+    uint64_t total = 0;
+    uint64_t available = 0;
+    const esp_err_t result = esp_vfs_fat_info(path.c_str(), &total, &available);
+    if (result != ESP_OK) {
+        return "df: " + path + ": " + esp_err_to_name(result) + "\n";
+    }
+#else
+    struct statvfs fs = {};
+    if (statvfs(path.c_str(), &fs) != 0) {
+        return "df: " + path + ": " + std::strerror(errno) + "\n";
+    }
+    const uint64_t total = static_cast<uint64_t>(fs.f_blocks) * fs.f_frsize;
+    const uint64_t available = static_cast<uint64_t>(fs.f_bavail) * fs.f_frsize;
+#endif
+    return "Filesystem: " + path +
+           "\n"
+           "      Total       Livre\n" +
+           std::to_string(static_cast<unsigned long long>(total)) + "  " +
+           std::to_string(static_cast<unsigned long long>(available)) + "\n";
+}
+
+std::string cmd_date(void)
+{
+    std::time_t now = std::time(nullptr);
+    struct tm local = {};
+    if (localtime_r(&now, &local) == nullptr) {
+        return "date: unavailable\n";
+    }
+    char buf[64] = {};
+    if (std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S %z", &local) == 0) {
+        return "date: unavailable\n";
+    }
+    return std::string(buf) + "\n";
 }
 
 } // namespace
@@ -429,6 +495,15 @@ std::string terminal_exec(const std::string &line, std::string &cwd)
     }
     if (cmd == "echo") {
         return cmd_echo(args);
+    }
+    if (cmd == "free") {
+        return cmd_free();
+    }
+    if (cmd == "df") {
+        return cmd_df(args, cwd);
+    }
+    if (cmd == "date") {
+        return cmd_date();
     }
     if (cmd == "clear") {
         return "\x0C"; // Form feed / sinal de clear

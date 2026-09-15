@@ -11,8 +11,17 @@ class StorageMgrTest : public ::testing::Test {
   protected:
     void SetUp() override
     {
+        /* Isolamento deterministico: esta suite conta o numero exato de apps
+         * instaladas/pacotes pendentes (asserts de tamanho == 1). Outras
+         * suites (package_mgr etc.) podem ter deixado artefatos fisicos nos
+         * mesmos diretorios (no host, a desinstalacao de apps nao remove
+         * realmente o diretorio, pois unlink/rmdir nao sao redirecionados
+         * pelos wrappers). Apagamos a base de apps antes de reinicializar. */
+        hostmock::rm_rf(TAB5_APPS_DIR);
+        hostmock::rm_rf(TAB5_APPS_EMBEDDED_DIR);
+        hostmock::rm_rf(TAB5_APPS_DATA_DIR);
         app_registry_init();
-        tab5_package_mgr_init();
+        tab5_package_mgr_init(); /* recria os diretorios-base */
     }
 };
 
@@ -125,7 +134,10 @@ TEST_F(StorageMgrTest, ListInstalledAppsAndPendingPackages)
     }
     EXPECT_TRUE(found_pkg);
 
-    tab5_package_mgr_uninstall("com.tab5.demo", true);
+    ASSERT_EQ(tab5_package_mgr_uninstall("com.tab5.demo", true), TAB5_OK);
+    /* O pacote pendente e artefato deste teste: remove para nao vazar e
+     * manter a contagem correta dos testes seguintes. */
+    hostmock::rm_rf(pkg_dir.c_str());
 }
 
 TEST_F(StorageMgrTest, EmbeddedAppsAndRegularPendingFilesAreListed)
@@ -155,4 +167,8 @@ TEST_F(StorageMgrTest, EmbeddedAppsAndRegularPendingFilesAreListed)
     ASSERT_EQ(packages.size(), 1u);
     EXPECT_STREQ(packages[0].id, "com.tab5.pending");
     EXPECT_STREQ(packages[0].name, "Pending");
+
+    /* Deixa o ambiente como encontrou (higiene entre suites no mesmo processo). */
+    hostmock::rm_rf(embedded.c_str());
+    hostmock::rm_rf(pending.c_str());
 }
