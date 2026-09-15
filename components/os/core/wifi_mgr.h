@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #define WIFI_SCAN_MAX_APS 16
+#define WIFI_SCAN_SYNC_TIMEOUT_MS 8000
 
 typedef void (*wifi_scan_cb_t)(const wifi_ap_record_t *aps, int count, void *ctx);
 
@@ -24,6 +25,10 @@ esp_err_t wifi_mgr_connect(const char *ssid, const char *password);
 
 /* Dispara um scan; chama cb com os APs encontrados (copia valida ate o retorno) */
 esp_err_t wifi_mgr_scan(wifi_scan_cb_t cb, void *ctx);
+
+/* Cancela o scan identificado pelo callback. Retorna true quando o callback
+ * ja foi destacado para execucao e portanto ainda e dono do contexto. */
+bool wifi_mgr_cancel_scan(wifi_scan_cb_t cb, void *ctx);
 
 /* Desconecta da rede ativa e interrompe tentativas de reconexao */
 esp_err_t wifi_mgr_disconnect(void);

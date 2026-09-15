@@ -262,7 +262,7 @@ void ui_keyboard_attach(lv_obj_t *ta)
     ui_shell_notify_keyboard_layout();
 }
 
-void ui_keyboard_notify_hardware_change(void)
+static void ui_keyboard_notify_hardware_change_async_cb(void *)
 {
     if (kb_target != nullptr) {
         if (ui_keyboard_is_hardware_connected()) {
@@ -272,6 +272,16 @@ void ui_keyboard_notify_hardware_change(void)
             apply_keyboard_layout();
         }
         ui_shell_notify_keyboard_layout();
+    }
+}
+
+void ui_keyboard_notify_hardware_change(void)
+{
+    /* GAP callbacks run in the NimBLE task. Queue the LVGL work instead of
+     * touching the display from that task. */
+    if (bsp_display_lock(pdMS_TO_TICKS(50))) {
+        lv_async_call(ui_keyboard_notify_hardware_change_async_cb, nullptr);
+        bsp_display_unlock();
     }
 }
 

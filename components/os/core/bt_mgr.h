@@ -10,6 +10,7 @@ extern "C" {
 #endif
 
 #define BT_SCAN_MAX_DEVICES 20
+#define BT_SCAN_SYNC_TIMEOUT_MS 7000
 
 typedef struct {
     char mac[18];

@@ -53,6 +53,12 @@ struct pending_conn_t {
     char mac[18];
 };
 
+struct pending_scan_t {
+    bool active;
+    bt_scan_cb_t cb;
+    void *ctx;
+};
+
 #define AUTOCONN_BACKOFF_MS 15000
 #define AUTOCONN_FAIL_SLOTS 4
 #define BT_SCAN_PASSIVE_MIN_INTERVAL_MS 15000
@@ -65,6 +71,7 @@ SemaphoreHandle_t s_bt_mutex = nullptr;
 active_conn_t s_active_conns[MAX_ACTIVE_CONNS] = {};
 int s_active_count = 0;
 pending_conn_t s_pending = {};
+pending_scan_t s_pending_scan = {};
 autoconn_fail_t s_autoconn_fails[AUTOCONN_FAIL_SLOTS] = {};
 bt_conn_cb_t s_conn_cb = nullptr;
 void *s_conn_ctx = nullptr;
@@ -75,9 +82,23 @@ bool s_nimble_inited = false;
 bool s_nimble_synced = false;
 bool s_scanning = false;
 TimerHandle_t s_scan_watchdog = nullptr;
+TimerHandle_t s_scan_deferred_timer = nullptr;
+TaskHandle_t s_scan_deferred_task = nullptr;
 bt_scan_cb_t s_scan_cb = nullptr;
 void *s_scan_ctx = nullptr;
 TickType_t s_last_passive_scan_tick = 0;
+
+/* Resultado entregue ao callback. Fica fora das pilhas pequenas do host
+ * NimBLE, do timer e da GAP task. O mutex protege a copia; o callback roda
+ * sem o mutex e permanece sincrono durante o uso deste buffer. */
+bt_device_info_t s_scan_callback_devices[BT_SCAN_MAX_DEVICES] = {};
+
+struct deferred_scan_t {
+    bool pending;
+    bt_scan_cb_t cb;
+    void *ctx;
+};
+deferred_scan_t s_deferred_scan = {};
 
 static bool passive_rescan_throttled(bt_scan_cb_t cb)
 {
@@ -118,8 +139,6 @@ static void save_nvs_bt_enabled(bool en)
 
 bt_device_info_t s_discovered[BT_SCAN_MAX_DEVICES] = {};
 int s_discovered_count = 0;
-
-bt_device_info_t s_callback_buffer[BT_SCAN_MAX_DEVICES] = {};
 
 #define MAX_CCCD_QUEUE 16
 uint16_t s_cccd_queue[MAX_CCCD_QUEUE] = {};
@@ -326,7 +345,11 @@ bt_dev_type_t classify_device(const struct ble_hs_adv_fields *fields)
     return BT_DEV_TYPE_KEYBOARD;
 }
 
-void finish_scan_locked(void)
+/* Detach the callback and copy its result while s_bt_mutex is held.  The
+ * callback must run after releasing the mutex: it may be the synchronous ABI
+ * waiter and it may issue another scan. */
+void finish_scan_locked(bt_device_info_t *callback_devices, int *callback_count, bt_scan_cb_t *callback,
+                        void **callback_ctx)
 {
     if (s_scan_watchdog != nullptr) {
         xTimerStop(s_scan_watchdog, 0);
@@ -335,25 +358,76 @@ void finish_scan_locked(void)
     ESP_LOGI(TAG, "Scan NimBLE concluido (%d dispositivos)", s_discovered_count);
 
     if (s_scan_cb != nullptr) {
-        bt_scan_cb_t cb = s_scan_cb;
-        void *ctx = s_scan_ctx;
+        if (callback != nullptr) {
+            *callback = s_scan_cb;
+        }
+        if (callback_ctx != nullptr) {
+            *callback_ctx = s_scan_ctx;
+        }
         s_scan_cb = nullptr;
         s_scan_ctx = nullptr;
 
         int copy_count = s_discovered_count;
-        memcpy(s_callback_buffer, s_discovered, sizeof(bt_device_info_t) * copy_count);
+        if (callback_count != nullptr) {
+            *callback_count = copy_count;
+        }
+        if (callback_devices != nullptr && copy_count > 0) {
+            memcpy(callback_devices, s_discovered, sizeof(bt_device_info_t) * copy_count);
+        }
+    }
+}
 
-        if (s_bt_mutex != nullptr) {
+static void deferred_scan_cb(TimerHandle_t timer)
+{
+    (void)timer;
+    if (s_scan_deferred_task != nullptr) {
+        xTaskNotifyGive(s_scan_deferred_task);
+    }
+}
+
+static void deferred_scan_task(void *)
+{
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        bt_scan_cb_t cb = nullptr;
+        void *ctx = nullptr;
+        bool have_request = false;
+        if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (s_deferred_scan.pending) {
+                have_request = true;
+                cb = s_deferred_scan.cb;
+                ctx = s_deferred_scan.ctx;
+                s_deferred_scan = {};
+            }
             xSemaphoreGive(s_bt_mutex);
         }
+        if (have_request) {
+            bt_mgr_scan(cb, ctx);
+        }
+    }
+}
 
-        cb(s_callback_buffer, copy_count, ctx);
+static void defer_scan(bt_scan_cb_t cb, void *ctx)
+{
+    if (s_scan_deferred_timer == nullptr || s_scan_deferred_task == nullptr || s_bt_mutex == nullptr) {
+        ESP_LOGW(TAG, "Busca adiada descartada: timer do Bluetooth indisponivel");
         return;
     }
-
-    if (s_bt_mutex != nullptr) {
-        xSemaphoreGive(s_bt_mutex);
+    if (xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return;
     }
+    s_deferred_scan.pending = true;
+    s_deferred_scan.cb = cb;
+    s_deferred_scan.ctx = ctx;
+    /* O timer apenas acorda a task dedicada. Nunca execute bt_mgr_scan na
+     * task global de timers, cuja stack e pequena. Mantem o armamento do timer
+     * junto com a atualizacao do slot: sem isso a task dedicada pode consumir
+     * o pedido entre o unlock e o xTimerStart, ou um cancelamento pode limpar
+     * o slot e deixar um timer atrasado acordando com estado antigo. */
+    xTimerStop(s_scan_deferred_timer, 0);
+    xTimerStart(s_scan_deferred_timer, 0);
+    xSemaphoreGive(s_bt_mutex);
 }
 
 void scan_watchdog_cb(TimerHandle_t xTimer)
@@ -362,8 +436,15 @@ void scan_watchdog_cb(TimerHandle_t xTimer)
     ESP_LOGW(TAG, "Scan watchdog disparado (finalizando busca)");
     ble_gap_disc_cancel();
 
+    int callback_count = 0;
+    bt_scan_cb_t callback = nullptr;
+    void *callback_ctx = nullptr;
     if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        finish_scan_locked();
+        finish_scan_locked(s_scan_callback_devices, &callback_count, &callback, &callback_ctx);
+        xSemaphoreGive(s_bt_mutex);
+    }
+    if (callback != nullptr) {
+        callback(s_scan_callback_devices, callback_count, callback_ctx);
     }
 }
 
@@ -659,7 +740,7 @@ static int handle_gap_disc(struct ble_gap_event *event)
             is_paired = true;
         } else if (name_str[0] != '\0') {
             bt_saved_list_t list = {};
-            if (bt_storage_load_all(&list) == ESP_OK) {
+            if (bt_storage_get_cached(&list) == ESP_OK) {
                 for (int k = 0; k < list.count; k++) {
                     if (strcasecmp(list.items[k].name, name_str) == 0 && list.items[k].paired) {
                         saved = list.items[k];
@@ -679,7 +760,7 @@ static int handle_gap_disc(struct ble_gap_event *event)
             ESP_LOGI(TAG, "MAC do dispositivo \"%s\" rotacionou (%s -> %s): atualizando registro", name_str, saved.mac,
                      mac_str);
             bt_saved_list_t list = {};
-            if (bt_storage_load_all(&list) == ESP_OK) {
+            if (bt_storage_get_cached(&list) == ESP_OK) {
                 bool updated = false;
                 for (int k = 0; k < list.count; k++) {
                     if (strcasecmp(list.items[k].mac, saved.mac) == 0) {
@@ -877,7 +958,7 @@ static int handle_gap_connect(struct ble_gap_event *event)
         /* Rescan passivo so quando ninguem cancelou de proposito (ex.: o
          * usuario ja iniciou um scan novo) e nao ha conexao viva. */
         if (!cancel_expected && !any_connected_locked()) {
-            bt_mgr_scan(nullptr, nullptr);
+            defer_scan(nullptr, nullptr);
         }
     }
     ui_keyboard_notify_hardware_change();
@@ -936,7 +1017,7 @@ static int handle_gap_disconnect(struct ble_gap_event *event)
             }
             if (gone_name[0] != '\0') {
                 bt_saved_list_t list = {};
-                if (bt_storage_load_all(&list) == ESP_OK) {
+                if (bt_storage_get_cached(&list) == ESP_OK) {
                     for (int i = 0; i < list.count; i++) {
                         if (list.items[i].paired && list.items[i].auto_connect &&
                             strcasecmp(list.items[i].name, gone_name) == 0) {
@@ -973,9 +1054,9 @@ static int handle_gap_disconnect(struct ble_gap_event *event)
 
     {
         bt_saved_list_t list = {};
-        if (bt_storage_load_all(&list) == ESP_OK && list.count > 0) {
+        if (bt_storage_get_cached(&list) == ESP_OK && list.count > 0) {
             ESP_LOGD(TAG, "Reiniciando escuta passiva apos desconexao...");
-            bt_mgr_scan(nullptr, nullptr);
+            defer_scan(nullptr, nullptr);
         }
     }
     return 0;
@@ -1370,18 +1451,47 @@ int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISC:
         return handle_gap_disc(event);
 
-    case BLE_GAP_EVENT_DISC_COMPLETE:
-        if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            finish_scan_locked();
+    case BLE_GAP_EVENT_DISC_COMPLETE: {
+        int callback_count = 0;
+        bt_scan_cb_t callback = nullptr;
+        void *callback_ctx = nullptr;
+        bt_scan_cb_t pending_cb = nullptr;
+        void *pending_ctx = nullptr;
+        bool restart_passive = false;
+        if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, portMAX_DELAY) == pdTRUE) {
+            /* Consume the pending request before dropping the lock.  The
+             * previous implementation released the lock from
+             * finish_scan_locked(), then reacquired it; a caller could start
+             * a new scan in that window and have its callback overwritten. */
+            finish_scan_locked(s_scan_callback_devices, &callback_count, &callback, &callback_ctx);
+            if (s_pending_scan.active) {
+                pending_cb = s_pending_scan.cb;
+                pending_ctx = s_pending_scan.ctx;
+                s_pending_scan = {};
+            } else {
+                restart_passive = !any_connected_locked();
+            }
+            xSemaphoreGive(s_bt_mutex);
         }
-        if (!any_connected_locked()) {
+        if (callback != nullptr) {
+            callback(s_scan_callback_devices, callback_count, callback_ctx);
+        }
+        if (pending_cb != nullptr) {
+            /* A canceled passive scan completes asynchronously.  Defer the
+             * manual request beyond this GAP callback, never while the
+             * controller can still report the old procedure. */
+            defer_scan(pending_cb, pending_ctx);
+            return 0;
+        }
+        if (restart_passive) {
             bt_saved_list_t list = {};
-            if (bt_storage_load_all(&list) == ESP_OK && list.count > 0) {
+            if (bt_storage_get_cached(&list) == ESP_OK && list.count > 0) {
                 ESP_LOGD(TAG, "Reiniciando escuta passiva em segundo plano para auto-reconexao...");
-                bt_mgr_scan(nullptr, nullptr);
+                defer_scan(nullptr, nullptr);
             }
         }
         return 0;
+    }
 
     case BLE_GAP_EVENT_CONNECT:
         return handle_gap_connect(event);
@@ -1460,7 +1570,7 @@ void ble_app_on_sync(void)
 
     /* Tenta conexão direta imediata com o dispositivo pareado */
     bt_saved_list_t list = {};
-    if (bt_storage_load_all(&list) == ESP_OK && list.count > 0) {
+    if (bt_storage_get_cached(&list) == ESP_OK && list.count > 0) {
         for (int i = 0; i < list.count; i++) {
             if (list.items[i].paired && list.items[i].auto_connect) {
                 ESP_LOGI(TAG, "Iniciando auto-reconexao direta com %s [%s]...", list.items[i].name, list.items[i].mac);
@@ -1545,9 +1655,17 @@ esp_err_t bt_mgr_set_enabled(bool enabled)
         }
         s_pending.active = false;
         s_pending.mac[0] = '\0';
+        s_pending_scan = {};
         s_scanning = false;
         if (s_scan_watchdog != nullptr) {
             xTimerStop(s_scan_watchdog, 0);
+        }
+        if (s_scan_deferred_timer != nullptr) {
+            xTimerStop(s_scan_deferred_timer, 0);
+        }
+        if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_deferred_scan = {};
+            xSemaphoreGive(s_bt_mutex);
         }
 
         if (s_bt_mutex != nullptr && xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -1570,7 +1688,7 @@ esp_err_t bt_mgr_set_enabled(bool enabled)
     } else {
         if (s_nimble_synced) {
             bt_saved_list_t list = {};
-            if (bt_storage_load_all(&list) == ESP_OK && list.count > 0) {
+            if (bt_storage_get_cached(&list) == ESP_OK && list.count > 0) {
                 for (int i = 0; i < list.count; i++) {
                     if (list.items[i].paired && list.items[i].auto_connect) {
                         ESP_LOGI(TAG, "Auto-reconectando ao dispositivo salvo: %s [%s]...", list.items[i].name,
@@ -1599,11 +1717,26 @@ esp_err_t bt_mgr_start(void)
         s_bt_mutex = xSemaphoreCreateMutex();
     }
 
+    if (s_scan_deferred_task == nullptr) {
+        BaseType_t task_rc = xTaskCreate(deferred_scan_task, "bt_scan", 8192, nullptr, 5, &s_scan_deferred_task);
+        if (task_rc != pdPASS) {
+            ESP_LOGE(TAG, "Nao foi possivel criar task de scan adiado");
+            s_scan_deferred_task = nullptr;
+        }
+    }
+
     ESP_LOGI(TAG, "Iniciando subsistema NimBLE Bluetooth (habilitado=%d)...", (int)s_bt_enabled);
 
     if (s_scan_watchdog == nullptr) {
         s_scan_watchdog = xTimerCreate("bt_sc_wd", pdMS_TO_TICKS(5500), pdFALSE, nullptr, scan_watchdog_cb);
     }
+    if (s_scan_deferred_timer == nullptr) {
+        s_scan_deferred_timer = xTimerCreate("bt_sc_def", pdMS_TO_TICKS(1), pdFALSE, nullptr, deferred_scan_cb);
+    }
+
+    /* FATFS e acessado uma unica vez, antes de criar a nimble_host task.
+     * Todos os callbacks GAP/GATT passam a consultar apenas o cache RAM. */
+    bt_storage_preload();
 
     /* Desde o esp-hosted 2.5.2 o controller BT do coprocessador (C6) nasce
      * desligado: inicializar e habilitar explicitamente antes do host stack. */
@@ -1642,12 +1775,6 @@ esp_err_t bt_mgr_start(void)
     nimble_port_freertos_init(ble_host_task);
     s_nimble_inited = true;
 
-    /* Carrega dispositivos salvos */
-    bt_saved_list_t list = {};
-    if (bt_storage_load_all(&list) == ESP_OK) {
-        ESP_LOGI(TAG, "Dispositivos salvos carregados (%d)", list.count);
-    }
-
     return ESP_OK;
 }
 
@@ -1656,6 +1783,12 @@ esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
     if (!s_bt_enabled) {
         ESP_LOGW(TAG, "Tentativa de scan ignorada: Bluetooth desativado");
         return ESP_ERR_INVALID_STATE;
+    }
+
+    /* Uma chamada de scan pode ser a primeira entrada no modulo. Precarrega
+     * ainda no caller normal antes de qualquer eventual acesso pelo host. */
+    if (!s_nimble_inited) {
+        bt_storage_preload();
     }
 
     if (passive_rescan_throttled(cb)) {
@@ -1668,6 +1801,28 @@ esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
 
     if (xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
+    }
+
+    /* O callback de scan e um slot unico. Nunca substitua uma busca manual
+     * ainda em andamento: o chamador sincrono precisa receber exatamente os
+     * resultados da busca que iniciou. */
+    if (s_scanning) {
+        if (cb == nullptr || s_scan_cb != nullptr || s_pending_scan.active) {
+            xSemaphoreGive(s_bt_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
+        /* Uma busca passiva não pode impedir a busca manual solicitada pela
+         * UI/ABI. Cancel somente o procedimento sem callback; buscas
+         * manuais concorrentes continuam sendo rejeitadas acima. */
+        s_pending_scan.active = true;
+        s_pending_scan.cb = cb;
+        s_pending_scan.ctx = ctx;
+        ble_gap_disc_cancel();
+        if (s_scan_watchdog != nullptr) {
+            xTimerStop(s_scan_watchdog, 0);
+        }
+        xSemaphoreGive(s_bt_mutex);
+        return ESP_OK;
     }
 
     /* Um scan novo cancela tentativa de conexao pendente: o CONNECT que
@@ -1686,7 +1841,7 @@ esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
 
     /* Carrega dispositivos ja salvos no SD primeiro */
     bt_saved_list_t saved_list = {};
-    if (bt_storage_load_all(&saved_list) == ESP_OK) {
+    if (bt_storage_get_cached(&saved_list) == ESP_OK) {
         for (int i = 0; i < saved_list.count && s_discovered_count < BT_SCAN_MAX_DEVICES; i++) {
             bt_device_info_t *dev = &s_discovered[s_discovered_count++];
             snprintf(dev->mac, sizeof(dev->mac), "%s", saved_list.items[i].mac);
@@ -1736,8 +1891,15 @@ esp_err_t bt_mgr_scan(bt_scan_cb_t cb, void *ctx)
 
     if (rc != 0) {
         ESP_LOGE(TAG, "ble_gap_disc falhou: %d", rc);
+        int callback_count = 0;
+        bt_scan_cb_t callback = nullptr;
+        void *callback_ctx = nullptr;
         if (xSemaphoreTake(s_bt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            finish_scan_locked();
+            finish_scan_locked(s_scan_callback_devices, &callback_count, &callback, &callback_ctx);
+            xSemaphoreGive(s_bt_mutex);
+        }
+        if (callback != nullptr) {
+            callback(s_scan_callback_devices, callback_count, callback_ctx);
         }
         return ESP_FAIL;
     }

@@ -78,6 +78,12 @@ tab5_err_t tab5_host_abi_init(void);
  */
 const tab5_native_symbol_t *tab5_host_abi_get_symbols(uint32_t *out_count);
 
+/* Internal variants used by the serial bridge to apply the requested deadline. */
+tab5_err_t tab5_wifi_scan_with_timeout(tab5_wifi_ap_t *out_aps, uint32_t max_aps, uint32_t *out_count,
+                                       uint32_t timeout_ms);
+tab5_err_t tab5_bt_scan_with_timeout(tab5_bt_dev_t *out_devs, uint32_t max_devs, uint32_t *out_count,
+                                     uint32_t timeout_ms);
+
 /**
  * @brief Define o contexto da aplicação atualmente ativa no Host.
  */

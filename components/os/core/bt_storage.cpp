@@ -144,6 +144,32 @@ esp_err_t bt_storage_load_all(bt_saved_list_t *list)
     return ESP_OK;
 }
 
+esp_err_t bt_storage_preload(void)
+{
+    bt_saved_list_t list = {};
+    esp_err_t err = bt_storage_load_all(&list);
+    if (err == ESP_ERR_NOT_FOUND) {
+        /* Ausencia do arquivo tambem e um estado cacheavel. */
+        s_cache = {};
+        s_cache_valid = true;
+        return ESP_OK;
+    }
+    return err;
+}
+
+esp_err_t bt_storage_get_cached(bt_saved_list_t *list)
+{
+    if (list == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_cache_valid) {
+        list->count = 0;
+        return ESP_ERR_NOT_FOUND;
+    }
+    *list = s_cache;
+    return ESP_OK;
+}
+
 esp_err_t bt_storage_save_all(const bt_saved_list_t *list)
 {
     if (list == NULL) {

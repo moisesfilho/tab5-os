@@ -38,7 +38,9 @@
 #include "ui_shell.h"
 #include "ui_screensaver.h"
 #include "ui_screen_off.h"
+#include "tab5_sdk.h"
 #include "wifi_mgr.h"
+#include "bt_mgr.h"
 #include <unistd.h>
 #include <cstdarg>
 #endif
@@ -724,6 +726,72 @@ extern "C" int serial_bridge_dispatch(const char *json_line, char *out, size_t o
             cJSON_AddBoolToObject(d, "enabled", s_idle_enabled);
             result = envelope("ok", cmd, nullptr, d, rid);
         }
+    } else if (!strcmp(cmd, "wifi.scan")) {
+        int timeout_ms = 0;
+        (void)has_number(root, "timeout_ms", &timeout_ms);
+        if (timeout_ms < 0)
+            timeout_ms = 0;
+#ifdef ESP_PLATFORM
+        tab5_wifi_ap_t aps[WIFI_SCAN_MAX_APS] = {};
+        uint32_t count = 0;
+        const tab5_err_t scan_err = tab5_wifi_scan_with_timeout(aps, WIFI_SCAN_MAX_APS, &count, (uint32_t)timeout_ms);
+        if (scan_err != TAB5_OK) {
+            result = error_frame(cmd,
+                                 scan_err == TAB5_ERR_TIMEOUT         ? "timeout no scan Wi-Fi"
+                                 : scan_err == TAB5_ERR_INVALID_STATE ? "Wi-Fi desabilitado"
+                                                                      : "falha no scan Wi-Fi",
+                                 rid);
+        } else {
+            cJSON *d = cJSON_CreateObject();
+            cJSON *items = cJSON_AddArrayToObject(d, "aps");
+            cJSON_AddNumberToObject(d, "count", count);
+            for (uint32_t i = 0; i < count; ++i) {
+                cJSON *ap = cJSON_CreateObject();
+                cJSON_AddStringToObject(ap, "ssid", aps[i].ssid);
+                cJSON_AddNumberToObject(ap, "rssi", aps[i].rssi);
+                cJSON_AddNumberToObject(ap, "authmode", aps[i].authmode);
+                cJSON_AddItemToArray(items, ap);
+            }
+            result = envelope("ok", cmd, nullptr, d, rid);
+        }
+#else
+        result = error_frame(cmd, "Wi-Fi indisponivel neste alvo", rid);
+#endif
+    } else if (!strcmp(cmd, "ble.scan")) {
+        int timeout_ms = 0;
+        (void)has_number(root, "timeout_ms", &timeout_ms);
+        if (timeout_ms < 0)
+            timeout_ms = 0;
+#ifdef ESP_PLATFORM
+        tab5_bt_dev_t devices[BT_SCAN_MAX_DEVICES] = {};
+        uint32_t count = 0;
+        const tab5_err_t scan_err =
+            tab5_bt_scan_with_timeout(devices, BT_SCAN_MAX_DEVICES, &count, (uint32_t)timeout_ms);
+        if (scan_err != TAB5_OK) {
+            result = error_frame(cmd,
+                                 scan_err == TAB5_ERR_TIMEOUT         ? "timeout no scan Bluetooth"
+                                 : scan_err == TAB5_ERR_INVALID_STATE ? "Bluetooth desabilitado"
+                                                                      : "falha no scan Bluetooth",
+                                 rid);
+        } else {
+            cJSON *d = cJSON_CreateObject();
+            cJSON *items = cJSON_AddArrayToObject(d, "devices");
+            cJSON_AddNumberToObject(d, "count", count);
+            for (uint32_t i = 0; i < count; ++i) {
+                cJSON *device = cJSON_CreateObject();
+                cJSON_AddStringToObject(device, "mac", devices[i].mac);
+                cJSON_AddStringToObject(device, "name", devices[i].name);
+                cJSON_AddNumberToObject(device, "rssi", devices[i].rssi);
+                cJSON_AddNumberToObject(device, "type", devices[i].type);
+                cJSON_AddBoolToObject(device, "connected", devices[i].connected != 0);
+                cJSON_AddBoolToObject(device, "paired", devices[i].paired != 0);
+                cJSON_AddItemToArray(items, device);
+            }
+            result = envelope("ok", cmd, nullptr, d, rid);
+        }
+#else
+        result = error_frame(cmd, "Bluetooth indisponivel neste alvo", rid);
+#endif
     } else if (!strcmp(cmd, "sys.info")) {
         cJSON *d = cJSON_CreateObject();
 #ifdef ESP_PLATFORM

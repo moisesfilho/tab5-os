@@ -22,7 +22,12 @@ def test_notas_dispatches_wasm_action_button_events():
     assert "TAB5_APP_EXPORT void tab5_app_on_ui_event" in source
     assert "if (obj == s_save_button)" in source
     assert "on_save_note(NULL);" in source
-    assert "tab5_storage_write_file(target, content, strlen(content))" in source
+    # Após a migração do ABI para tab5_ui_textarea_copy_text, o conteúdo a
+    # gravar é lido com buffer cativo (nunca strlen sobre memória do app) e o
+    # tamanho guardado é o retornado pela cópia (content_len).
+    assert "tab5_ui_textarea_copy_text(ta, content, sizeof(content))" in source
+    assert "tab5_storage_write_file(target, content, (size_t)content_len)" in source
+    assert "content_len < 0 || (uint32_t)content_len >= sizeof(content)" in source
     assert 'tab5_storage_mkdir("/sdcard/notas")' in source
     assert '"/sdcard/notas/nota-%s.txt"' in source
     assert '"Nota salva: %s"' in source

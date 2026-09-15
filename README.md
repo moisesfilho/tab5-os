@@ -112,6 +112,11 @@ header do Tab5, sem compartilhar o console USB: **UART1**, **115200 baud, 8N1**,
 ser ajustados em `menuconfig` (`Component config → tab5 Serial Automation
 Bridge`) ou sobrescritos em `sdkconfig`.
 
+Na validação física, os comandos `wifi.scan` e `ble.scan` usam scans síncronos,
+com timeout e retorno explícito de erro, e foram exercitados no dispositivo via
+USB-Serial-JTAG (`/dev/ttyACM0`). Essa validação foi feita no hardware real; o
+simulador não foi usado para esse cenário.
+
 ## Qualidade de código & CI
 
 Validações automáticas garantem consistência de estilo e segurança no firmware:

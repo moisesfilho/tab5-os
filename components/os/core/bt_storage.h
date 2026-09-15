@@ -36,6 +36,16 @@ typedef struct {
 /* Carrega todos os dispositivos salvos do bt.cfg */
 esp_err_t bt_storage_load_all(bt_saved_list_t *list);
 
+/*
+ * Faz a unica leitura inicial do arquivo de configuracao. Deve ser chamado
+ * antes de iniciar o host NimBLE; depois disso bt_storage_get_cached() usa
+ * somente o cache em RAM.
+ */
+esp_err_t bt_storage_preload(void);
+
+/* Consulta sem tocar no FATFS; retorna ESP_ERR_NOT_FOUND antes do preload. */
+esp_err_t bt_storage_get_cached(bt_saved_list_t *list);
+
 /* Grava todos os dispositivos salvos no bt.cfg */
 esp_err_t bt_storage_save_all(const bt_saved_list_t *list);
 

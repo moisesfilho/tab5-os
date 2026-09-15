@@ -9,6 +9,8 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "esp_sntp.h"
@@ -29,7 +31,24 @@ static bool s_wifi_enabled = true;
 static int s_retry_delay_ms = CONNECT_RETRY_BASE_MS;
 static wifi_scan_cb_t s_scan_cb = NULL;
 static void *s_scan_cb_ctx = NULL;
+static volatile bool s_scan_in_progress = false;
+static SemaphoreHandle_t s_scan_mutex = NULL;
+static bool s_scan_callback_pending = false;
+static wifi_scan_cb_t s_pending_scan_cb = NULL;
+static void *s_pending_scan_cb_ctx = NULL;
 static char s_connected_ssid[33] = "";
+
+static bool scan_state_lock(void)
+{
+    return s_scan_mutex != NULL && xSemaphoreTake(s_scan_mutex, pdMS_TO_TICKS(100)) == pdTRUE;
+}
+
+static void scan_state_unlock(void)
+{
+    if (s_scan_mutex != NULL) {
+        xSemaphoreGive(s_scan_mutex);
+    }
+}
 
 static void load_nvs_wifi_enabled(void)
 {
@@ -56,11 +75,56 @@ static void save_nvs_wifi_enabled(bool en)
 static void log_scan_results(void)
 {
     uint16_t ap_num = 0;
-    if (esp_wifi_scan_get_ap_num(&ap_num) != ESP_OK) {
+    esp_err_t num_err = esp_wifi_scan_get_ap_num(&ap_num);
+    if (num_err != ESP_OK) {
+        wifi_scan_cb_t cb = NULL;
+        void *ctx = NULL;
+        if (scan_state_lock()) {
+            cb = s_scan_cb;
+            ctx = s_scan_cb_ctx;
+            s_scan_cb = NULL;
+            s_scan_cb_ctx = NULL;
+            s_scan_callback_pending = cb != NULL;
+            s_pending_scan_cb = cb;
+            s_pending_scan_cb_ctx = ctx;
+            s_scan_in_progress = false;
+            scan_state_unlock();
+        }
+        if (cb != NULL) {
+            cb(NULL, 0, ctx);
+        }
+        if (scan_state_lock()) {
+            s_scan_callback_pending = false;
+            s_pending_scan_cb = NULL;
+            s_pending_scan_cb_ctx = NULL;
+            scan_state_unlock();
+        }
         return;
     }
     if (ap_num == 0) {
         ESP_LOGI(TAG, "scan: nenhum AP encontrado");
+        wifi_scan_cb_t cb = NULL;
+        void *ctx = NULL;
+        if (scan_state_lock()) {
+            cb = s_scan_cb;
+            ctx = s_scan_cb_ctx;
+            s_scan_cb = NULL;
+            s_scan_cb_ctx = NULL;
+            s_scan_callback_pending = cb != NULL;
+            s_pending_scan_cb = cb;
+            s_pending_scan_cb_ctx = ctx;
+            s_scan_in_progress = false;
+            scan_state_unlock();
+        }
+        if (cb != NULL) {
+            cb(NULL, 0, ctx);
+        }
+        if (scan_state_lock()) {
+            s_scan_callback_pending = false;
+            s_pending_scan_cb = NULL;
+            s_pending_scan_cb_ctx = NULL;
+            scan_state_unlock();
+        }
         return;
     }
     if (ap_num > WIFI_SCAN_MAX_APS) {
@@ -69,22 +133,60 @@ static void log_scan_results(void)
 
     wifi_ap_record_t *aps = (wifi_ap_record_t *)calloc(ap_num, sizeof(wifi_ap_record_t));
     if (aps == NULL) {
+        wifi_scan_cb_t cb = NULL;
+        void *ctx = NULL;
+        if (scan_state_lock()) {
+            cb = s_scan_cb;
+            ctx = s_scan_cb_ctx;
+            s_scan_cb = NULL;
+            s_scan_cb_ctx = NULL;
+            s_scan_callback_pending = cb != NULL;
+            s_pending_scan_cb = cb;
+            s_pending_scan_cb_ctx = ctx;
+            s_scan_in_progress = false;
+            scan_state_unlock();
+        }
+        if (cb != NULL) {
+            cb(NULL, 0, ctx);
+        }
+        if (scan_state_lock()) {
+            s_scan_callback_pending = false;
+            s_pending_scan_cb = NULL;
+            s_pending_scan_cb_ctx = NULL;
+            scan_state_unlock();
+        }
         return;
     }
-    if (esp_wifi_scan_get_ap_records(&ap_num, aps) == ESP_OK) {
+    const bool records_ok = esp_wifi_scan_get_ap_records(&ap_num, aps) == ESP_OK;
+    if (records_ok) {
         for (int i = 0; i < ap_num; i++) {
             ESP_LOGI(TAG, "scan[%d] ssid=\"%s\" rssi=%d ch=%d auth=%d", i, (char *)aps[i].ssid, aps[i].rssi,
                      aps[i].primary, (int)aps[i].authmode);
         }
-        if (s_scan_cb != NULL) {
-            wifi_scan_cb_t cb = s_scan_cb;
-            void *ctx = s_scan_cb_ctx;
-            s_scan_cb = NULL;
-            s_scan_cb_ctx = NULL;
-            cb(aps, ap_num, ctx);
-        }
+    }
+    wifi_scan_cb_t cb = NULL;
+    void *ctx = NULL;
+    if (scan_state_lock()) {
+        cb = s_scan_cb;
+        ctx = s_scan_cb_ctx;
+        s_scan_cb = NULL;
+        s_scan_cb_ctx = NULL;
+        s_scan_callback_pending = cb != NULL;
+        s_pending_scan_cb = cb;
+        s_pending_scan_cb_ctx = ctx;
+        s_scan_in_progress = false;
+        scan_state_unlock();
+    }
+    if (cb != NULL) {
+        cb(records_ok ? aps : NULL, records_ok ? ap_num : 0, ctx);
     }
     free(aps);
+    if (scan_state_lock()) {
+        s_scan_callback_pending = false;
+        s_pending_scan_cb = NULL;
+        s_pending_scan_cb_ctx = NULL;
+        scan_state_unlock();
+    }
 }
 
 static void try_connect(void)
@@ -148,7 +250,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_i
             if (s_has_cfg) {
                 try_connect();
             } else {
-                esp_wifi_scan_start(NULL, false);
+                wifi_mgr_scan(NULL, NULL);
             }
         }
         break;
@@ -182,21 +284,34 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_i
 static void scan_timer_cb(TimerHandle_t timer)
 {
     if (s_wifi_enabled && !s_has_cfg && !s_connected) {
-        esp_wifi_scan_start(NULL, false);
+        wifi_mgr_scan(NULL, NULL);
     }
 }
 
 bool wifi_mgr_is_enabled(void)
 {
-    return s_wifi_enabled;
+    if (s_scan_mutex == NULL || !scan_state_lock()) {
+        return false;
+    }
+    const bool enabled = s_wifi_enabled;
+    scan_state_unlock();
+    return enabled;
 }
 
 esp_err_t wifi_mgr_set_enabled(bool enabled)
 {
+    if (s_scan_mutex == NULL) {
+        s_scan_mutex = xSemaphoreCreateMutex();
+    }
+    if (!scan_state_lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
     if (s_wifi_enabled == enabled) {
+        scan_state_unlock();
         return ESP_OK;
     }
     s_wifi_enabled = enabled;
+    scan_state_unlock();
     save_nvs_wifi_enabled(enabled);
     ESP_LOGI(TAG, "Wi-Fi %s pelo usuario", enabled ? "HABILITADO" : "DESABILITADO");
 
@@ -287,18 +402,61 @@ esp_err_t wifi_mgr_forget(const char *ssid)
 
 esp_err_t wifi_mgr_scan(wifi_scan_cb_t cb, void *ctx)
 {
+    if (s_scan_mutex == NULL) {
+        s_scan_mutex = xSemaphoreCreateMutex();
+    }
+    if (!scan_state_lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
     if (!s_wifi_enabled) {
+        scan_state_unlock();
         ESP_LOGW(TAG, "Tentativa de scan ignorada: Wi-Fi desativado");
         return ESP_ERR_INVALID_STATE;
     }
+    if (s_scan_in_progress || s_scan_cb != NULL) {
+        scan_state_unlock();
+        /* IDF 5.5.5 reports an operation that is not currently legal with
+         * the available INVALID_STATE error. */
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_scan_in_progress = true;
     s_scan_cb = cb;
     s_scan_cb_ctx = ctx;
+    s_scan_callback_pending = false;
+    s_pending_scan_cb = NULL;
+    s_pending_scan_cb_ctx = NULL;
     esp_err_t err = esp_wifi_scan_start(NULL, false);
     if (err != ESP_OK) {
         s_scan_cb = NULL;
         s_scan_cb_ctx = NULL;
+        s_scan_in_progress = false;
     }
+    scan_state_unlock();
     return err;
+}
+
+bool wifi_mgr_cancel_scan(wifi_scan_cb_t cb, void *ctx)
+{
+    if (s_scan_mutex == NULL || xSemaphoreTake(s_scan_mutex, portMAX_DELAY) != pdTRUE) {
+        return false;
+    }
+
+    bool callback_pending = false;
+    if (s_scan_callback_pending && s_pending_scan_cb == cb && s_pending_scan_cb_ctx == ctx) {
+        callback_pending = true;
+    } else if (s_scan_in_progress && s_scan_cb == cb && s_scan_cb_ctx == ctx) {
+        s_scan_cb = NULL;
+        s_scan_cb_ctx = NULL;
+        s_scan_in_progress = false;
+    }
+    scan_state_unlock();
+
+    if (!callback_pending) {
+        /* The completion event may still arrive, but it now has no callback
+         * or context to dispatch. */
+        esp_wifi_scan_stop();
+    }
+    return callback_pending;
 }
 
 esp_err_t wifi_mgr_get_status(wifi_status_t *status)
@@ -325,6 +483,9 @@ esp_err_t wifi_mgr_get_status(wifi_status_t *status)
 
 esp_err_t wifi_mgr_start(void)
 {
+    if (s_scan_mutex == NULL) {
+        s_scan_mutex = xSemaphoreCreateMutex();
+    }
     load_nvs_wifi_enabled();
 
     ESP_RETURN_ON_ERROR(bsp_feature_enable(BSP_FEATURE_WIFI, true), TAG, "falha ao ligar radio WiFi");

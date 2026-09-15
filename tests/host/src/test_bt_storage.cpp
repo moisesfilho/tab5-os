@@ -53,6 +53,78 @@ TEST_F(BtStorageTest, LoadAllSemArquivoESemCacheRetornaNotFound)
     EXPECT_EQ(bt_storage_load_all(&lista), ESP_ERR_NOT_FOUND);
 }
 
+/* Cobertura do par preload/get_cached (contrato de boot documentado em
+ * bt_storage.h: preload() faz a unica leitura em disco; get_cached() nunca
+ * toca o FATFS). Os dois testes a seguir dependem do cache estatico AINDA
+ * invalido, por isso ficam registrados logo apos o caso que apenas observa
+ * ESP_ERR_NOT_FOUND sem popular o cache (ordem de registro preserva o
+ * determinismo tambem quando a suite roda em processo unico). */
+
+TEST_F(BtStorageTest, GetCachedSemPreloadRetornaNotFoundSemTocarDisco)
+{
+    /* Cache ainda invalido (nada salvou/leu): get_cached deve falhar e
+     * zerar a lista de saida, sem consultar o arquivo. */
+    bt_saved_list_t lista = {};
+    EXPECT_EQ(bt_storage_get_cached(&lista), ESP_ERR_NOT_FOUND);
+    EXPECT_EQ(lista.count, 0);
+}
+
+TEST_F(BtStorageTest, PreloadSemArquivoTornaCacheVazioValido)
+{
+    /* Ausencia do arquivo tambem e um estado cacheavel (bt_storage.cpp):
+     * apos o preload, get_cached responde OK com lista vazia. */
+    ASSERT_EQ(bt_storage_preload(), ESP_OK);
+
+    bt_saved_list_t lista = {};
+    ASSERT_EQ(bt_storage_get_cached(&lista), ESP_OK);
+    EXPECT_EQ(lista.count, 0);
+}
+
+TEST_F(BtStorageTest, PreloadComArquivoExistentePopulaCache)
+{
+    bt_saved_list_t base = {};
+    ASSERT_EQ(bt_storage_save_all(&base), ESP_OK);
+
+    bt_saved_device_t dev = dispositivo("AA:00:00:00:00:77", "Preload", BT_DEV_TYPE_MOUSE);
+    ASSERT_EQ(bt_storage_add_or_update(&dev), ESP_OK);
+    /* save/add ja atualizam o cache; preload rele o disco e reaplica. */
+    ASSERT_EQ(bt_storage_preload(), ESP_OK);
+
+    bt_saved_list_t lista = {};
+    ASSERT_EQ(bt_storage_get_cached(&lista), ESP_OK);
+    ASSERT_EQ(lista.count, 1);
+    EXPECT_STREQ(lista.items[0].mac, "AA:00:00:00:00:77");
+    EXPECT_STREQ(lista.items[0].name, "Preload");
+    EXPECT_EQ(lista.items[0].type, BT_DEV_TYPE_MOUSE);
+}
+
+TEST_F(BtStorageTest, PreloadReleDoDiscoSincronizaCacheComArquivoNovo)
+{
+    /* Cache valido e pre-existente; um arquivo gravado por fora do modulo
+     * (ex.: boot com bt.cfg no flash) deve reidratar get_cached. */
+    bt_saved_list_t base = {};
+    ASSERT_EQ(bt_storage_save_all(&base), ESP_OK);
+
+    escrever_cfg("[AA:00:00:00:00:81]\n"
+                 "name = Do Disco\n"
+                 "type = mouse\n");
+
+    ASSERT_EQ(bt_storage_preload(), ESP_OK);
+
+    bt_saved_list_t lista = {};
+    ASSERT_EQ(bt_storage_get_cached(&lista), ESP_OK);
+    ASSERT_EQ(lista.count, 1);
+    EXPECT_STREQ(lista.items[0].mac, "AA:00:00:00:00:81");
+    EXPECT_STREQ(lista.items[0].name, "Do Disco");
+    EXPECT_EQ(lista.items[0].type, BT_DEV_TYPE_MOUSE);
+}
+
+TEST_F(BtStorageTest, GetCachedRejeitaPonteiroNulo)
+{
+    /* Nao toca cache nem disco: valido em qualquer posicao da suite. */
+    EXPECT_EQ(bt_storage_get_cached(nullptr), ESP_ERR_INVALID_ARG);
+}
+
 TEST_F(BtStorageTest, SaveLoadRoundTripPreservaCampos)
 {
     bt_saved_list_t original = {};
@@ -154,6 +226,44 @@ TEST_F(BtStorageTest, TypeMappingAliasAudioEFallbackGenerico)
     EXPECT_EQ(lista.items[2].type, BT_DEV_TYPE_GENERIC);
     EXPECT_EQ(lista.items[3].type, BT_DEV_TYPE_GENERIC);
     /* Secao sem campos assume pareada com auto-conexao */
+    EXPECT_TRUE(lista.items[3].paired);
+    EXPECT_TRUE(lista.items[3].auto_connect);
+}
+
+TEST_F(BtStorageTest, LoadAllAceitaFormatosAlternativos)
+{
+    /* Formato legado aceito pelo parser: secao [MAC], chave "mac =" (com
+     * trimm de espacos), comentarios indentados, linhas sem '=' ignoradas e
+     * MAC de secao acima do tamanho do campo truncado com seguranca. */
+    escrever_cfg("# topo\n"
+                 "   ; comentario indentado\n"
+                 "linha-sem-igual\n"
+                 "[AA:00:00:00:00:0E]\n"
+                 "type = keyboard\n"
+                 "mac = AA:00:00:00:00:0F\n"
+                 "name = Primeiro\n"
+                 "mac = AA:00:00:00:00:10\n"
+                 "name = Segundo\n"
+                 "[AA:00:00:00:00:00000000000000000000000000]\n");
+
+    bt_saved_list_t lista = {};
+    ASSERT_EQ(bt_storage_load_all(&lista), ESP_OK);
+    ASSERT_EQ(lista.count, 4);
+
+    /* Dispositivo da secao [0E] com type aplicado antes do flush do "mac =". */
+    EXPECT_STREQ(lista.items[0].mac, "AA:00:00:00:00:0E");
+    EXPECT_EQ(lista.items[0].type, BT_DEV_TYPE_KEYBOARD);
+    EXPECT_TRUE(lista.items[0].paired);
+    EXPECT_TRUE(lista.items[0].auto_connect);
+
+    /* Entradas gravadas no formato chave "mac =". */
+    EXPECT_STREQ(lista.items[1].mac, "AA:00:00:00:00:0F");
+    EXPECT_STREQ(lista.items[1].name, "Primeiro");
+    EXPECT_STREQ(lista.items[2].mac, "AA:00:00:00:00:10");
+    EXPECT_STREQ(lista.items[2].name, "Segundo");
+
+    /* Secao com MAC estourado e truncada para caber no campo (17 chars). */
+    EXPECT_STREQ(lista.items[3].mac, "AA:00:00:00:00:00");
     EXPECT_TRUE(lista.items[3].paired);
     EXPECT_TRUE(lista.items[3].auto_connect);
 }

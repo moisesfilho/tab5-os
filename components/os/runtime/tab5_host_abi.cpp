@@ -10,6 +10,7 @@
 #include "tab5_lifecycle_host.h"
 #include "tab5_nvs_worker.h"
 #include "terminal_cmd.h"
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -48,7 +49,20 @@
 #include "file_assoc.h"
 #include "nvs_flash.h"
 #include "nvs.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include <vector>
+#endif
+
+/* The manager headers are ESP-IDF-only includes, but the public ABI also
+ * exposes host/simulator scan entry points. Keep their defaults available in
+ * every target while preserving the manager-provided values on IDF builds. */
+#ifndef WIFI_SCAN_SYNC_TIMEOUT_MS
+#define WIFI_SCAN_SYNC_TIMEOUT_MS 8000
+#endif
+#ifndef BT_SCAN_SYNC_TIMEOUT_MS
+#define BT_SCAN_SYNC_TIMEOUT_MS 7000
 #endif
 
 static tab5_app_context_t *s_active_app_ctx = nullptr;
@@ -883,7 +897,8 @@ tab5_err_t tab5_music_get_status(tab5_music_status_t *out_status)
 /* Gerenciamento de Rede Wi-Fi                                               */
 /* ========================================================================= */
 
-tab5_err_t tab5_wifi_scan(tab5_wifi_ap_t *out_aps, uint32_t max_aps, uint32_t *out_count)
+tab5_err_t tab5_wifi_scan_with_timeout(tab5_wifi_ap_t *out_aps, uint32_t max_aps, uint32_t *out_count,
+                                       uint32_t timeout_ms)
 {
     if (out_aps == nullptr || max_aps == 0 || out_count == nullptr) {
         return TAB5_ERR_INVALID_ARG;
@@ -893,25 +908,92 @@ tab5_err_t tab5_wifi_scan(tab5_wifi_ap_t *out_aps, uint32_t max_aps, uint32_t *o
     if (!wifi_mgr_is_enabled()) {
         return TAB5_ERR_INVALID_STATE;
     }
-    esp_err_t err = esp_wifi_scan_start(NULL, true);
-    if (err == ESP_OK) {
-        uint16_t num_aps = (uint16_t)max_aps;
-        wifi_ap_record_t *records = (wifi_ap_record_t *)calloc(max_aps, sizeof(wifi_ap_record_t));
-        if (records != nullptr) {
-            if (esp_wifi_scan_get_ap_records(&num_aps, records) == ESP_OK) {
-                for (uint16_t i = 0; i < num_aps; i++) {
-                    strncpy(out_aps[i].ssid, (const char *)records[i].ssid, sizeof(out_aps[i].ssid) - 1);
-                    out_aps[i].ssid[sizeof(out_aps[i].ssid) - 1] = '\0';
-                    out_aps[i].rssi = records[i].rssi;
-                    out_aps[i].authmode = (uint8_t)records[i].authmode;
-                }
-                *out_count = num_aps;
-            }
-            free(records);
+    struct wifi_sync_context_t {
+        SemaphoreHandle_t done;
+        tab5_wifi_ap_t *out;
+        uint32_t capacity;
+        uint32_t count;
+        bool active;
+    };
+    static SemaphoreHandle_t done = nullptr;
+    static std::mutex sync_mutex;
+    static std::mutex callback_mutex;
+    std::lock_guard<std::mutex> guard(sync_mutex);
+    if (done == nullptr) {
+        done = xSemaphoreCreateBinary();
+        if (done == nullptr) {
+            return TAB5_ERR_NO_MEM;
         }
     }
-    return TAB5_OK;
+    auto *context = new wifi_sync_context_t{};
+    if (context == nullptr) {
+        return TAB5_ERR_NO_MEM;
+    }
+    context->done = done;
+    context->out = out_aps;
+    context->capacity = max_aps;
+    context->count = 0;
+    context->active = true;
+    auto callback = [](const wifi_ap_record_t *aps, int count, void *opaque) {
+        wifi_sync_context_t *ctx = static_cast<wifi_sync_context_t *>(opaque);
+        std::lock_guard<std::mutex> callback_guard(callback_mutex);
+        if (!ctx->active) {
+            delete ctx;
+            return;
+        }
+        if (aps != nullptr && count > 0) {
+            const uint32_t copy_count = (uint32_t)count < ctx->capacity ? (uint32_t)count : ctx->capacity;
+            for (uint32_t i = 0; i < copy_count; ++i) {
+                strncpy(ctx->out[i].ssid, (const char *)aps[i].ssid, sizeof(ctx->out[i].ssid) - 1);
+                ctx->out[i].ssid[sizeof(ctx->out[i].ssid) - 1] = '\0';
+                ctx->out[i].rssi = aps[i].rssi;
+                ctx->out[i].authmode = (uint8_t)aps[i].authmode;
+            }
+            ctx->count = copy_count;
+        }
+        xSemaphoreGive(ctx->done);
+        ctx->active = false;
+    };
+    while (xSemaphoreTake(done, 0) == pdTRUE) {
+    }
+    if (timeout_ms == 0) {
+        timeout_ms = WIFI_SCAN_SYNC_TIMEOUT_MS;
+    }
+    bool scan_started = false;
+    const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
+    for (;;) {
+        const esp_err_t err = wifi_mgr_scan(callback, context);
+        if (err == ESP_OK) {
+            scan_started = true;
+            const TickType_t now = xTaskGetTickCount();
+            const TickType_t remaining = (int32_t)(now - deadline) >= 0 ? 0 : deadline - now;
+            if (xSemaphoreTake(done, remaining) != pdTRUE) {
+                std::lock_guard<std::mutex> callback_guard(callback_mutex);
+                context->active = false;
+                const bool callback_pending = wifi_mgr_cancel_scan(callback, context);
+                *out_count = 0;
+                if (!callback_pending) {
+                    delete context;
+                }
+                return TAB5_ERR_TIMEOUT;
+            }
+            *out_count = context->count;
+            delete context;
+            return TAB5_OK;
+        }
+        if (err != ESP_ERR_INVALID_STATE || (int32_t)(xTaskGetTickCount() - deadline) >= 0) {
+            std::lock_guard<std::mutex> callback_guard(callback_mutex);
+            context->active = false;
+            const bool callback_pending = scan_started && wifi_mgr_cancel_scan(callback, context);
+            if (!callback_pending) {
+                delete context;
+            }
+            return err == ESP_ERR_INVALID_STATE ? TAB5_ERR_TIMEOUT : TAB5_ERR_FAIL;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 #else
+    (void)timeout_ms;
     strncpy(out_aps[0].ssid, "Tab5_WiFi_5G", sizeof(out_aps[0].ssid) - 1);
     out_aps[0].rssi = -45;
     out_aps[0].authmode = 3;
@@ -921,6 +1003,11 @@ tab5_err_t tab5_wifi_scan(tab5_wifi_ap_t *out_aps, uint32_t max_aps, uint32_t *o
     *out_count = 2;
     return TAB5_OK;
 #endif
+}
+
+tab5_err_t tab5_wifi_scan(tab5_wifi_ap_t *out_aps, uint32_t max_aps, uint32_t *out_count)
+{
+    return tab5_wifi_scan_with_timeout(out_aps, max_aps, out_count, WIFI_SCAN_SYNC_TIMEOUT_MS);
 }
 
 tab5_err_t tab5_wifi_connect(const char *ssid, const char *password)
@@ -980,17 +1067,118 @@ bool tab5_wifi_is_enabled(void)
 /* Gerenciamento de Dispositivos Bluetooth BLE                               */
 /* ========================================================================= */
 
-tab5_err_t tab5_bt_scan(tab5_bt_dev_t *out_devs, uint32_t max_devs, uint32_t *out_count)
+tab5_err_t tab5_bt_scan_with_timeout(tab5_bt_dev_t *out_devs, uint32_t max_devs, uint32_t *out_count,
+                                     uint32_t timeout_ms)
 {
     if (out_devs == nullptr || max_devs == 0 || out_count == nullptr) {
         return TAB5_ERR_INVALID_ARG;
     }
     *out_count = 0;
 #if defined(ESP_PLATFORM)
-    // No ESP32, scan usa callback assíncrono interno; para a Host ABI retornamos dispositivos conhecidos/descobertos
-    *out_count = 0;
+    if (!bt_mgr_is_enabled()) {
+        return TAB5_ERR_INVALID_STATE;
+    }
+    struct bt_sync_context_t {
+        SemaphoreHandle_t done;
+        tab5_bt_dev_t *out;
+        uint32_t capacity;
+        uint32_t count;
+        bool active;
+    };
+    static SemaphoreHandle_t done = nullptr;
+    static std::mutex sync_mutex;
+    static std::mutex callback_mutex;
+    std::lock_guard<std::mutex> guard(sync_mutex);
+    if (done == nullptr) {
+        done = xSemaphoreCreateBinary();
+        if (done == nullptr) {
+            return TAB5_ERR_NO_MEM;
+        }
+    }
+    auto *context = new bt_sync_context_t{};
+    if (context == nullptr) {
+        return TAB5_ERR_NO_MEM;
+    }
+    context->done = done;
+    context->out = out_devs;
+    context->capacity = max_devs;
+    context->count = 0;
+    context->active = true;
+    auto callback = [](const bt_device_info_t *devices, int count, void *opaque) {
+        bt_sync_context_t *ctx = static_cast<bt_sync_context_t *>(opaque);
+        std::lock_guard<std::mutex> callback_guard(callback_mutex);
+        if (!ctx->active) {
+            delete ctx;
+            return;
+        }
+        if (devices != nullptr && count > 0) {
+            const uint32_t copy_count = (uint32_t)count < ctx->capacity ? (uint32_t)count : ctx->capacity;
+            for (uint32_t i = 0; i < copy_count; ++i) {
+                strncpy(ctx->out[i].mac, devices[i].mac, sizeof(ctx->out[i].mac) - 1);
+                strncpy(ctx->out[i].name, devices[i].name, sizeof(ctx->out[i].name) - 1);
+                ctx->out[i].mac[sizeof(ctx->out[i].mac) - 1] = '\0';
+                ctx->out[i].name[sizeof(ctx->out[i].name) - 1] = '\0';
+                ctx->out[i].rssi = devices[i].rssi;
+                ctx->out[i].type = (uint8_t)devices[i].type;
+                ctx->out[i].connected = devices[i].connected;
+                ctx->out[i].paired = devices[i].paired;
+            }
+            ctx->count = copy_count;
+        }
+        xSemaphoreGive(ctx->done);
+        ctx->active = false;
+    };
+    while (xSemaphoreTake(done, 0) == pdTRUE) {
+    }
+    if (timeout_ms == 0) {
+        timeout_ms = BT_SCAN_SYNC_TIMEOUT_MS;
+    }
+    bool scan_started = false;
+    auto abandon_context = [&]() {
+        std::lock_guard<std::mutex> callback_guard(callback_mutex);
+        context->active = false;
+        /* Once accepted by bt_mgr_scan, ownership moves to its eventual
+         * callback.  Before that point no callback can arrive, so release the
+         * context here instead of leaking it on an early error/timeout. */
+        if (!scan_started) {
+            delete context;
+        }
+    };
+    const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
+    esp_err_t err = ESP_ERR_INVALID_STATE;
+    while ((int32_t)(xTaskGetTickCount() - deadline) < 0) {
+        err = bt_mgr_scan(callback, context);
+        if (err == ESP_OK) {
+            break;
+        }
+        if (err != ESP_ERR_INVALID_STATE) {
+            abandon_context();
+            return err == ESP_ERR_TIMEOUT ? TAB5_ERR_TIMEOUT : TAB5_ERR_FAIL;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    if (err != ESP_OK) {
+        abandon_context();
+        return TAB5_ERR_TIMEOUT;
+    }
+    scan_started = true;
+    const TickType_t now = xTaskGetTickCount();
+    if ((int32_t)(now - deadline) >= 0) {
+        std::lock_guard<std::mutex> callback_guard(callback_mutex);
+        context->active = false;
+        return TAB5_ERR_TIMEOUT;
+    }
+    const TickType_t remaining = deadline - now;
+    if (xSemaphoreTake(done, remaining) != pdTRUE) {
+        std::lock_guard<std::mutex> callback_guard(callback_mutex);
+        context->active = false;
+        return TAB5_ERR_TIMEOUT;
+    }
+    *out_count = context->count;
+    delete context;
     return TAB5_OK;
 #else
+    (void)timeout_ms;
     strncpy(out_devs[0].mac, "AA:BB:CC:DD:EE:01", sizeof(out_devs[0].mac) - 1);
     strncpy(out_devs[0].name, "Bluetooth Keyboard", sizeof(out_devs[0].name) - 1);
     out_devs[0].rssi = -55;
@@ -1000,6 +1188,11 @@ tab5_err_t tab5_bt_scan(tab5_bt_dev_t *out_devs, uint32_t max_devs, uint32_t *ou
     *out_count = 1;
     return TAB5_OK;
 #endif
+}
+
+tab5_err_t tab5_bt_scan(tab5_bt_dev_t *out_devs, uint32_t max_devs, uint32_t *out_count)
+{
+    return tab5_bt_scan_with_timeout(out_devs, max_devs, out_count, BT_SCAN_SYNC_TIMEOUT_MS);
 }
 
 tab5_err_t tab5_bt_connect(const char *mac, const char *name, uint32_t dev_type)
@@ -1286,6 +1479,13 @@ typedef void *wasm_module_inst_t;
 
 namespace {
 
+#if HAVE_WAMR_ENV
+static wasm_module_inst_t wasm_module(wasm_exec_env_t exec_env)
+{
+    return wasm_runtime_get_module_inst(exec_env);
+}
+#endif
+
 template <typename T> static T *wasm_arg(wasm_exec_env_t env, T *app_ptr)
 {
     (void)env;
@@ -1374,7 +1574,7 @@ static tab5_err_t wasm_tab5_system_get_bt_status(wasm_exec_env_t exec_env, tab5_
 static tab5_err_t wasm_tab5_system_get_time(wasm_exec_env_t exec_env, int64_t *out_epoch, struct tm *out_time)
 {
 #if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_module_inst_t module_inst = wasm_module(exec_env);
     if (module_inst != nullptr) {
         int64_t *native_epoch =
             out_epoch ? (int64_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_epoch)
@@ -1452,7 +1652,7 @@ static int32_t wasm_tab5_ui_keyboard_get_height(wasm_exec_env_t exec_env)
 static void wasm_tab5_ui_get_display_size(wasm_exec_env_t exec_env, int32_t *out_w, int32_t *out_h)
 {
 #if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_module_inst_t module_inst = wasm_module(exec_env);
     if (module_inst != nullptr) {
         int32_t *native_w =
             out_w ? (int32_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_w) : nullptr;
@@ -1493,7 +1693,7 @@ static int32_t wasm_tab5_ui_textarea_copy_text(wasm_exec_env_t exec_env, tab5_ui
                                                uint32_t capacity)
 {
 #if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_module_inst_t module_inst = wasm_module(exec_env);
     if (module_inst == nullptr || (capacity > 0 && buffer_ptr == 0) || buffer_ptr > UINT32_MAX) {
         return TAB5_ERR_INVALID_ARG;
     }
@@ -1770,7 +1970,7 @@ static uint32_t wasm_tab5_fileserver_get_port(wasm_exec_env_t exec_env)
 static tab5_err_t wasm_tab5_recorder_start(wasm_exec_env_t exec_env, char *out_path, uint32_t out_len)
 {
 #if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_module_inst_t module_inst = wasm_module(exec_env);
     if (module_inst != nullptr && out_path != nullptr) {
         char *native_buf = (char *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_path);
         if (native_buf != nullptr) {
@@ -1880,7 +2080,7 @@ static int32_t wasm_tab5_music_get_volume(wasm_exec_env_t exec_env)
 static tab5_err_t wasm_tab5_music_get_status(wasm_exec_env_t exec_env, tab5_music_status_t *out_status)
 {
 #if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_module_inst_t module_inst = wasm_module(exec_env);
     if (module_inst != nullptr && out_status != nullptr) {
         tab5_music_status_t *native_status =
             (tab5_music_status_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_status);
@@ -1903,7 +2103,7 @@ static tab5_err_t wasm_tab5_wifi_scan(wasm_exec_env_t exec_env, tab5_wifi_ap_t *
                                       uint32_t *out_count)
 {
 #if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_module_inst_t module_inst = wasm_module(exec_env);
     if (module_inst != nullptr) {
         tab5_wifi_ap_t *native_aps =
             out_aps ? (tab5_wifi_ap_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_aps)
@@ -1956,22 +2156,11 @@ static bool wasm_tab5_wifi_is_enabled(wasm_exec_env_t exec_env)
 static tab5_err_t wasm_tab5_bt_scan(wasm_exec_env_t exec_env, tab5_bt_dev_t *out_devs, uint32_t max_devs,
                                     uint32_t *out_count)
 {
-#if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
-    if (module_inst != nullptr) {
-        tab5_bt_dev_t *native_devs =
-            out_devs ? (tab5_bt_dev_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_devs)
-                     : nullptr;
-        uint32_t *native_count =
-            out_count ? (uint32_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_count)
-                      : nullptr;
-        if ((out_devs != nullptr && native_devs == nullptr) || (out_count != nullptr && native_count == nullptr))
-            return TAB5_ERR_INVALID_ARG;
-        return tab5_bt_scan(native_devs, max_devs, native_count);
-    }
-#else
     (void)exec_env;
-#endif
+    /* The WAMR signature (*i*)i already supplies native pointers here.  Do
+     * not translate them a second time: a native address is not a WASM
+     * linear-memory offset.  The old conversion rejected valid buffers (and
+     * could fault) before bt_mgr_scan was reached. */
     return tab5_bt_scan(out_devs, max_devs, out_count);
 }
 
@@ -2028,7 +2217,7 @@ static bool wasm_tab5_ai_is_busy(wasm_exec_env_t exec_env)
 static tab5_err_t wasm_tab5_ai_config_load(wasm_exec_env_t exec_env, tab5_ai_config_t *out_cfg)
 {
 #if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_module_inst_t module_inst = wasm_module(exec_env);
     if (module_inst != nullptr && out_cfg != nullptr) {
         tab5_ai_config_t *native_cfg =
             (tab5_ai_config_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_cfg);
@@ -2046,7 +2235,7 @@ static tab5_err_t wasm_tab5_ai_config_load(wasm_exec_env_t exec_env, tab5_ai_con
 static tab5_err_t wasm_tab5_ai_config_save(wasm_exec_env_t exec_env, const tab5_ai_config_t *cfg)
 {
 #if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_module_inst_t module_inst = wasm_module(exec_env);
     if (module_inst != nullptr && cfg != nullptr) {
         const tab5_ai_config_t *native_cfg =
             (const tab5_ai_config_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)cfg);
@@ -2074,7 +2263,7 @@ static uint32_t wasm_tab5_ai_get_response(wasm_exec_env_t exec_env)
         return 0;
     }
 #if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_module_inst_t module_inst = wasm_module(exec_env);
     if (module_inst == nullptr) {
         return 0;
     }
@@ -2101,7 +2290,7 @@ static uint32_t wasm_tab5_ai_get_error(wasm_exec_env_t exec_env)
         return 0;
     }
 #if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+    wasm_module_inst_t module_inst = wasm_module(exec_env);
     if (module_inst == nullptr) {
         return 0;
     }

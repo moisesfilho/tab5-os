@@ -190,7 +190,22 @@ def _unconditional_time_gates(scan_body: str, const_name: str | None) -> list[st
 
 
 def _count_passive_rescan_sites(src: str) -> int:
-    return len(re.findall(r"bt_mgr_scan\(\s*(?:nullptr|NULL)\s*,\s*(?:nullptr|NULL)\s*\)", src))
+    """Auto-restart sites of the passive listening scan.
+
+    The approved implementation restarts the passive listening through the
+    dedicated deferred mechanism: ``defer_scan(nullptr, nullptr)`` from the
+    GAP callbacks (DISC_COMPLETE, connect failure, disconnect) plus the
+    direct ``bt_mgr_scan(nullptr, nullptr)`` startup sites (sync/enable).
+    Both forms re-enter the same bt_mgr_scan path (the deferred task calls
+    it with the recorded cb/ctx) and both preserve auto-reconnection.
+    """
+    direct = len(
+        re.findall(r"bt_mgr_scan\(\s*(?:nullptr|NULL)\s*,\s*(?:nullptr|NULL)\s*\)", src)
+    )
+    deferred = len(
+        re.findall(r"defer_scan\(\s*(?:nullptr|NULL)\s*,\s*(?:nullptr|NULL)\s*\)", src)
+    )
+    return direct + deferred
 
 
 def _log_macro_before(src: str, pos: int, back: int = 120) -> str | None:
@@ -290,13 +305,57 @@ class PassiveRescanMinIntervalContract(unittest.TestCase):
 
         The fix rate-limits the rescan loop; it must not delete the passive
         listening entirely, or auto-reconnection after disconnect/scan-fail
-        would stop working.
+        would stop working.  The approved implementation routes the
+        auto-restart callbacks through `defer_scan(nullptr, nullptr)` (the
+        dedicated task re-enters bt_mgr_scan afterwards); the direct
+        `bt_mgr_scan(nullptr, nullptr)` startup sites remain as-is.  Both
+        forms count as preserved passive sites.
         """
         sites = _count_passive_rescan_sites(self.src)
         self.assertGreaterEqual(
-            sites, 3,
-            "expected >= 3 `bt_mgr_scan(nullptr, nullptr)` auto-restart sites "
-            f"(DISC_COMPLETE, connect failure, disconnect); found {sites}",
+            sites, 4,
+            "expected >= 4 passive auto-restart/startup sites "
+            "(DISC_COMPLETE, connect failure, disconnect via "
+            "`defer_scan(nullptr, nullptr)` + sync/enable via "
+            "`bt_mgr_scan(nullptr, nullptr)`); found {sites}",
+        )
+
+    def test_deferred_passive_restart_task_preserved(self):
+        """The passive restart goes through defer_scan + the dedicated task.
+
+        The approved implementation never runs bt_mgr_scan from the GAP
+        callback context (small stacks): `defer_scan` only records the
+        request and the dedicated `deferred_scan_task` re-enters
+        `bt_mgr_scan(cb, ctx)`.  The auto-restart callbacks must still
+        request the passive listening through this mechanism, or
+        auto-reconnection would stop working.
+        """
+        self.assertIn(
+            "static void defer_scan(",
+            self.src,
+            "defer_scan must exist (deferred restart mechanism)",
+        )
+        self.assertIn(
+            "deferred_scan_task",
+            self.src,
+            "the dedicated deferred-scan task must exist",
+        )
+        task_body = _function_body(self.src, "static void deferred_scan_task(void *)")
+        self.assertIn(
+            "bt_mgr_scan(",
+            task_body,
+            "the deferred-scan task must re-enter bt_mgr_scan(cb, ctx) so a "
+            "deferred passive restart (or manual request) actually starts a "
+            "real discovery",
+        )
+        deferred_passive = len(
+            re.findall(r"defer_scan\(\s*(?:nullptr|NULL)\s*,\s*(?:nullptr|NULL)\s*\)", self.src)
+        )
+        self.assertGreaterEqual(
+            deferred_passive, 2,
+            ">= 2 auto-restart callbacks (connect failure, disconnect, "
+            "DISC_COMPLETE) must request the passive listening via "
+            "defer_scan(nullptr, nullptr); found {deferred_passive}",
         )
 
 
@@ -393,6 +452,39 @@ class PassiveRescanParserSelfCheck(unittest.TestCase):
         scan_body = _function_body(src, SCAN_FUNC)
         self.assertTrue(_gate_form3(src, scan_body, "BT_SCAN_PASSIVE_MIN_INTERVAL_MS"))
         self.assertFalse(_gate_form3(src, scan_body, None))
+
+    def test_passive_site_mixed_counting(self):
+        """Direct startup sites and deferred restart sites both count."""
+        src = (
+            "bt_mgr_scan(nullptr, nullptr);\n"
+            "defer_scan(nullptr, nullptr);\n"
+            "bt_mgr_scan(NULL, NULL);\n"
+            "defer_scan(NULL, NULL);\n"
+        )
+        self.assertEqual(_count_passive_rescan_sites(src), 4)
+
+    def test_passive_site_ignores_manual_and_partial(self):
+        """Manual (cb != nullptr) and partial-arg calls are not passive sites."""
+        src = (
+            "bt_mgr_scan(cb, ctx);\n"
+            "defer_scan(pending_cb, pending_ctx);\n"
+            "defer_scan(nullptr, ctx);\n"
+            "bt_mgr_scan(nullptr, ctx);\n"
+        )
+        self.assertEqual(_count_passive_rescan_sites(src), 0)
+
+    def test_deferred_task_body_extraction(self):
+        """`deferred_scan_task` body must be extractable for the static
+        contract that verifies it re-enters bt_mgr_scan."""
+        src = (
+            "static void deferred_scan_task(void *)\n{\n"
+            "    for (;;) { ulTaskNotifyTake(pdTRUE, portMAX_DELAY); }\n"
+            "    if (have_request) { bt_mgr_scan(cb, ctx); }\n"
+            "}\n"
+        )
+        body = _function_body(src, "static void deferred_scan_task(void *)")
+        self.assertIn("ulTaskNotifyTake", body)
+        self.assertIn("bt_mgr_scan(", body)
 
     def test_log_level_detection(self):
         src = (
