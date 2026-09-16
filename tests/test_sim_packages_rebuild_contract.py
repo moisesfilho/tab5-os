@@ -31,11 +31,15 @@ os artefatos de ``embedded_apps_pkg/`` (gerados no build local/CI).
 
 import json
 import re
+import sys
 import tarfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools/ci"))
+from validate_wasm_entrypoint import exported_names
+
 EMBEDDED_PKG_DIR = ROOT / "embedded_apps_pkg"
 BUILD_SCRIPT = (ROOT / "tools/ci/build_embedded_apps.sh").read_text(encoding="utf-8")
 SIM_SCENARIOS = (ROOT / "tests/simulator/scenarios/sim_scenarios.cpp").read_text(encoding="utf-8")
@@ -72,6 +76,23 @@ APP_SCENARIO_KEY = {
     "com.tab5.recorder": "app_recorder",
     "com.tab5.terminal": "app_terminal",
     "com.tab5.wifi": "app_wifi",
+}
+
+# Callbacks dispatched by the host must survive WASM linking. Apps without
+# callbacks intentionally map to an empty set.
+APP_CALLBACK_EXPORTS = {
+    "com.tab5.bluetooth": {"tab5_app_on_ui_event", "tab5_app_on_theme_changed"},
+    "com.tab5.calendar": {"tab5_app_on_ui_event", "tab5_app_on_theme_changed"},
+    "com.tab5.camera": set(),
+    "com.tab5.chat": {"tab5_app_on_ui_event", "tab5_app_on_theme_changed"},
+    "com.tab5.files": {"tab5_app_on_ui_event", "tab5_app_on_theme_changed"},
+    "com.tab5.fileserver": {"tab5_app_on_ui_event", "tab5_app_on_theme_changed"},
+    "com.tab5.gallery": set(),
+    "com.tab5.music": {"tab5_app_on_ui_event", "tab5_app_on_theme_changed", "tab5_app_on_open_file"},
+    "com.tab5.notas": {"tab5_app_on_ui_event", "tab5_app_on_open_file"},
+    "com.tab5.recorder": {"tab5_app_on_ui_event", "tab5_app_on_theme_changed"},
+    "com.tab5.terminal": {"tab5_app_on_ui_event"},
+    "com.tab5.wifi": {"tab5_app_on_ui_event", "tab5_app_on_theme_changed"},
 }
 
 COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -179,6 +200,14 @@ class PostRebuildPackagesContract(unittest.TestCase):
                 "WAMR real do simulador não aceitaria",
             )
 
+    def test_host_callbacks_are_exported(self):
+        for app_id, expected in APP_CALLBACK_EXPORTS.items():
+            exports = exported_names(package_files(app_id)["app.wasm"])
+            self.assertTrue(
+                expected.issubset(exports),
+                f"{app_id}: callbacks ausentes no WASM: {sorted(expected - exports)}",
+            )
+
 
 class RebuildScriptContract(unittest.TestCase):
     """O script de rebuild regenera o bundle do zero com as 12 apps."""
@@ -196,19 +225,14 @@ class RebuildScriptContract(unittest.TestCase):
                 f"rebuild não declara {repo_dir} na lista EMBEDDED_APPS",
             )
 
-    def test_script_uses_pack_tool_with_output_dir(self):
-        self.assertIn("python3 \"${PACK_TOOL}\"", BUILD_SCRIPT)
-        self.assertIn('-o "${PKG_OUTPUT_DIR}"', BUILD_SCRIPT)
+    def test_script_delegates_to_each_app_build_script(self):
+        self.assertIn('"${app_dir}/tools/build.sh"', BUILD_SCRIPT)
+        self.assertIn('cp "${package}" "${PKG_OUTPUT_DIR}/"', BUILD_SCRIPT)
 
-    def test_script_exports_app_wasm_from_main_c(self):
-        # Rebuild compila src/main.c com exports iguais aos consumidos pelo host.
-        for symbol in (
-            "--export=main",
-            "--export=tab5_app_on_ui_event",
-            "--export=tab5_app_on_theme_changed",
-            "--export=tab5_app_on_open_file",
-        ):
-            self.assertIn(symbol, BUILD_SCRIPT, f"rebuild não exporta {symbol}")
+    def test_script_parses_selective_app_argument(self):
+        self.assertIn('--app all|short-name|repo-dir', BUILD_SCRIPT)
+        self.assertIn('SELECTED="$2"', BUILD_SCRIPT)
+        self.assertIn('[[ "${SELECTED}" == all ]]', BUILD_SCRIPT)
 
     def test_script_declares_exactly_twelve_apps(self):
         count = re.search(

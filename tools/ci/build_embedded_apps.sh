@@ -1,95 +1,84 @@
 #!/usr/bin/env bash
-# build_embedded_apps.sh - Empacota as aplicações padrão para inclusão no bundle do firmware
+# Build selected independent Tab5 applications into the firmware bundle.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-PACK_TOOL="${REPO_ROOT}/sdk/tab5-app-sdk/tools/pack.py"
+SDK_DIR="${REPO_ROOT}/sdk/tab5-app-sdk"
+HELPER="${SDK_DIR}/tools/build_wasm_app.sh"
 PKG_OUTPUT_DIR="${REPO_ROOT}/embedded_apps_pkg"
-WASI_CLANG="${WASI_SDK_PATH:-/home/moises/.wasi-sdk}/bin/clang"
-SDK_INC="${REPO_ROOT}/sdk/tab5-app-sdk/include"
+
+EMBEDDED_APPS=(
+    "tab5-app-wifi" "tab5-app-bluetooth" "tab5-app-terminal" "tab5-app-fileserver"
+    "tab5-app-recorder" "tab5-app-music" "tab5-app-chat" "tab5-app-notas"
+    "tab5-app-calendar" "tab5-app-files" "tab5-app-camera" "tab5-app-gallery"
+)
+SELECTED=all
+if (($#)); then
+    [[ "$#" == 2 && "$1" == --app ]] || { echo "Uso: $0 [--app all|short-name|repo-dir]" >&2; exit 2; }
+    SELECTED="$2"
+fi
+
+is_standard_app() {
+    local candidate="$1" app
+    for app in "${EMBEDDED_APPS[@]}"; do [[ "$app" == "$candidate" ]] && return 0; done
+    return 1
+}
+
+SELECTED_PATH=""
+if [[ "${SELECTED}" != all ]]; then
+    if [[ -d "${SELECTED}" ]]; then
+        SELECTED_PATH="$(cd "${SELECTED}" && pwd)"
+    else
+        app_name="${SELECTED}"
+        [[ "${app_name}" == tab5-app-* ]] || app_name="tab5-app-${app_name}"
+        is_standard_app "${app_name}" || { echo "[ERROR] App selecionado ausente ou invalido: ${SELECTED}" >&2; exit 1; }
+        SELECTED_PATH="${REPO_ROOT}/../${app_name}"
+    fi
+    [[ -d "${SELECTED_PATH}" ]] || { echo "[ERROR] App ausente: ${SELECTED_PATH}" >&2; exit 1; }
+fi
 
 rm -rf "${PKG_OUTPUT_DIR}"
 mkdir -p "${PKG_OUTPUT_DIR}"
 
-compile_app() {
-    local app_dir="$1"
-    if [ -f "${app_dir}/src/main.c" ]; then
-        if [ ! -x "${WASI_CLANG}" ]; then
-            echo "[ERROR] Compilador WASI nao encontrado: ${WASI_CLANG}" >&2
-            return 1
-        fi
-        local wrapper
-        wrapper="$(mktemp "${TMPDIR:-/tmp}/tab5-app-entrypoint.XXXXXX.c")"
-        cleanup_wrapper() {
-            rm -f "${wrapper}"
-            trap - RETURN
-        }
-        trap cleanup_wrapper RETURN
-        cat >"${wrapper}" <<'EOF'
-#include "tab5_sdk.h"
-
-extern int main(int, char **);
-
-TAB5_APP_ENTRYPOINT_EXPORT int tab5_wasm_app_main(void)
-{
-    return main(0, NULL);
-}
-EOF
-        echo "[INFO] Compilando ${app_dir}/src/main.c para ${app_dir}/app.wasm..."
-        "${WASI_CLANG}" -O2 -I"${SDK_INC}" \
-            -Wl,--export=main -Wl,--export=tab5_app_on_ui_event -Wl,--export=on_ui_event \
-            -Wl,--export=tab5_app_on_theme_changed -Wl,--export=on_theme_changed \
-            -Wl,--export=tab5_app_on_open_file -Wl,--export=on_open_file -Wl,--allow-undefined \
-            -o "${app_dir}/app.wasm" "${app_dir}/src/main.c" "${wrapper}"
-    elif [ ! -f "${app_dir}/app.wasm" ]; then
-        echo "[WARN] Gerando dummy wasm para ${app_dir}..."
-        printf '\x00\x61\x73\x6d\x01\x00\x00\x00' > "${app_dir}/app.wasm"
-    fi
+build_standard_app() {
+    local app_dir="$1" app_id package
+    [[ -d "${app_dir}" ]] || { echo "[ERROR] App ausente: ${app_dir}" >&2; exit 1; }
+    [[ -x "${app_dir}/tools/build.sh" ]] || { echo "[ERROR] build.sh ausente: ${app_dir}" >&2; exit 1; }
+    "${app_dir}/tools/build.sh"
+    app_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "${app_dir}/manifest.json")"
+    package="${app_dir}/dist/${app_id}.tab5pkg"
+    [[ -f "${package}" ]] || { echo "[ERROR] Pacote esperado ausente: ${package}" >&2; exit 1; }
+    cp "${package}" "${PKG_OUTPUT_DIR}/"
 }
 
-echo "[INFO] Empacotando aplicacoes do sistema Tab5 OS para o bundle do firmware..."
+if [[ "${SELECTED}" == all ]]; then
+    for app_name in "${EMBEDDED_APPS[@]}"; do build_standard_app "${REPO_ROOT}/../${app_name}"; done
+elif [[ -n "${SELECTED_PATH}" ]]; then
+    build_standard_app "${SELECTED_PATH}"
+else
+    echo "[ERROR] App selecionado ausente ou invalido: ${SELECTED}" >&2
+    exit 1
+fi
 
-# Lista de todos os apps embutidos (desacoplados em repositórios independentes)
-EMBEDDED_APPS=(
-    "tab5-app-wifi"
-    "tab5-app-bluetooth"
-    "tab5-app-terminal"
-    "tab5-app-fileserver"
-    "tab5-app-recorder"
-    "tab5-app-music"
-    "tab5-app-chat"
-    "tab5-app-notas"
-    "tab5-app-calendar"
-    "tab5-app-files"
-    "tab5-app-camera"
-    "tab5-app-gallery"
-)
-
-for app_name in "${EMBEDDED_APPS[@]}"; do
-    app_path="${REPO_ROOT}/../${app_name}"
-    if [ -d "${app_path}" ]; then
-        compile_app "${app_path}"
-        if [ "${app_name}" = "tab5-app-notas" ]; then
-            python3 "${REPO_ROOT}/tools/ci/validate_wasm_entrypoint.py" "${app_path}/app.wasm" \
-                --require-export tab5_app_on_ui_event
-        else
-            python3 "${REPO_ROOT}/tools/ci/validate_wasm_entrypoint.py" "${app_path}/app.wasm"
-        fi
-        python3 "${PACK_TOOL}" "${app_path}" -o "${PKG_OUTPUT_DIR}"
-    fi
-done
-
-# Varre submodulos em embedded_apps/ se existirem (suporte a CI/produção)
-if [ -d "${REPO_ROOT}/embedded_apps" ]; then
+# Applications supplied as embedded_apps/ remain supported and use the same helper.
+if [[ -d "${REPO_ROOT}/embedded_apps" && "${SELECTED}" == all ]]; then
     for app_dir in "${REPO_ROOT}/embedded_apps"/*; do
-        if [ -d "${app_dir}" ] && [ -f "${app_dir}/manifest.json" ]; then
-            compile_app "${app_dir}"
-            python3 "${REPO_ROOT}/tools/ci/validate_wasm_entrypoint.py" "${app_dir}/app.wasm"
-            python3 "${PACK_TOOL}" "${app_dir}" -o "${PKG_OUTPUT_DIR}"
-        fi
+        [[ -d "${app_dir}" && -f "${app_dir}/manifest.json" ]] || continue
+        TAB5_SDK_PATH="${SDK_DIR}" "${HELPER}" --app-dir "${app_dir}" \
+            --entrypoint-wrapper auto --exports main app_main \
+            tab5_app_on_ui_event on_ui_event tab5_app_on_theme_changed \
+            on_theme_changed tab5_app_on_open_file on_open_file
+        app_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "${app_dir}/manifest.json")"
+        package="${app_dir}/dist/${app_id}.tab5pkg"
+        [[ -f "${package}" ]] || { echo "[ERROR] Pacote embedded ausente: ${package}" >&2; exit 1; }
+        cp "${package}" "${PKG_OUTPUT_DIR}/"
     done
 fi
 
-echo "[INFO] Total de pacotes gerados em ${PKG_OUTPUT_DIR}:"
+if [[ "${SELECTED}" != all ]]; then
+    echo "[WARN] Bundle parcial: somente '${SELECTED}' foi gerado; nao execute idf.py build como firmware completo." >&2
+fi
+
+echo "[INFO] Pacotes gerados em ${PKG_OUTPUT_DIR}:"
 ls -la "${PKG_OUTPUT_DIR}"
