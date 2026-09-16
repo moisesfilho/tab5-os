@@ -66,6 +66,28 @@ class Tab5Session:
             return False
         return True
 
+    def _iter_frames(self):
+        """Read complete NDJSON lines from a transport that may fragment reads."""
+        pending = b""
+        while True:
+            raw = self.transport.readline()
+            if not raw:
+                break
+            if isinstance(raw, str):
+                raw = raw.encode()
+            else:
+                raw = bytes(raw)
+            pending += raw
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                try:
+                    frame = json.loads(line.decode().strip())
+                except (TypeError, ValueError, UnicodeDecodeError):
+                    # Console output and malformed lines are not protocol frames.
+                    continue
+                if isinstance(frame, dict):
+                    yield frame
+
     def exchange(self, command_line):
         if isinstance(command_line, str):
             payload = command_line.encode()
@@ -90,20 +112,7 @@ class Tab5Session:
         flush = getattr(self.transport, "flush", None)
         if callable(flush):
             flush()
-        while True:
-            raw = self.transport.readline()
-            if not raw:
-                break
-            line = raw.decode() if isinstance(raw, (bytes, bytearray)) else raw
-            try:
-                frame = json.loads(line.strip())
-            except (TypeError, ValueError):
-                # USB Serial-JTAG shares the console with ESP_LOG.  Console
-                # lines are deliberately not protocol errors; only a missing
-                # valid frame is an exchange failure.
-                continue
-            if not isinstance(frame, dict):
-                continue
+        for frame in self._iter_frames():
             if not self._matches(frame, request):
                 continue
             frames.append(frame)
@@ -204,15 +213,8 @@ class Tab5Session:
         if callable(flush):
             flush()
         result = []
-        while True:
-            raw = self.transport.readline()
-            if not raw:
-                break
-            try:
-                frame = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
-            except (TypeError, ValueError, UnicodeDecodeError):
-                continue
-            if isinstance(frame, dict) and self._matches(frame, retry):
+        for frame in self._iter_frames():
+            if self._matches(frame, retry):
                 result.append(frame)
                 if frame.get("event") == "end":
                     break
