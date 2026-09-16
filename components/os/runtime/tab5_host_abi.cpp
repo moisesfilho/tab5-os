@@ -2102,23 +2102,7 @@ static tab5_err_t wasm_tab5_music_get_status(wasm_exec_env_t exec_env, tab5_musi
 static tab5_err_t wasm_tab5_wifi_scan(wasm_exec_env_t exec_env, tab5_wifi_ap_t *out_aps, uint32_t max_aps,
                                       uint32_t *out_count)
 {
-#if HAVE_WAMR_ENV
-    wasm_module_inst_t module_inst = wasm_module(exec_env);
-    if (module_inst != nullptr) {
-        tab5_wifi_ap_t *native_aps =
-            out_aps ? (tab5_wifi_ap_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_aps)
-                    : nullptr;
-        uint32_t *native_count =
-            out_count ? (uint32_t *)wasm_runtime_addr_app_to_native(module_inst, (uint32_t)(uintptr_t)out_count)
-                      : nullptr;
-        if ((out_aps != nullptr && native_aps == nullptr) || (out_count != nullptr && native_count == nullptr))
-            return TAB5_ERR_INVALID_ARG;
-        return tab5_wifi_scan(native_aps, max_aps, native_count);
-    }
-#else
-    (void)exec_env;
-#endif
-    return tab5_wifi_scan(out_aps, max_aps, out_count);
+    return tab5_wifi_scan(wasm_arg(exec_env, out_aps), max_aps, wasm_arg(exec_env, out_count));
 }
 
 static tab5_err_t wasm_tab5_wifi_connect(wasm_exec_env_t exec_env, const char *ssid, const char *password)
