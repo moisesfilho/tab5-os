@@ -11,8 +11,8 @@ expor os comandos sincronos `wifi.scan` e `ble.scan` (timeout_ms + resultados),
 que percorrem exatamente o mesmo caminho das Host ABIs usadas pelos apps
 (`tab5_wifi_scan`/`tab5_bt_scan`, que delegam aos wrappers com timeout
 `tab5_wifi_scan_with_timeout`/`tab5_bt_scan_with_timeout` (ESP_ERR_INVALID_STATE) — ver os contracts estáticos em
-tests/test_wifi_scan_serialize_retry_contracts.py e
-tests/test_ble_bridge_sync_contracts.py.
+`../../tab5-app-wifi/tests/test_wifi_scan_serialize_retry_contracts.py` e
+`../../tab5-app-bluetooth/tests/test_ble_bridge_sync_contracts.py`.
 
 Sequência validada:
   1. Descoberta de porta (TAB5_DEVICE_PORT -> /dev/ttyACM0 -> list_ports).

@@ -134,6 +134,38 @@ enable_testing()
 include(GoogleTest)
 gtest_discover_tests(tab5_host_tests)
 
+# Targets seletivos: todos usam o mesmo executavel e filtram os casos
+# descobertos pelo CTest. Isso evita duplicar mocks/runtime e permite rodar
+# somente a area alterada durante o desenvolvimento.
+string(CONCAT HOST_SUITE_CORE_REGEX
+    "(InfraTest|OrientationTest|AppRegistryTest|FileAssocTest|"
+    "TimezoneMgrTest|AiStorageTest|DisplayStorageTest|CalendarLogicTest|"
+    "StorageSandboxTest|StorageMgrTest)")
+string(CONCAT HOST_SUITE_RUNTIME_REGEX
+    "(HostAbiTest|WasmRuntimeTest|WasmUnloadContract|"
+    "AsyncDispatcherContract|NvsWorkerTest)")
+set(HOST_SUITE_TERMINAL_REGEX "TerminalMicroShellTest")
+set(HOST_SUITE_WIFI_REGEX "WifiStorageTest")
+set(HOST_SUITE_BLUETOOTH_REGEX "(BtStorageTest|BtReportMapTest)")
+string(CONCAT HOST_SUITE_FILES_REGEX
+    "(FileAssocTest|"
+    "HostAbiTest.*FileAssoc)")
+string(CONCAT HOST_SUITE_INTEGRATION_REGEX
+    "(ManifestTest|PackageMgrTest|SdkIntegrationTest|"
+    "SerialBridgeDispatchContract|ScreenShotStateContract)")
+
+foreach(suite IN ITEMS core runtime terminal wifi bluetooth files integration)
+  string(TOUPPER "${suite}" suite_upper)
+  add_custom_target(test_host_${suite}
+    COMMAND ${CMAKE_CTEST_COMMAND}
+            --test-dir ${CMAKE_BINARY_DIR}
+            --output-on-failure
+            -R "${HOST_SUITE_${suite_upper}_REGEX}"
+    DEPENDS tab5_host_tests
+    COMMENT "Run ${suite} host tests"
+    USES_TERMINAL)
+endforeach()
+
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME runtime_rollback_static
     COMMAND ${Python3_EXECUTABLE} ${REPO_ROOT}/tests/test_runtime_rollback.py)
@@ -168,9 +200,6 @@ add_test(NAME lint_fix_contracts
 add_test(NAME nvs_worker_contracts
     COMMAND ${Python3_EXECUTABLE}
             ${REPO_ROOT}/tests/test_nvs_worker_contracts.py)
-add_test(NAME files_hidden_reboot_runtime_contracts
-    COMMAND ${Python3_EXECUTABLE}
-            ${REPO_ROOT}/tests/test_files_hidden_reboot_runtime_contracts.py)
 add_test(NAME wasm_abi_pointer_contract
     COMMAND ${Python3_EXECUTABLE}
             ${REPO_ROOT}/tests/test_wasm_abi_pointer_contract.py)
