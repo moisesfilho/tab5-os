@@ -184,7 +184,7 @@ jobs:
           set -o pipefail
           timeout --signal=TERM 900s python3 -m pytest -q -ra tests \
             --ignore=managed_components --ignore=tests/fixtures \
-            --ignore=tests/external 2>&1 | tee pytest.log
+            --ignore=tests/external --ignore=tests/device 2>&1 | tee pytest.log
 
       - name: Report Python suite result
         if: always()

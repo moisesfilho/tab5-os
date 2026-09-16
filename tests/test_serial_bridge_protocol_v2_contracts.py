@@ -238,9 +238,9 @@ class ScreenDumpGapsRetryContract(unittest.TestCase):
 
     def test_host_detects_gap_in_chunk_indices(self):
         """The device validation test must check for contiguous indices."""
-        # The existing device validation (test_serial_bridge_device_validation.py)
+        # The existing device validation (tests/device/test_serial_bridge_device_validation.py)
         # already checks chunk_indices_contiguity.  Verify it's present.
-        dev_test = ROOT / "tests/test_serial_bridge_device_validation.py"
+        dev_test = ROOT / "tests/device/test_serial_bridge_device_validation.py"
         if dev_test.is_file():
             dev_src = _read(dev_test)
             self.assertIn(

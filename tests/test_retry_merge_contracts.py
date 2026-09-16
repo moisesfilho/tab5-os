@@ -25,7 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERIAL_BRIDGE_SRC = ROOT / "components/os/core/serial_bridge.cpp"
-DEVICE_VALIDATION = ROOT / "tests/test_serial_bridge_device_validation.py"
+DEVICE_VALIDATION = ROOT / "tests/device/test_serial_bridge_device_validation.py"
 PYTHON_CLI = ROOT / "tools/tab5_cli.py"
 
 

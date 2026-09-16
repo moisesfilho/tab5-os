@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validação device-in-the-loop: listas BLE/Wi-Fi não vazias + ui.dump.
 
-Complementa tests/test_serial_bridge_device_validation.py com o critério
+Complementa tests/device/test_serial_bridge_device_validation.py com o critério
 final do plano aprovado (sem simulador, validação exclusivamente via serial):
 
   >= 1 rede Wi-Fi e >= 1 dispositivo BLE visíveis no dispositivo físico Tab5.

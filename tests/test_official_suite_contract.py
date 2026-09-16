@@ -12,6 +12,7 @@ def test_ci_runs_only_official_tests_tree():
     assert "python3 -m pytest -q -ra tests" in WORKFLOW
     assert "pytest -q ." not in WORKFLOW
     assert "--ignore=managed_components" in WORKFLOW
+    assert "--ignore=tests/device" in WORKFLOW
 
 
 def test_ci_excludes_external_fixture_roots_and_declares_real_count():

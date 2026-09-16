@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SERIAL_BRIDGE_SRC = ROOT / "components/os/core/serial_bridge.cpp"
 SERIAL_BRIDGE_HDR = ROOT / "components/os/core/serial_bridge.h"
-DEVICE_VALIDATION = ROOT / "tests/test_serial_bridge_device_validation.py"
+DEVICE_VALIDATION = ROOT / "tests/device/test_serial_bridge_device_validation.py"
 
 
 def _read(p: Path) -> str:
@@ -250,7 +250,7 @@ class DeviceValidationCrcContract(unittest.TestCase):
     """
 
     def test_device_validation_exists(self):
-        """test_serial_bridge_device_validation.py must exist."""
+        """tests/device/test_serial_bridge_device_validation.py must exist."""
         self.assertTrue(DEVICE_VALIDATION.exists(),
                         "device validation test must exist")
 

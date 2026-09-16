@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validação device-in-the-loop do comando sys.idle + eco de rid.
 
-Complementa tests/test_serial_bridge_device_validation.py (que não cobre
+Complementa tests/device/test_serial_bridge_device_validation.py (que não cobre
 sys.idle). Executa via /dev/ttyACM0 (console USB-Serial-JTAG compartilhado
 com ESP_LOG): a pilha candidata a corrigir no firmware inclui `sys.idle`
 (enable/status/disable com restauração dos timeouts de screensaver e

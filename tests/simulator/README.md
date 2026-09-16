@@ -1,5 +1,13 @@
 # Simulador host do tab5_os
 
+## Execução controlada
+
+Os comandos desta pasta dependem do simulador SDL/LVGL e **nunca devem ser
+executados automaticamente por agentes de IA**. Só execute `run_sim_tests.sh`,
+o binário `tab5_sim` ou a atualização de goldens quando o usuário solicitar
+explicitamente essa validação. Builds e contratos estáticos não autorizam a
+execução do simulador.
+
 Regressão visual: roda a UI real (`os/shell` + apps `ui_*.cpp`) sobre o LVGL
 vendido em `managed_components/lvgl__lvgl`, em janela SDL 720×1280, e compara
 capturas contra imagens douradas (`goldens/`). Reproduz o fluxo do firmware
