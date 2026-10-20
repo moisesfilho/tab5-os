@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/version-v0.4.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/platform-ESP32--P4-blue" alt="Platform">
-  <img src="https://img.shields.io/badge/ESP--IDF-v5.5.5-blue" alt="ESP-IDF">
+  <img src="https://img.shields.io/badge/ESP--IDF-v5.5.6-blue" alt="ESP-IDF">
   <img src="https://img.shields.io/badge/LVGL-9-blue" alt="LVGL">
 </p>
 
@@ -88,7 +88,7 @@ Capturas de referência geradas pelo simulador de regressão visual (`tests/simu
 
 ## Pré-requisitos
 
-- ESP-IDF **v5.5.5** (versões anteriores não compilam com `espressif/usb`)
+- ESP-IDF **v5.5.6** (versões anteriores não compilam com `espressif/usb`)
 - Python 3.12
 - Host Linux (testado no Ubuntu)
 
@@ -125,7 +125,7 @@ Validações automáticas garantem consistência de estilo e segurança no firmw
 - **Testes unitários host-native** (`tools/ci/run_host_tests.sh`) — suíte GoogleTest com 84 testes sobre os módulos de lógica e persistência, cobertura gcov/lcov com gate ≥80% (atual: 82,0%) e redirecionamento de `/sdcard` para tmpdir via `--wrap` do linker.
 - **Regressão visual** (`tools/ci/run_sim_tests.sh`) — simulador SDL que executa a UI real em janela 720×1280 e compara capturas contra imagens douradas determinísticas de 17 cenários; detalhes em [tests/simulator/README.md](tests/simulator/README.md).
 - **GitHub Actions**:
-  - `quality-gate.yml` — build com **ESP-IDF v5.5.5** (target `esp32p4`) + **clang-tidy** e **cppcheck** via `compile_commands.json`.
+  - `quality-gate.yml` — build com **ESP-IDF v5.5.6** (target `esp32p4`) + **clang-tidy** e **cppcheck** via `compile_commands.json`.
   - `codeql.yml` — análise estática de segurança (SAST) com **CodeQL** (C/C++), build manual `idf.py`.
 
 Para ativar os hooks localmente:

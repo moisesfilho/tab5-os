@@ -41,7 +41,7 @@ jobs:
         uses: espressif/install-esp-idf-action@v1
         with:
           # >=5.5.3 obrigatório (bug do componente usb ^1 com HAL do 5.5+)
-          version: v5.5.5
+          version: v5.5.6
 
       - name: Build (idf.py manual)
         run: |
@@ -98,7 +98,7 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| **Linguagem** | C / C++ |" >> $GITHUB_STEP_SUMMARY
           echo "| **Query Suite** | security-and-quality |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Alvo** | ESP32-P4 (ESP-IDF v5.5.5) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Alvo** | ESP32-P4 (ESP-IDF v5.5.6) |" >> $GITHUB_STEP_SUMMARY
           echo "| **Status** | ${{ job.status == 'success' && '✅ Análise concluída com sucesso' || '❌ Falha' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> ℹ️ *Acesse a aba **Security → Code scanning** do repositório para visualizar relatórios e alertas detalhados.*" >> $GITHUB_STEP_SUMMARY

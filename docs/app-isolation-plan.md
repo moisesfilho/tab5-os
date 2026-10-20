@@ -32,7 +32,7 @@ As aplicações são **instaladas por cima do sistema operacional**: o firmware 
 |  [ LVGL 9.5 UI API ]  [ Storage/FS API ]  [ Audio/Net/BT API ]  [ IPC ] |
 |  ---------------------------------------------------------------------  |
 |  [ Drivers Hardware: MIPI-DSI, Touch, BMI270, INA226, RTC, WiFi/BT ]    |
-|  [ ESP-IDF v5.5.5 / FreeRTOS / ESP32-P4 RISC-V Dual-Core + 32MB PSRAM ] |
+|  [ ESP-IDF v5.5.6 / FreeRTOS / ESP32-P4 RISC-V Dual-Core + 32MB PSRAM ] |
 +-------------------------------------------------------------------------+
 ```
 
