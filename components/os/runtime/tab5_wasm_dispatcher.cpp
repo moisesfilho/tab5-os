@@ -13,10 +13,13 @@
 #ifdef ESP_PLATFORM
 #include "esp_log.h"
 #include "esp_pthread.h"
+#include "esp_heap_caps.h"
 static const char *TAG = "tab5_wasm_dispatch";
 #define LOG_W(fmt, ...) ESP_LOGW(TAG, fmt, ##__VA_ARGS__)
+#define LOG_E(fmt, ...) ESP_LOGE(TAG, fmt, ##__VA_ARGS__)
 #else
 #define LOG_W(fmt, ...) std::fprintf(stderr, "[WARN] " fmt "\n", ##__VA_ARGS__)
+#define LOG_E(fmt, ...) std::fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
 #endif
 
 struct tab5_wasm_dispatch_job {
@@ -166,16 +169,32 @@ extern "C" tab5_err_t tab5_wasm_dispatcher_init(void)
 #ifdef ESP_PLATFORM
     esp_pthread_cfg_t pcfg = esp_pthread_get_default_config();
     pcfg.thread_name = "wasm_disp";
-    pcfg.stack_size = 24 * 1024;
+    pcfg.stack_size = 16 * 1024;
     pcfg.prio = 5;
-    esp_pthread_set_cfg(&pcfg);
-    pthread_attr_setstacksize(&attr, 24 * 1024);
+    pcfg.stack_alloc_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const esp_err_t cfg_err = esp_pthread_set_cfg(&pcfg);
+    if (cfg_err != ESP_OK) {
+        pthread_attr_destroy(&attr);
+        LOG_E("Failed to configure dispatcher pthread: err=%d internal_free=%u internal_largest=%u", (int)cfg_err,
+              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        return TAB5_ERR_FAIL;
+    }
+    pthread_attr_setstacksize(&attr, 16 * 1024);
 #endif
 
     int rc = pthread_create(&s_worker, &attr, dispatcher_worker, nullptr);
     pthread_attr_destroy(&attr);
-    if (rc != 0)
+    if (rc != 0) {
+#ifdef ESP_PLATFORM
+        LOG_E("Failed to create dispatcher pthread: rc=%d internal_free=%u internal_largest=%u", rc,
+              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+#else
+        LOG_E("Failed to create dispatcher pthread: rc=%d", rc);
+#endif
         return TAB5_ERR_FAIL;
+    }
     s_started = true;
     return TAB5_OK;
 }

@@ -1258,6 +1258,21 @@ void open_menu(menu_page_t page)
         menu_row_create("Desligar", power_shutdown_cb, &menu_row_pw_off, &menu_row_pw_off_label, false);
     }
 
+    /* Em paisagem, o menu principal pode ser maior que a tela. Limita sua
+     * altura ao espaço abaixo da barra e mantém a rolagem dentro do painel. */
+    lv_obj_update_layout(menu_panel);
+    const lv_coord_t screen_height = lv_obj_get_height(layer);
+    const lv_coord_t panel_top = UI_BAR_HEIGHT + 8;
+    const lv_coord_t bottom_margin = 10;
+    const lv_coord_t max_panel_height = screen_height - panel_top - bottom_margin;
+    const lv_coord_t content_height = lv_obj_get_height(menu_panel);
+    if (max_panel_height > 0 && content_height > max_panel_height) {
+        lv_obj_set_height(menu_panel, max_panel_height);
+    }
+    lv_obj_set_scroll_dir(menu_panel, LV_DIR_VER);
+    lv_obj_add_flag(menu_panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(menu_panel, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+
     apply_menu_theme();
 }
 

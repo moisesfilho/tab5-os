@@ -426,5 +426,20 @@ class LaunchShutdownLinearization(unittest.TestCase):
         self.assertIn("pthread_detach", shutdown)
 
 
+class DispatcherWorkerMemoryContract(unittest.TestCase):
+    """Dispatcher stack must fit the Tab5's constrained internal SRAM."""
+
+    def test_worker_uses_16k_internal_stack_and_reports_creation_failure(self):
+        dispatcher = next(text for text in _DISPATCHER_EXTRA
+                          if "tab5_wasm_dispatcher_init" in text
+                          and "pthread_create" in text)
+        init = function_body(
+            dispatcher, 'extern "C" tab5_err_t tab5_wasm_dispatcher_init(void)')
+        self.assertIn("pcfg.stack_size = 16 * 1024;", init)
+        self.assertIn("pcfg.stack_alloc_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;", init)
+        self.assertIn("pthread_attr_setstacksize(&attr, 16 * 1024);", init)
+        self.assertIn("heap_caps_get_largest_free_block", init)
+
+
 if __name__ == "__main__":
     unittest.main()
